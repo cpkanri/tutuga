@@ -1,0 +1,26 @@
+{
+  "name": "筒賀水質管理センター 週報入力",
+  "short_name": "筒賀週報",
+  "description": "筒賀水質管理センターの日常水質・主要機器運転時間・日常電気設備・日常機械設備の週報入力アプリ",
+  "start_url": "/tutuga/",
+  "scope": "/tutuga/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f0f2f5",
+  "theme_color": "#0d4f34",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
