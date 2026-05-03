@@ -3793,13 +3793,33 @@ function bindEvents() {
     btnSync.disabled = false;
   });
 
-  // Excel出力ボタン（クライアントサイド ExcelJS）
+  // Excel出力ボタン（GAS側で生成 → ダウンロード）
   document.getElementById("btnExcelHeader").addEventListener("click", async () => {
     const btnExcel = document.getElementById("btnExcelHeader");
+    if (!weeklyData.targetMonth) {
+      showToast("対象月が未設定です", "error");
+      return;
+    }
     btnExcel.textContent = "生成中...";
     btnExcel.disabled = true;
     try {
-      await exportExcel();
+      // 現在編集中のタブを先に保存
+      if (currentSheet === "water") saveFormToData();
+      else if (currentSheet === "equip") saveEquipFormToData();
+      else if (currentSheet === "elec") saveElecFormToData();
+      else if (currentSheet === "mech") saveMechFormToData();
+      // 念のためサーバ同期（ローカル変更をサーバに反映）
+      try { await saveCurrentToServer(); } catch (e) { /* オフライン時は既存データで生成 */ }
+      // GAS の exportExcel エンドポイントを呼ぶ
+      const url = withToken(GAS_URL + '?action=exportExcel&month=' + encodeURIComponent(weeklyData.targetMonth));
+      const res = await fetchWithTimeout(url, { method: 'GET' }, 60000);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (!data.downloadUrl) throw new Error("ダウンロードURLが返されませんでした");
+      // 別タブで開いてブラウザのダウンロードを発火
+      window.open(data.downloadUrl, '_blank');
+      showToast("Excel生成完了：ダウンロード開始");
     } catch (e) {
       console.error(e);
       showToast("Excel生成に失敗しました: " + e.message, "error");
@@ -3932,14 +3952,14 @@ async function exportExcel() {
       // P1 の月判定式
       wsWater.getCell(1, 16).value = null;
       // I3〜N3（5週分）の日付式を全削除（後で値で書き込み）
-      for (const r of [3, 49, 95, 141, 187]) {
+      for (const r of [3, 55, 107, 159, 211]) {
         for (let c = 9; c <= 14; c++) {
           wsWater.getCell(r, c).value = null;
         }
       }
       // 各週の I4〜I10 の N列参照式（=N188, =N4 等）を削除
       // これは「前週のN列データを次週Iに引き継ぐ」仕組みだが、現在のN列は日付のみなので不要
-      const WATER_WEEK_OFFSETS = { 1: 0, 2: 46, 3: 92, 4: 138, 5: 184 };
+      const WATER_WEEK_OFFSETS = { 1: 0, 2: 52, 3: 104, 4: 156, 5: 208 };
       for (const w of [1, 2, 3, 4, 5]) {
         const offset = WATER_WEEK_OFFSETS[w];
         // I4〜I10（月曜データ7項目分）の N列参照を削除
@@ -4126,7 +4146,7 @@ function getPrevMonthLastDayData(targetMonth, firstMonday, holidaySet) {
 
 function fillWaterSheet(ws, yyyy, mm, holidaySet) {
   holidaySet = holidaySet || new Set();
-  const WEEK_OFFSETS = { 1: 0, 2: 46, 3: 92, 4: 138, 5: 184 };
+  const WEEK_OFFSETS = { 1: 0, 2: 52, 3: 104, 4: 156, 5: 208 };
   // 月 I=9, 火 J=10, 水 K=11, 木 L=12, 金 M=13
   const DAY_COL = { mon: 9, tue: 10, wed: 11, thu: 12, fri: 13 };
   const NEXT_WEEK_COL = 14; // N列 = 次週の最初の平日
