@@ -334,16 +334,17 @@ header h1 {
 }
 .main-tabs button {
   flex: 1;
-  padding: 12px 8px;
+  padding: 12px 6px;
   border: none;
   background: #fff;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: #888;
   border-bottom: 3px solid transparent;
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s;
+  white-space: nowrap;
 }
 .main-tabs button.active {
   color: #0d4f34;
@@ -793,40 +794,6 @@ body.login-active {
   50% { opacity: 0.5; }
 }
 
-/* ===== MLDO計算ボタン ===== */
-.mldo-wrap {
-  padding: 0 14px 12px;
-}
-.btn-mldo {
-  width: 100%;
-  padding: 12px;
-  background: #546e7a;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all 0.2s;
-  min-height: 44px;
-}
-.btn-mldo:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.btn-mldo.pending {
-  background: #ff6f00;
-  animation: pulse-mldo 2s infinite;
-}
-.btn-mldo.done {
-  background: #2e7d32;
-}
-@keyframes pulse-mldo {
-  0%, 100% { box-shadow: 0 2px 6px rgba(255,111,0,0.3); }
-  50% { box-shadow: 0 4px 16px rgba(255,111,0,0.7); }
-}
-
 /* ===== ヘッダー上部: タイトルとユーザー情報を横並び ===== */
 .header-top {
   display: flex;
@@ -983,10 +950,10 @@ header > .conn-status {
 
 <!-- メインタブ（シート切替） -->
 <nav class="main-tabs" id="mainTabs">
-  <button type="button" data-sheet="water" class="active">日常水質</button>
-  <button type="button" data-sheet="equip">主要機器運転時間</button>
-  <button type="button" data-sheet="elec">日常電気設備</button>
-  <button type="button" data-sheet="mech">日常機械設備</button>
+  <button type="button" data-sheet="water" class="active">水質</button>
+  <button type="button" data-sheet="equip">機器運転時間</button>
+  <button type="button" data-sheet="elec">電気設備</button>
+  <button type="button" data-sheet="mech">機械設備</button>
 </nav>
 
 <!-- ===== 日常水質パネル（2サブタブ: 上段使用量 / 下段水質測定） ===== -->
@@ -994,8 +961,8 @@ header > .conn-status {
 
 <!-- 水質サブタブ -->
 <nav class="sub-tabs" id="waterSubTabs">
-  <button type="button" data-water-sub="usage" class="active">上段使用量</button>
-  <button type="button" data-water-sub="measure">下段水質測定</button>
+  <button type="button" data-water-sub="usage" class="active">使用量</button>
+  <button type="button" data-water-sub="measure">水質測定</button>
 </nav>
 
 <!-- 週タブ（両サブタブで共通） -->
@@ -1239,10 +1206,6 @@ header > .conn-status {
   <button type="button" class="btn-clear" id="btnClear">全クリア</button>
   <button type="button" class="btn-undo" id="btnUndo" disabled>↩ 戻す</button>
   <button type="button" class="btn-save" id="btnSave">保存</button>
-</div>
-
-<div class="mldo-wrap">
-  <button type="button" class="btn-mldo" id="btnMldo">⚗ MLDO計算</button>
 </div>
 
 <div class="info-bar">データは端末に保存されます（localStorage）</div>
@@ -3573,7 +3536,7 @@ function bindEvents() {
     loadDataToForm();
     showToast("対象月を " + newMonth + " に変更しました");
     // バックグラウンドでサーバーからも取得
-    syncFromServer().then(() => updateMldoStatus()).catch(() => {});
+    syncFromServer().catch(() => {});
   });
 
   // startDate は readonly（自動計算）のため change イベントは不要
@@ -3767,8 +3730,6 @@ function bindEvents() {
       setConnectionStatus(true);
       markClean();
       showToast(scope + "を保存しました（サーバーへ送信完了）");
-      // 水温データが増えた可能性があるのでMLDOステータスを更新
-      updateMldoStatus();
     } catch (e) {
       if (isNetworkError(e)) setConnectionStatus(false);
       const msg = e && e.message ? e.message : String(e);
@@ -3820,9 +3781,6 @@ function bindEvents() {
         if (summary.mechanical_days > 0) parts.push('機械' + summary.mechanical_days + '日分');
         const detail = parts.length > 0 ? '（' + parts.join('、') + 'を更新）' : '';
         showToast('サーバーから最新データを取得しました' + detail);
-
-        // MLDO ステータス更新
-        if (typeof updateMldoStatus === 'function') updateMldoStatus();
       } else {
         showToast("サーバーにデータがありません", "warn");
       }
@@ -3850,62 +3808,6 @@ function bindEvents() {
       btnExcel.disabled = false;
     }
   });
-
-  // MLDO計算ボタン
-  document.getElementById("btnMldo").addEventListener("click", async () => {
-    const btn = document.getElementById("btnMldo");
-    if (!weeklyData.targetMonth) {
-      showToast("対象月が未設定です", "error");
-      return;
-    }
-    btn.disabled = true;
-    const originalText = btn.textContent;
-    btn.textContent = "計算中...";
-    try {
-      const url = withToken(GAS_URL + '?action=computeMldo&month=' + encodeURIComponent(weeklyData.targetMonth));
-      const res = await fetchWithTimeout(url, { method: 'GET' }, 30000);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      let msg = "MLDO計算完了：新規 " + (data.newlyComputed || 0) + " 件";
-      if (typeof data.writtenToReport === 'number') {
-        msg += "、水質管理報告に " + data.writtenToReport + " 件反映";
-      }
-      showToast(msg, "success");
-      await updateMldoStatus();
-    } catch (e) {
-      console.error('MLDO計算エラー:', e);
-      showToast("MLDO計算失敗: " + (e.message || e), "error");
-      btn.textContent = originalText;
-    } finally {
-      btn.disabled = false;
-    }
-  });
-}
-
-// ===== MLDO計算ステータス更新 =====
-async function updateMldoStatus() {
-  const btn = document.getElementById('btnMldo');
-  if (!btn || !weeklyData.targetMonth) return;
-  try {
-    const url = withToken(GAS_URL + '?action=checkMldo&month=' + encodeURIComponent(weeklyData.targetMonth));
-    const res = await fetchWithTimeout(url, { method: 'GET' }, 10000);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.error) return;
-    btn.classList.remove('pending', 'done');
-    if (data.needsCompute && data.pendingCount > 0) {
-      btn.textContent = '⚠ MLDO計算（' + data.pendingCount + '日分未実行）';
-      btn.classList.add('pending');
-    } else if (data.dataCount > 0) {
-      btn.textContent = '✓ MLDO計算（' + data.computedCount + '日分完了）';
-      btn.classList.add('done');
-    } else {
-      btn.textContent = '⚗ MLDO計算（データ待ち）';
-    }
-  } catch (e) {
-    // サーバー未接続時は触らない（既存表示を維持）
-  }
 }
 
 // ===== Excel 出力（クライアントサイド ExcelJS + template.js） =====
@@ -4736,7 +4638,7 @@ async function continueInit() {
   loadDataToForm();
 
   // b. バックグラウンドでGASからデータ取得（接続確認を兼ねる）
-  syncFromServer().then(() => updateMldoStatus()).catch(() => {});
+  syncFromServer().catch(() => {});
   // 祝日リストもバックグラウンド取得（キャッシュがあれば上書き・なければ取得）
   fetchHolidaysFromServer();
 }
