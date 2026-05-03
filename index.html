@@ -1252,10 +1252,109 @@ header > .conn-status {
 
 <script>
 // ===== GAS URL =====
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyOvwXmt-GL1cwo5qRuUnl2AnxI4aG0tJd5exg9Z96kqaG9RQCETsJLmMEBtlqlSVAb/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyCo-UnGHg-8u9E21F3H3vcyeE1cml_E088N2xBTS3fZXeKMwEfax6lxIeL6xMNRvAJ/exec';
 
 // ===== 認証 =====
 const AUTH_KEYS = { token: 'tutuga_auth_token', userId: 'tutuga_auth_userId', userName: 'tutuga_auth_userName', expires: 'tutuga_auth_expires' };
+// ============================================================
+// ストレージ管理（吉和から移植：QuotaExceededError 対策）
+// 5MB上限に近づいたら最古の月データを退避してから再試行
+// ============================================================
+const STORAGE_PREFIX = "tutuga_";
+const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024; // 想定上限 5MB（Androidブラウザ標準）
+
+function byteLength(str) {
+  if (str == null) return 0;
+  try { return new Blob([str]).size; } catch(e) { return str.length * 2; }
+}
+
+function getAllTutugaKeys() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(STORAGE_PREFIX)) keys.push(k);
+  }
+  return keys;
+}
+
+function parseMonthKey(key) {
+  // "tutuga_weekly_2026-04" → { type: "weekly", ym: "2026-04" }
+  // safeSetItem の容量超過時最古削除ロジックで使用
+  const types = [
+    { prefix: "tutuga_weekly_", type: "weekly", label: "週報" }
+  ];
+  for (const t of types) {
+    if (key.startsWith(t.prefix)) {
+      const ym = key.substring(t.prefix.length);
+      if (/^\d{4}-\d{2}$/.test(ym)) return { type: t.type, label: t.label, ym, key };
+    }
+  }
+  return null;
+}
+
+function computeStorageUsage() {
+  const keys = getAllTutugaKeys();
+  let totalBytes = 0;
+  const byMonth = {};
+  keys.forEach(k => {
+    const raw = localStorage.getItem(k) || "";
+    const bytes = byteLength(k) + byteLength(raw);
+    totalBytes += bytes;
+    const m = parseMonthKey(k);
+    if (m) {
+      if (!byMonth[m.ym]) byMonth[m.ym] = { ym: m.ym, bytes: 0, items: [] };
+      byMonth[m.ym].bytes += bytes;
+      byMonth[m.ym].items.push({ ...m, bytes });
+    }
+  });
+  const months = Object.values(byMonth).sort((a, b) => a.ym.localeCompare(b.ym));
+  const pct = Math.min(100, Math.round((totalBytes / STORAGE_QUOTA_BYTES) * 1000) / 10);
+  return { totalBytes, pct, months, quotaBytes: STORAGE_QUOTA_BYTES };
+}
+
+function isQuotaError(err) {
+  if (!err) return false;
+  const name = err.name || "";
+  const code = err.code;
+  return name === "QuotaExceededError" ||
+         name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+         code === 22 || code === 1014;
+}
+
+function safeSetItem(key, value) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      localStorage.setItem(key, value);
+      return { ok: true, attempt };
+    } catch(e) {
+      if (!isQuotaError(e)) return { ok: false, error: e, attempt };
+      // 容量超過時：現在編集中の月以外で最古のものを退避
+      const currentYm = (typeof weeklyData !== "undefined" && weeklyData.targetMonth) || "";
+      const usage = computeStorageUsage();
+      const victims = usage.months.filter(m => m.ym !== currentYm);
+      if (victims.length === 0) return { ok: false, error: e, attempt, quotaExhausted: true };
+      const oldest = victims[0];
+      oldest.items.forEach(it => localStorage.removeItem(it.key));
+    }
+  }
+  return { ok: false, error: new Error("retry limit"), attempt: 4, quotaExhausted: true };
+}
+
+// ネットワーク起因の例外判定（QuotaExceededError 等で誤って「オフライン」表示するのを防ぐ）
+function isNetworkError(e) {
+  if (!e) return false;
+  const name = e.name || "";
+  const msg = (e.message || "").toLowerCase();
+  return name === "AbortError" ||
+         (name === "TypeError" && msg.includes("fetch")) ||
+         msg.includes("networkerror") ||
+         msg.includes("load failed") ||
+         msg.includes("failed to fetch");
+}
+// ============================================================
+// ストレージ管理ここまで
+// ============================================================
+
 function getAuthToken() { return localStorage.getItem(AUTH_KEYS.token) || ''; }
 function getAuthUserId() { return localStorage.getItem(AUTH_KEYS.userId) || ''; }
 function getAuthUserName() { return localStorage.getItem(AUTH_KEYS.userName) || ''; }
@@ -2691,7 +2790,7 @@ async function checkConnection() {
       setConnectionStatus(false);
     }
   } catch (e) {
-    setConnectionStatus(false);
+    if (isNetworkError(e)) setConnectionStatus(false);
   }
 }
 
@@ -2797,13 +2896,16 @@ function saveToStorage() {
     weeklyData.targetMonth = document.getElementById("targetMonth").value || weeklyData.targetMonth;
     // startDate はinput値ではなく対象月から常に再計算（readonly のため）
     weeklyData.startDate = estimateStartDate(weeklyData.targetMonth);
-    localStorage.setItem(storageKey(), JSON.stringify(weeklyData));
+    const r1 = safeSetItem(storageKey(), JSON.stringify(weeklyData));
+    if (!r1.ok && r1.quotaExhausted) {
+      showToast("ストレージ上限のため最古の月データを退避しましたが、まだ容量不足です。古いデータを手動削除してください。", "error");
+    }
     const inspEl = document.querySelector('[data-field="inspector"]');
     if (inspEl && inspEl.value) {
-      try { localStorage.setItem("tutuga_last_inspector", inspEl.value); } catch(e) {}
+      try { safeSetItem("tutuga_last_inspector", inspEl.value); } catch(e) {}
     }
     if (weeklyData.targetMonth) {
-      try { localStorage.setItem("tutuga_current_month", weeklyData.targetMonth); } catch(e) {}
+      try { safeSetItem("tutuga_current_month", weeklyData.targetMonth); } catch(e) {}
     }
   }
   function isQuotaError(e) {
@@ -3124,7 +3226,7 @@ function mergeServerData(serverData) {
   // startDate はクライアント側で対象月から常に自動計算するため、サーバー値で上書きしない
   weeklyData.startDate = estimateStartDate(weeklyData.targetMonth);
   ensureWeeklyStructure();
-  localStorage.setItem(storageKey(), JSON.stringify(weeklyData));
+  safeSetItem(storageKey(), JSON.stringify(weeklyData));
   return summary;
 }
 
@@ -3191,7 +3293,7 @@ async function syncFromServer() {
     setConnectionStatus(true);
     return totalSummary;
   } catch (e) {
-    setConnectionStatus(false);
+    if (isNetworkError(e)) setConnectionStatus(false);
     throw e;
   }
 }
@@ -3463,7 +3565,7 @@ function bindEvents() {
     weeklyData.startDate = estimateStartDate(newMonth);
     ensureWeeklyStructure();
     document.getElementById("startDate").value = weeklyData.startDate || "";
-    localStorage.setItem("tutuga_current_month", newMonth);
+    safeSetItem("tutuga_current_month", newMonth);
     currentWeek = 1;
     currentDay = "mon";
     updateWeekTabs();
@@ -3668,7 +3770,7 @@ function bindEvents() {
       // 水温データが増えた可能性があるのでMLDOステータスを更新
       updateMldoStatus();
     } catch (e) {
-      setConnectionStatus(false);
+      if (isNetworkError(e)) setConnectionStatus(false);
       const msg = e && e.message ? e.message : String(e);
       console.error('saveCurrentToServer error:', e);
       showToast("端末に" + scope + "を保存しました。サーバー送信失敗：" + msg + "（後で同期してください）", "warn");
@@ -3725,7 +3827,7 @@ function bindEvents() {
         showToast("サーバーにデータがありません", "warn");
       }
     } catch (e) {
-      setConnectionStatus(false);
+      if (isNetworkError(e)) setConnectionStatus(false);
       showToast("同期エラー: " + (e.message || e), "error");
     }
 
@@ -4621,7 +4723,7 @@ async function continueInit() {
 
   document.getElementById("targetMonth").value = weeklyData.targetMonth;
   document.getElementById("startDate").value = weeklyData.startDate;
-  localStorage.setItem("tutuga_current_month", weeklyData.targetMonth);
+  safeSetItem("tutuga_current_month", weeklyData.targetMonth);
 
   if (!window.__eventsBound) {
     bindEvents();
