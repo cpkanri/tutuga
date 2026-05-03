@@ -1677,7 +1677,7 @@ const ELEC_SECTIONS_3 = [
     { key: "発電機盤__外観の確認",     label: "発電機盤 外観", type: "toggle", options: ["○","△","×"] },
     { key: "エンジン__外観の確認",     label: "エンジン 外観", type: "toggle", options: ["○","△","×"] },
     { key: "燃料タンク__外観の確認",   label: "燃料タンク 外観", type: "toggle", options: ["○","△","×"] },
-    { key: "燃料タンク__残量の値__ℓ", label: "燃料タンク 残量", type: "number", step: "1", unit: "ℓ", note: "上段の軽油残量から自動転記" },
+    // 燃料タンク 残量(ℓ) は水質→使用量タブの「軽油（残量）」から GAS が自動転記
   ]},
   { title: "通報装置", fields: [
     { key: "通報装置__通報状態の確認", label: "通報状態", type: "toggle", options: ["○","△","×"] },
