@@ -1631,26 +1631,25 @@ const ELEC_SECTIONS_2 = [
     { key: "Nｏ．１返送汚泥流量計__外観の確認",         label: "外観の確認",       type: "toggle", options: ["○","△","×"] },
     { key: "Nｏ．１返送汚泥流量計__指示状況の確認",     label: "指示状況の確認",   type: "toggle", options: ["○","△","×"] },
     { key: "Nｏ．１返送汚泥流量計__流量計の読み__㎥/ｈ", label: "流量計の読み",     type: "number", step: "0.1", unit: "㎥/h" },
-    { key: "Nｏ．１返送汚泥流量計__流量計積算計読み__㎥", label: "流量計積算計読み", type: "number", step: "1",   unit: "㎥" },
+    // 流量計積算計読み(㎥) は水質→使用量タブの「返送汚泥流量(№1)」から GAS が自動転記
   ]},
   { title: "Nｏ．２返送汚泥流量計", fields: [
     { key: "Nｏ．２返送汚泥流量計__外観の確認",         label: "外観の確認",       type: "toggle", options: ["○","△","×"] },
     { key: "Nｏ．２返送汚泥流量計__指示状況の確認",     label: "指示状況の確認",   type: "toggle", options: ["○","△","×"] },
     { key: "Nｏ．２返送汚泥流量計__流量計の読み__㎥/ｈ", label: "流量計の読み",     type: "number", step: "0.1", unit: "㎥/h" },
-    { key: "Nｏ．２返送汚泥流量計__流量計積算計読み__㎥", label: "流量計積算計読み", type: "number", step: "1",   unit: "㎥" },
+    // 流量計積算計読み(㎥) は水質→使用量タブの「返送汚泥流量(№2)」から GAS が自動転記
   ]},
   { title: "余剰汚泥流量計", fields: [
     { key: "余剰汚泥流量計__外観の確認",     label: "外観の確認",     type: "toggle", options: ["○","△","×"] },
     { key: "余剰汚泥流量計__指示状況の確認", label: "指示状況の確認", type: "toggle", options: ["○","△","×"] },
-    // 以下 No.1/No.2 流量計読み は GAS が「上段使用量の余剰汚泥1/2」から自動転記。手入力欄も保持。
-    { key: "余剰汚泥流量計__No.１余剰汚泥ポンプ流量計読み__㎥/ｈ", label: "No.1余剰汚泥ポンプ流量計読み", type: "number", step: "0.1", unit: "㎥/h", note: "上段から自動転記" },
-    { key: "余剰汚泥流量計__No.２余剰汚泥ポンプ流量計読み__㎥/ｈ", label: "No.2余剰汚泥ポンプ流量計読み", type: "number", step: "0.1", unit: "㎥/h", note: "上段から自動転記" },
+    { key: "余剰汚泥流量計__No.１余剰汚泥ポンプ流量計読み__㎥/ｈ", label: "No.1余剰汚泥ポンプ流量計読み", type: "numdash", unit: "㎥/h" },
+    { key: "余剰汚泥流量計__No.２余剰汚泥ポンプ流量計読み__㎥/ｈ", label: "No.2余剰汚泥ポンプ流量計読み", type: "numdash", unit: "㎥/h" },
   ]},
   { title: "放流流量計", fields: [
     { key: "放流流量計__外観の確認",        label: "外観の確認",       type: "toggle", options: ["○","△","×"] },
     { key: "放流流量計__指示状況の確認",    label: "指示状況の確認",   type: "toggle", options: ["○","△","×"] },
     { key: "放流流量計__流量計の読み__㎥/ｈ", label: "流量計の読み",     type: "number", step: "0.1", unit: "㎥/h" },
-    { key: "放流流量計__流量計積算の読み__㎥", label: "流量計積算の読み", type: "number", step: "1",   unit: "㎥" },
+    // 流量計積算の読み(㎥) は水質→使用量タブの「放流流量」から GAS が自動転記
   ]},
   { title: "汚濁負荷量計", fields: [
     { key: "汚濁負荷量計__外観の確認",     label: "外観の確認",     type: "toggle", options: ["○","△","×"] },
@@ -2419,6 +2418,9 @@ function buildElecTable(subId) {
       EQUIP_DAYS.forEach(d => {
         if (f.type === "number") {
           html += '<td><input type="number" inputmode="decimal" step="' + f.step + '" data-elec="' + f.key + '" data-eday="' + d + '"></td>';
+        } else if (f.type === "numdash") {
+          // 数値 or "-" を受け付ける（input type=text + 数値判定で保存）
+          html += '<td><input type="text" inputmode="decimal" data-numdash="1" data-elec="' + f.key + '" data-eday="' + d + '" placeholder="数値 or -"></td>';
         } else {
           // toggle button
           html += '<td><button type="button" class="toggle-btn" data-elec="' + f.key + '" data-eday="' + d + '" data-options=\'' + JSON.stringify(f.options) + '\'></button></td>';
@@ -2468,7 +2470,8 @@ function saveElecFormToData() {
     if (el.tagName === "INPUT") {
       if (el.value === "") {
         week[day][key] = null;
-      } else if (el.type === "number") {
+      } else if (el.type === "number" || el.dataset.numdash === "1") {
+        // numdash型: 数値ならNumber、"-"等の非数値なら文字列のまま
         const num = Number(el.value);
         week[day][key] = isNaN(num) ? el.value : num;
       } else {
