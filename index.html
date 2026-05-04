@@ -4258,8 +4258,11 @@ async function exportExcel() {
   if (typeof ExcelJS === "undefined") {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js");
   }
-  // 現在タブを保存
-  if (currentSheet === "water") saveFormToData();
+  // 現在タブを保存（水質タブは上段/下段サブタブも判定）
+  if (currentSheet === "water") {
+    if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
+    else saveFormToData();
+  }
   else if (currentSheet === "equip") saveEquipFormToData();
   else if (currentSheet === "elec") saveElecFormToData();
   else if (currentSheet === "mech") saveMechFormToData();
