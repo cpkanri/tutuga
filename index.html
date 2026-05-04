@@ -4397,31 +4397,28 @@ async function exportExcel() {
     }
   } catch (e) { console.error("Daily dates fill:", e); }
 
-  // ===== 修復メッセージ根本対策（吉和パターン移植）=====
-  // テンプレに残ったfrozen pane/selection/tabColorがExcel修復処理を誘発するためクリア
+  // ===== 修復メッセージ根本対策（views完全リセット版）=====
+  // テンプレに残ったfrozen pane/selection/tabColor/pageBreakPreviewが
+  // Excel修復処理を誘発するため、各シートのviewsを完全リセット
   try {
     wb.eachSheet(ws => {
-      if (ws.views && ws.views.length > 0) {
-        ws.views = ws.views.map(v => {
-          const newView = Object.assign({}, v);
-          delete newView.state;
-          delete newView.xSplit;
-          delete newView.ySplit;
-          delete newView.topLeftCell;
-          delete newView.activeCell;
-          return newView;
-        });
-      }
+      ws.views = [{
+        workbookViewId: 0,
+        showGridLines: true,
+        view: 'normal',
+        zoomScale: 100,
+        zoomScaleNormal: 100
+      }];
       if (ws.properties) ws.properties.tabColor = undefined;
     });
-  } catch (e) { console.warn("views/tabColor クリア失敗:", e); }
+  } catch (e) { console.warn("views/tabColor リセット失敗:", e); }
 
   const out = await wb.xlsx.writeBuffer();
   // 吉和パターンに合わせて post-processing は実施しない
   // （views/tabColor クリアでExcelの修復メッセージは消える、
   //   <v></v>補完は逆効果なので削除した）
   const finalBuf = out;
-  console.log("[Excel出力 v5/yoshiwa-pattern] size=" + (finalBuf.byteLength || finalBuf.length) + " ※post-processing無し");
+  console.log("[Excel出力 v7/views-reset] size=" + (finalBuf.byteLength || finalBuf.length) + " ※views完全リセット, post-processing無し");
 
   const blob = new Blob([finalBuf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
