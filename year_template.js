@@ -1,1 +1,123 @@
-var EXCEL_YEAR_TEMPLATE_B64 = "UEsDBBQAAAAIADEylFxGx01IlQAAAM0AAAAQAAAAZG9jUHJvcHMvYXBwLnhtbE3PTQvCMAwG4L9SdreZih6kDkQ9ip68zy51hbYpbYT67+0EP255ecgboi6JIia2mEXxLuRtMzLHDUDWI/o+y8qhiqHke64x3YGMsRoPpB8eA8OibdeAhTEMOMzit7Dp1C5GZ3XPlkJ3sjpRJsPiWDQ6sScfq9wcChDneiU+ixNLOZcrBf+LU8sVU57mym/8ZAW/B7oXUEsDBBQAAAAIADEylFx0ygCU+gAAACsCAAARAAAAZG9jUHJvcHMvY29yZS54bWzNksFKxDAQhl9Fcm8nadeqoduL4klBcEHxFpLZ3WDThmSk3bc3rbtdRR9AyCUzf775BlJrL3Uf8Cn0HgNZjBeja7sotV+zPZGXAFHv0amYp0SXmts+OEXpGnbglX5XO4SC8wockjKKFEzAzC9E1tRGSx1QUR+OeKMXvP8I7QwzGrBFhx1FELkA1kwT/WFsazgDJhhhcPGrgGYhztU/sXMH2DE5RrukhmHIh3LOpR0EvD4+PM/rZraLpDqN6VW0kg4e1+w0+aW8vdvcs6bgRZXxVSZuNmIl+bUsL98m1x9+Z2HXG7u1/8K44BteSXGVzjfjk2BTw69/0XwCUEsDBBQAAAAIADEylFyZXJwjEAYAAJwnAAATAAAAeGwvdGhlbWUvdGhlbWUxLnhtbO1aW3PaOBR+76/QeGf2bQvGNoG2tBNzaXbbtJmE7U4fhRFYjWx5ZJGEf79HNhDLlg3tkk26mzwELOn7zkVH5+g4efPuLmLohoiU8nhg2S/b1ru3L97gVzIkEUEwGaev8MAKpUxetVppAMM4fckTEsPcgosIS3gUy9Zc4FsaLyPW6rTb3VaEaWyhGEdkYH1eLGhA0FRRWm9fILTlHzP4FctUjWWjARNXQSa5iLTy+WzF/NrePmXP6TodMoFuMBtYIH/Ob6fkTlqI4VTCxMBqZz9Wa8fR0kiAgsl9lAW6Sfaj0xUIMg07Op1YznZ89sTtn4zK2nQ0bRrg4/F4OLbL0otwHATgUbuewp30bL+kQQm0o2nQZNj22q6RpqqNU0/T933f65tonAqNW0/Ta3fd046Jxq3QeA2+8U+Hw66JxqvQdOtpJif9rmuk6RZoQkbj63oSFbXlQNMgAFhwdtbM0gOWXin6dZQa2R273UFc8FjuOYkR/sbFBNZp0hmWNEZynZAFDgA3xNFMUHyvQbaK4MKS0lyQ1s8ptVAaCJrIgfVHgiHF3K/99Ze7yaQzep19Os5rlH9pqwGn7bubz5P8c+jkn6eT101CznC8LAnx+yNbYYcnbjsTcjocZ0J8z/b2kaUlMs/v+QrrTjxnH1aWsF3Pz+SejHIju932WH32T0duI9epwLMi15RGJEWfyC265BE4tUkNMhM/CJ2GmGpQHAKkCTGWoYb4tMasEeATfbe+CMjfjYj3q2+aPVehWEnahPgQRhrinHPmc9Fs+welRtH2Vbzco5dYFQGXGN80qjUsxdZ4lcDxrZw8HRMSzZQLBkGGlyQmEqk5fk1IE/4rpdr+nNNA8JQvJPpKkY9psyOndCbN6DMawUavG3WHaNI8ev4F+Zw1ChyRGx0CZxuzRiGEabvwHq8kjpqtwhErQj5iGTYacrUWgbZxqYRgWhLG0XhO0rQR/FmsNZM+YMjszZF1ztaRDhGSXjdCPmLOi5ARvx6GOEqa7aJxWAT9nl7DScHogstm/bh+htUzbCyO90fUF0rkDyanP+kyNAejmlkJvYRWap+qhzQ+qB4yCgXxuR4+5Xp4CjeWxrxQroJ7Af/R2jfCq/iCwDl/Ln3Ppe+59D2h0rc3I31nwdOLW95GblvE+64x2tc0LihjV3LNyMdUr5Mp2DmfwOz9aD6e8e362SSEr5pZLSMWkEuBs0EkuPyLyvAqxAnoZFslCctU02U3ihKeQhtu6VP1SpXX5a+5KLg8W+Tpr6F0PizP+Txf57TNCzNDt3JL6raUvrUmOEr0scxwTh7LDDtnPJIdtnegHTX79l125COlMFOXQ7gaQr4Dbbqd3Do4npiRuQrTUpBvw/npxXga4jnZBLl9mFdt59jR0fvnwVGwo+88lh3HiPKiIe6hhpjPw0OHeXtfmGeVxlA0FG1srCQsRrdguNfxLBTgZGAtoAeDr1EC8lJVYDFbxgMrkKJ8TIxF6HDnl1xf49GS49umZbVuryl3GW0iUjnCaZgTZ6vK3mWxwVUdz1Vb8rC+aj20FU7P/lmtyJ8MEU4WCxJIY5QXpkqi8xlTvucrScRVOL9FM7YSlxi84+bHcU5TuBJ2tg8CMrm7Oal6ZTFnpvLfLQwJLFuIWRLiTV3t1eebnK56Inb6l3fBYPL9cMlHD+U751/0XUOufvbd4/pukztITJx5xREBdEUCI5UcBhYXMuRQ7pKQBhMBzZTJRPACgmSmHICY+gu98gy5KRXOrT45f0Usg4ZOXtIlEhSKsAwFIRdy4+/vk2p3jNf6LIFthFQyZNUXykOJwT0zckPYVCXzrtomC4Xb4lTNuxq+JmBLw3punS0n/9te1D20Fz1G86OZ4B6zh3OberjCRaz/WNYe+TLfOXDbOt4DXuYTLEOkfsF9ioqAEativrqvT/klnDu0e/GBIJv81tuk9t3gDHzUq1qlZCsRP0sHfB+SBmOMW/Q0X48UYq2msa3G2jEMeYBY8wyhZjjfh0WaGjPVi6w5jQpvQdVA5T/b1A1o9g00HJEFXjGZtjaj5E4KPNz+7w2wwsSO4e2LvwFQSwMEFAAAAAgAMTKUXEKByKpUBAAA7xQAABgAAAB4bC93b3Jrc2hlZXRzL3NoZWV0MS54bWy1mNtu4zYQhl9FUIFiF2hXIilSh9gGGotC92LRIOm214pN28Lq4EpMvOjTl6QUyU01jFAgFzFF/vyH/IaKM+Hq0rTfupMQ0vlelXW3dk9SnhPP63YnUeXdp+YsaqUcmrbKpeq2R687tyLfG1NVetj3mVflRe1uVmbsrt2szvlRPAj59XzXOodC/t7cqYG1i1xvs/LGWfuiEnVXNLXTisPa/QUlGYr0FDPjj0JcuqtnR2/1sWm+6c7n/dr19YqiFDupQ+SqeRZbUZY6kut0fw1BpzW18fr5JXpm4NRWH/NObJvyz2IvT2s3cp29OORPpbxvLr+K4niSCoHqeLum7Mync+nnIt91dk+dbKrBrHZQFXXf5t8H9GtDBBjwYMBLDWQwkKWGYDAESw10MNDXBgoY2GBgJvd9skym01zmm1XbXJxWz1bR9IM5LuNWCS7qsqjFg2yVWiif3Pz4A0YUkRvdsiDQbRj6vmoJ80PdJ2o81uNx6GPVIhyE1LSUoKEf9/3Av3HMAGW9QP1ewME4oTf0Roriq0CE+mYjBDOMzQZiEpuWhpHeAEOmJRGO9XwcoEjHw5iG4c3KkyodGsrbqR+VhjEXZMwFMbnAcC5eQgaY6JZR4rNXoU2k2z4SgSP5KGZXWUUYR9FV+++VZlbg/QqB5dwIMSv4xEfjXl+nyZIWOqaFmqUovBQj4Xwa3nL+v3cB/YxmFtu+12J4ZrH0fRbDs2T8vRabI8uWnXb/xWB+D6l+0SwvEhtfJGZCMyB0YHuTemtorPrP3XTsoJKCCgeVrFciNXbYfM74/f1v9x8evn75cMsSzj7+5LofV95hs3pWnucZ1nBkDa2s1MYagqygkoIKB5UshFjDhIdvs0Yja2RlZTbWCGQFlRRUOKhkEcQaJTx6mzUeWWMra2hjjUFWUElBhYNKFkOsccLjt1mRPxUHvpU2stEO3jlcWEphicNSNkgzyMhPlHEB9FVFhKzQsRUawdCglMISh6VskOagkYJGC6DxBI2t0Mi3UmOYGpRSWOKwlA3SHDVW1HgB9VTwIWKnRlZqAlODUgpLHJayQZqjJoqaLKAOJurATo2t1AFMDUopLHFYygZpjjpQ1MEC6qmKRdRObYWmMDQopbDEYSkbpDloqqDpAuip4kL2kst+0nDNBUspLHFYyhBYdyFVeKEFlReaSi9kr72IFRouvmAphSUOSxkCCzCkKjC0oARDUw2G+gonXvzPq61+H3LRhzT1wH+q4Vtgf0OuQOuWJVubNYWtKUtSm5XDVs7AhA5nAVozlmTWs/Curlcq0R7NRVjn7JqnWva3C+Nof9l2S5KtuTF6NW4u4WbGOUkyM9+bwvf3fF/y9ljUnVOKg1rK/xSq7462vyzrO7I5m8udx0bKpjKPJ5HvRasnKP3QNPKl4413h09np2kLUctcX++t3TKv990uPwvXOavP9qH4W5hXzdwvjtdzQ3+8kNI7Hu84N/8AUEsDBBQAAAAIADEylFxAXGmp6gMAAKsQAAAYAAAAeGwvd29ya3NoZWV0cy9zaGVldDIueG1snZhtj+I2EMe/SpSTTndStcnYeXBYQNole+1JvXYF7fV1FgxEF+I08S6nfvrazhM94SHqC3Ds8Yz/vwkwGeZnUX9rjpxL5/upKJuFe5Symnlesz3yU9bciYqXyrIX9SmTalofvKaqebYzTqfCI74feacsL93l3Kw918t5lR34hss/q+fa2efyD/GsFhYuuN5y7g27dvmJl00uSqfm+4X7ALMUmN5idnzN+bm5uHa01BchvunJ593C9fWJvOBbqUNkanjjK14UOpLrNH93QccztePldR/9k4FTUl+yhq9E8Ve+k8eFy1xnx/fZayHX4vwLzw9HqRBCHW8risa8O+d2L/ius31tpDh1zkrBKS/bMfveoV84EJsD6RzIVAfaOdCpDkHnEJjMtCgmD2kms+W8Fmen1rtVNH1hkmm8FX5eFnnJN7JW1lz5yeX7dwRCoPd6jIJAj3Hs+2qkkR/rOVXriV5PYp+oEUgQh2YMKXTzpJ0H/r2jHRlpA7AobANSZkYWx/dfft1s1DWLQDuTgFDfjMDMSEK1Z+5JhaYFelv1UkgDFx24qOEidq4+ZHdEFFI/+iG0ifTYRqL2SD4k0UWGgBDGLsb/nnTlhLQ9IUDuAaXmBJ/6MGhVJ1BI2L33/h0LIjQt4ZCW0BwV2o+KaHw9Dbjnb+IObt3bK1FXN6OS/xE1xaPqkJAkOhQl0H66AzCfUkJoQLFMRkMmI3NGZDkjwFLZukL7pdM/rWM+7Ka0MxG1uF9+/vS0Xv++/vDw9Wn98PPTh8dotoo+/uS6H+fefjl/U45vV+THg/wYlR9i8mO7fLspjVH58WwV35bPBvkMlR9h8pldvt2UMlQ+m63YbfnJID9B5ceY/MQu325KE1R+Mlslt+WDP1YNHwVgGEDne5UAsaW9zcIA/ky5T6C4qH2AUiQoBSAUdlva22wUoChgAgUZKQhKAT6KQRAMuy3tbTYMojDIBIyxYAPFMQDFoAiG3Zb2NhsGVRh0AkYwYgQ4BkExAgTDbkt7mw0jUBjBBIzxOQFCHAOlCBEKuy3tbTaKUFGEEyjGGg14kcbvBVKlEVsKeJ0GVahhQqWGsVQDXqspSoEUa8SWAl6uQdVrmFCwYazY0FbQZPITOfZM1sF1RZnaHokeLRo7ftR9FVkRuxSh7mmk+l0sQ95FV3bi9cF0t42zFa+l1I3LxepFB627uh/WH9WPlGkPvTFM26R/yepDXjZOwfcqpH8Xqy9Y3Xa67USKyvR+L0KqTtJcHlX3z2u9Qdn3Qsh+4g2N/2vliDrnpcx0b75wK1HLOsul61RZxetN/g8399n8NzC01t18aFe14OH/ieW/UEsDBBQAAAAIADEylFwEXMBWXgMAAG8UAAANAAAAeGwvc3R5bGVzLnhtbN1Y0W7TMBT9lSgfsDTNiBrUVoKISkiAJm0PvLqN01py4uC4o91H8MwDfAISEq/7nr3uF/C10zTtfMfGYHQkqmLfk3vO9fW17HRYqzWnpwtKlbcqeFmP/IVS1fMgqGcLWpD6SFS01EguZEGU7sp5UFeSkqwGp4IH/V4vDgrCSn88LJfFpFC1NxPLUo38sDV59vE608b42PcsXSoyOvJ7Rz0/GA+Dxnk8zEW55Tj2rUEzkYJ654SP/JRwNpUMvHJSML625j4YZoIL6SkdPIUAtKW+sHBoezCuhqdgpZBG2yrs61xffru+/OFdX36/+vzp6stXeHXakO0wx3+CJLwnidPRPCCHjPPdHGrDeFgRpagsJ7pjfIzxBuQ17bN1pZM4l2Qd9p/5d3aoBWcZSM5TMxlyPh35k8mrHtxm+BgQdDgfqAZXmjrUtoBTzTx0AqdCZlS2Kez7G9N4yGmutLtk8wU8lahARSglCt3IGJmLkpj8bjy6np5ZciNfLfSS2dDsGzXnvskK7FtbiaahI59Rzk/hrff5zkpc5Z1V2IM1WLZNPeamaWlsB/i7bJa7S3v8W7xexc6FernUAypN/8NSKHoiac5Wpr/K2wAw9hBnJ1XF1y84m5cFtYO/s+B4SDZ+3kJIdqHVYI3NtIFK3zunUrFZxwIpWuV4mP2/moToaSThccM0C+phU9XvRhk+bjK9j5JUZ3Slmv3hrpn9lzE7w2w2+ttL4JADjQ4t0MMr1l/ns3/A+QyfSH0+jeoMD3bSg+bY0jkb7ZyMWqsHJ+6R/w6+TvhW2JsuGVesbHoLlmW0vHFA0vSKTPXX1A6/fj+jOVlyddaCI3/bfksztiyS9q0TSEbz1rb9BvY0+5lhPnC0FiszuqJZ2nT16bZzzO01lzlg7iH2COxGMB+LuRHAMB0sAszHemE6/9N4Buh4LIbFNnAiA9RngPpYLxeSmhvTcfsk+nKPNEmiKI6xjNpPsRsRpFje4hh+bjYsNvDAdEDpfrnGZxuvkNvrAJvT2yoEGyleidhI8VwD4s4beCSJe7YxHfDAZgGrHdB360BNuX2iCGYViw1bwTiSJBgCteiu0ThGshPD7Z4fbJVEUZK4EcDcEUQRhsBqxBEsAogBQ6LI7IN7+1Gw2aeC7V+M459QSwMEFAAAAAgAMTKUXJeKuxzAAAAAEwIAAAsAAABfcmVscy8ucmVsc52SuW7DMAxAf8XQnjAH0CGIM2XxFgT5AVaiD9gSBYpFnb+v2qVxkAsZeT08EtweaUDtOKS2i6kY/RBSaVrVuAFItiWPac6RQq7ULB41h9JARNtjQ7BaLD5ALhlmt71kFqdzpFeIXNedpT3bL09Bb4CvOkxxQmlISzMO8M3SfzL38ww1ReVKI5VbGnjT5f524EnRoSJYFppFydOiHaV/Hcf2kNPpr2MitHpb6PlxaFQKjtxjJYxxYrT+NYLJD+x+AFBLAwQUAAAACAAxMpRcgIYYIc8BAADNAwAADwAAAHhsL3dvcmtib29rLnhtbLVTT2sTQRT/KusQ6K2zG7RoyAaKobVQNZiSa5nsvu0+On+WmUlTe7LJsUdFaE+lIHrwUiqIKPhhlobmWzi762JKihTB08x7b/j94017rPT+UKl971BwaUKSWpu1KDVRCoKZVZWBdJNEacGsK/UeNZkGFpsUwApOm76/RgVDSTrtGqun6WKhLEQWlXTNojFAGJs/86L0DtDgEDna1yEp7xyIJ1CiwCOIQ+ITz6Rq/ExpPFLSMt6PtOI8JEE1GIC2GC21+4XIHTY0Zcey4SvmhIRkzXeACWpjyxclPnMaD8A9rqqRVRvILegus7Cp1ShDuVfAOBd0wUaZQ31WIbb0fWJUSYIRdFU0EiBtlaMGXgiUJsXMEE8yASHJJ5/yyUU+/ZxPf+STr/n0Yz69mh+f3Hy/mJ1O5u/fXn/7cn1+WTh2Erbiyr11shey1C10A70Vlwb+n9ibn+/mb45nl2ezqw/Pt/v9JW3Nv2hrluHWicaQoIT4hcO9Xf2m2j3kUqz2NEq7u+5WknhcFStQM/mks3LP7FYeNNYbQaux0Qget+kC1b/wBo737hhqmu4yDb3t1uFFPe0VRwnZfPgoeOJWdsT5U9d7KbcVi+ttrH9S5xdQSwMEFAAAAAgAMTKUXI33LFq0AAAAiQIAABoAAAB4bC9fcmVscy93b3JrYm9vay54bWwucmVsc8WSTQqDMBBGrxJygI7a0kVRV924LV4g6PiD0YTMlOrta3WhgS66ka7CNyHvezCJH6gVt2agprUkxl4PlMiG2d4AqGiwV3QyFof5pjKuVzxHV4NVRadqhCgIruD2DJnGe6bIJ4u/EE1VtQXeTfHsceAvYHgZ11GDyFLkytXIiYRRb2OC5QhPM1mKrEyky8pQwr+FIk8oOlCIeNJIm82avfrzgfU8v8WtfYnr0N/J5eMA3s9L31BLAwQUAAAACAAxMpRcbqckvB4BAABXBAAAEwAAAFtDb250ZW50X1R5cGVzXS54bWzFlM9OwzAMxl+lynVqMnbggNZdgCvswAuE1l2j5p9ib3Rvj9tuk0CjYioSl0aN7e/n+IuyfjtGwKxz1mMhGqL4oBSWDTiNMkTwHKlDcpr4N+1U1GWrd6BWy+W9KoMn8JRTryE26yeo9d5S9tzxNprgC5HAosgex8SeVQgdozWlJo6rg6++UfITQXLlkIONibjgBKGuEvrIz4BT3esBUjIVZFud6EU7zlKdVUhHCyinJa70GOralFCFcu+4RGJMoCtsAMhZOYoupsnEE4bxezebP8hMATlzm0JEdizB7bizJX11HlkIEpnpI16ILD37fNC7XUH1SzaP9yOkdvAD1bDMn/FXjy/6N/ax+sc+3kNo//qq96t02vgzXw3vyeYTUEsBAhQDFAAAAAgAMTKUXEbHTUiVAAAAzQAAABAAAAAAAAAAAAAAAIABAAAAAGRvY1Byb3BzL2FwcC54bWxQSwECFAMUAAAACAAxMpRcdMoAlPoAAAArAgAAEQAAAAAAAAAAAAAAgAHDAAAAZG9jUHJvcHMvY29yZS54bWxQSwECFAMUAAAACAAxMpRcmVycIxAGAACcJwAAEwAAAAAAAAAAAAAAgAHsAQAAeGwvdGhlbWUvdGhlbWUxLnhtbFBLAQIUAxQAAAAIADEylFxCgciqVAQAAO8UAAAYAAAAAAAAAAAAAACAAS0IAAB4bC93b3Jrc2hlZXRzL3NoZWV0MS54bWxQSwECFAMUAAAACAAxMpRcQFxpqeoDAACrEAAAGAAAAAAAAAAAAAAAgAG3DAAAeGwvd29ya3NoZWV0cy9zaGVldDIueG1sUEsBAhQDFAAAAAgAMTKUXARcwFZeAwAAbxQAAA0AAAAAAAAAAAAAAIAB1xAAAHhsL3N0eWxlcy54bWxQSwECFAMUAAAACAAxMpRcl4q7HMAAAAATAgAACwAAAAAAAAAAAAAAgAFgFAAAX3JlbHMvLnJlbHNQSwECFAMUAAAACAAxMpRcgIYYIc8BAADNAwAADwAAAAAAAAAAAAAAgAFJFQAAeGwvd29ya2Jvb2sueG1sUEsBAhQDFAAAAAgAMTKUXI33LFq0AAAAiQIAABoAAAAAAAAAAAAAAIABRRcAAHhsL19yZWxzL3dvcmtib29rLnhtbC5yZWxzUEsBAhQDFAAAAAgAMTKUXG6nJLweAQAAVwQAABMAAAAAAAAAAAAAAIABMRgAAFtDb250ZW50X1R5cGVzXS54bWxQSwUGAAAAAAoACgCEAgAAgBkAAAAA";
+// =====================================================================
+// 筒賀アプリ 年次 Excel レンダラ (Phase 4 - スタブ)
+//
+// 状態:
+//   - 筒賀用の年次テンプレート xlsx が _handover/ に未供給のため、本ファイルは
+//     スケルトン実装。EXCEL_YEAR_TEMPLATE_B64 は宣言のみ (undefined のまま)
+//     とし、index.html 側の既存 year-export 処理 ("typeof EXCEL_YEAR_TEMPLATE_B64
+//     === 'undefined'" ガード) でクリーンに「年報テンプレート未読込」エラーを出す。
+//   - 12 ヶ月分のデータ (Code.gs#getAllData を 12 回呼ぶか or 別エンドポイント)
+//     を集計するパターンは buildTutugaYearWorkbook に骨子のみ用意。
+//
+// 必要になり次第:
+//   1. 筒賀_年次テンプレート.xlsx を _handover/ に配置
+//   2. base64 エンコードして EXCEL_YEAR_TEMPLATE_B64 に代入
+//   3. _tutugaYearAggregate / 各 sheet writer を完成
+//
+// 公開 API:
+//   window.buildTutugaYearWorkbook(monthsData)
+//     monthsData: { [ym: 'YYYY-MM']: <getAllData の戻り値> }
+//     戻り値: Promise<ExcelJS.Workbook>
+//
+// 旧 yoshiwa の EXCEL_YEAR_TEMPLATE_B64 グローバル変数名を維持
+// (index.html#line 6830 が typeof チェックしているため、削除せず未代入とする)。
+// =====================================================================
+
+// ===== 年次テンプレート (未供給, 宣言のみ・undefined のまま) =====
+// var EXCEL_YEAR_TEMPLATE_B64 = '...';  // ← 筒賀_年次テンプレート.xlsx の base64 を入れる予定
+
+// =====================================================================
+// 集計ヘルパ (スケルトン)
+// =====================================================================
+
+// 月単位のデータから対象キーの値を抽出 (per-week or per-day → 配列)
+function _tutugaCollectMonthValues(monthData, sheet, key) {
+  // sheet: 'waterUsage' | 'waterMeasure' | 'equipment' | 'electrical' | 'mechanical'
+  // key:   集計対象のフィールドキー
+  var out = [];
+  if (!monthData || !monthData[sheet]) return out;
+  var src = monthData[sheet];
+  for (var w in src) {
+    var weekData = src[w];
+    if (!weekData) continue;
+    if (sheet === 'waterUsage' || sheet === 'equipment') {
+      // per-week: weekData[key] = { mon, tue, … } または値そのもの
+      var v = weekData[key];
+      if (v && typeof v === 'object') {
+        ['mon', 'tue', 'wed', 'thu', 'fri', 'nextMon'].forEach(function (d) {
+          if (v[d] !== null && v[d] !== undefined && v[d] !== '') out.push(v[d]);
+        });
+      } else if (v !== null && v !== undefined && v !== '') {
+        out.push(v);
+      }
+    } else {
+      // per-day: weekData[day][key]
+      for (var d in weekData) {
+        var dayData = weekData[d];
+        if (!dayData) continue;
+        var dv = dayData[key];
+        if (dv !== null && dv !== undefined && dv !== '') out.push(dv);
+      }
+    }
+  }
+  return out;
+}
+
+// 数値変換可能な値のみを Number 配列に
+function _tutugaToNumbers(values) {
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    var n = parseFloat(values[i]);
+    if (!isNaN(n) && isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
+function _tutugaSum(values) { var n = _tutugaToNumbers(values); return n.reduce(function (a, b) { return a + b; }, 0); }
+function _tutugaAvg(values) { var n = _tutugaToNumbers(values); return n.length ? _tutugaSum(n) / n.length : null; }
+function _tutugaMax(values) { var n = _tutugaToNumbers(values); return n.length ? Math.max.apply(null, n) : null; }
+function _tutugaMin(values) { var n = _tutugaToNumbers(values); return n.length ? Math.min.apply(null, n) : null; }
+
+
+// =====================================================================
+// 公開 API: buildTutugaYearWorkbook(monthsData) → Promise<ExcelJS.Workbook>
+//
+// monthsData: { 'YYYY-MM': <getAllData の戻り値> } の 12 ヶ月分
+// =====================================================================
+
+async function buildTutugaYearWorkbook(monthsData) {
+  if (typeof ExcelJS === 'undefined') {
+    throw new Error('ExcelJS が読み込まれていません');
+  }
+  if (typeof EXCEL_YEAR_TEMPLATE_B64 === 'undefined' || !EXCEL_YEAR_TEMPLATE_B64) {
+    throw new Error('筒賀 年次 Excel テンプレート (EXCEL_YEAR_TEMPLATE_B64) が未供給です。' +
+                    '_handover/ に 筒賀_年次テンプレート.xlsx を配置し、base64 化して year_template.js に代入してください。');
+  }
+
+  var bytes = Uint8Array.from(atob(EXCEL_YEAR_TEMPLATE_B64), function (c) { return c.charCodeAt(0); });
+  var wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(bytes.buffer);
+
+  // 12 ヶ月分の集計テーブル: { [key]: [ {month, sum, avg, max, min}, … ] } の形で
+  // 各シートの所定セルに書き出す予定。実装は年次テンプレートの仕様確定後。
+  //
+  // 実装パターン例:
+  //   var keys = ['powerAllDay', 'powerMeasure', /* … */];
+  //   var results = {};
+  //   keys.forEach(function (k) {
+  //     results[k] = Object.keys(monthsData).map(function (ym) {
+  //       var values = _tutugaCollectMonthValues(monthsData[ym], 'waterUsage', k);
+  //       return { ym: ym, sum: _tutugaSum(values), avg: _tutugaAvg(values),
+  //                max: _tutugaMax(values), min: _tutugaMin(values), count: values.length };
+  //     });
+  //   });
+  //   var ws = wb.worksheets[0];
+  //   results['powerAllDay'].forEach(function (r, i) { ws.getCell(<row>, <col + i>).value = r.sum; });
+
+  return wb;
+}
+
+// グローバル公開
+if (typeof window !== 'undefined') {
+  window.buildTutugaYearWorkbook = buildTutugaYearWorkbook;
+}
