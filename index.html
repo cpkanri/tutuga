@@ -4403,41 +4403,44 @@ async function exportExcel() {
   const out = await wb.xlsx.writeBuffer();
 
   // ===== ファイル修復メッセージ対策 =====
-  // ExcelJS は数式セルから <v> 値タグを削除して出力するため、Excel が
-  // 「ファイル修復済み」メッセージを出す。出力後の xlsx (=ZIP) を一旦解凍し、
-  // 各シートの数式セル直後に空の <v></v> を補完してから再 ZIP 化する。
-  // 同時に、ExcelJS が pageSetup の horizontalDpi/verticalDpi を無効値
-  // (uint32 最大値 4294967295) で出力してしまう問題も修正する
+  // ExcelJS は xlsx を出力する際に、テンプレにない以下の余計な要素・属性を追加するため
+  // Excel が「ファイル修復済み」メッセージを出す。出力後の xlsx を解凍して、
+  // 余計な要素を削除/正常化してから再 ZIP 化する。
+  // - 数式セルから <v> 値タグが削除されている → 空 <v></v> を補完
+  // - pageSetup の horizontalDpi/verticalDpi に無効値 (uint32 max=4294967295) が出力される
+  // - row 要素に x14ac:dyDescent や spans が大量に追加される
   let finalBuf = out;
   try {
     if (typeof JSZip !== "undefined") {
       const zip = await JSZip.loadAsync(out);
       const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
       let totalFix = 0;
-      let totalPS = 0;
       for (const sheetFile of sheetFiles) {
         let xml = await zip.file(sheetFile).async("string");
-        // パターン1: <f>...</f></c> や <f>...</f><something_other_than_v>
-        // 数式直後に <v> がない場合のみ <v></v> を補う
         let fixCount = 0;
+        // 1) 数式セルに <v></v> を補完（テンプレ準拠）
         xml = xml.replace(/(<f[^>]*>[^<]*<\/f>)(?!\s*<v[\s>])/g, function(_, f) {
           fixCount++;
           return f + '<v></v>';
         });
-        // パターン2: 自己終了タグ <f .../> の場合
         xml = xml.replace(/(<f[^>]*\/>)(?!\s*<v[\s>])/g, function(_, f) {
           fixCount++;
           return f + '<v></v>';
         });
-        // pageSetup の無効な dpi 値 (4294967295 = uint32 最大値) を含むため
-        // pageSetup を丸ごとシンプルなものに置換（テンプレと同じ形式）
-        const psBefore = xml;
+        // 2) pageSetup を シンプル形式に置換（dpi の uint32 max など余計な属性を除去）
         xml = xml.replace(/<pageSetup[^>]*\/?>/g, '<pageSetup orientation="landscape" paperSize="9"/>');
-        if (xml !== psBefore) totalPS++;
+        // 3) row 要素から x14ac:dyDescent 属性を削除（テンプレに無いものを ExcelJS が勝手に付加）
+        xml = xml.replace(/\s+x14ac:dyDescent="[^"]*"/g, '');
+        // 4) row 要素から spans 属性を削除（テンプレに無いものを ExcelJS が勝手に付加）
+        xml = xml.replace(/(<row[^>]*?)\s+spans="[^"]*"/g, '$1');
+        // 5) worksheet 開始タグから x14ac 関連の名前空間宣言を削除（mc:Ignorable, xmlns:x14ac, xmlns:mc）
+        xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:mc="[^"]*"/, '$1');
+        xml = xml.replace(/(<worksheet[^>]*?)\s+mc:Ignorable="[^"]*"/, '$1');
+        xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:x14ac="[^"]*"/, '$1');
         zip.file(sheetFile, xml);
         totalFix += fixCount;
       }
-      console.log("[修復メッセージ対策] <v>タグ補完:", totalFix, "セル, pageSetup置換:", totalPS, "シート");
+      console.log("[修復メッセージ対策] <v>タグ補完:", totalFix, "セル, 余計な属性削除完了");
       finalBuf = await zip.generateAsync({ type: "arraybuffer" });
     }
   } catch (e) {
