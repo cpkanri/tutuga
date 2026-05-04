@@ -3101,6 +3101,7 @@ function mergeServerData(serverData) {
     summary.merged = true;
   }
   // 上段使用量（per-week）— GAS getAllData の waterUsage
+  // サーバー側の null/空値はローカル値を上書きしない（前回保存バグの null 残骸対策）
   if (serverData.waterUsage && typeof serverData.waterUsage === "object") {
     Object.keys(serverData.waterUsage).forEach(w => {
       if (!weeklyData.waterUsage[w]) weeklyData.waterUsage[w] = emptyUsageWeek();
@@ -3108,7 +3109,14 @@ function mergeServerData(serverData) {
       if (wData && typeof wData === "object") {
         USAGE_KEYS.forEach(k => {
           if (wData[k] && typeof wData[k] === "object") {
-            weeklyData.waterUsage[w][k] = Object.assign(weeklyData.waterUsage[w][k] || {}, wData[k]);
+            if (!weeklyData.waterUsage[w][k]) weeklyData.waterUsage[w][k] = {};
+            USAGE_CELLS.forEach(c => {
+              const sv = wData[k][c];
+              // サーバー値が null/undefined/"" の場合はローカル値を保持
+              if (sv !== null && sv !== undefined && sv !== "") {
+                weeklyData.waterUsage[w][k][c] = sv;
+              }
+            });
           }
         });
         summary.water_usage_weeks++;
