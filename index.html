@@ -4304,7 +4304,8 @@ async function exportExcel() {
 
     // 4. GASにExcel生成を依頼（doGet で exportExcel）
     if (btn) btn.textContent = "Excel生成中(15秒程度)...";
-    const url = withToken(GAS_URL + "?action=exportExcel&month=" + encodeURIComponent(ym));
+    const TEMPLATE_SS_ID = '1lcdNltnqxjIYAK1dxZKLZ3D8ubNx6fjGYtsz-5ClqZg';
+    const url = withToken(GAS_URL + "?action=exportExcel&month=" + encodeURIComponent(ym) + "&templateId=" + encodeURIComponent(TEMPLATE_SS_ID));
     const res = await fetchWithTimeout(url, { method: "GET" }, 90000);
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
