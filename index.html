@@ -3261,7 +3261,10 @@ async function syncFromServer() {
       updateEquipWeekTabs();
       updateElecWeekTabs();
       updateMechWeekTabs();
-      if (currentSheet === "water") loadDataToForm();
+      if (currentSheet === "water") {
+        if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") loadUsageDataToForm();
+        else loadDataToForm();
+      }
       else if (currentSheet === "equip") loadEquipDataToForm();
       else if (currentSheet === "elec") loadElecDataToForm();
       else if (currentSheet === "mech") loadMechDataToForm();
@@ -4817,7 +4820,9 @@ async function continueInit() {
   // 初期表示
   updateWeekTabs();
   updateDayTabs();
-  loadDataToForm();
+  // 水質シートのデフォルトサブタブ (currentWaterSub) に応じて適切なフォーム読込
+  if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") loadUsageDataToForm();
+  else loadDataToForm();
 
   // b. バックグラウンドでGASからデータ取得（接続確認を兼ねる）
   syncFromServer().catch(() => {});
