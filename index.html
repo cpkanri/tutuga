@@ -4357,6 +4357,7 @@ async function exportExcel() {
   } catch (e) { console.error("fillWaterSheet:", e); }
 
   try { fillReportFinalData(wb, yyyy, mm); } catch (e) { console.error("fillReportFinalData:", e); }
+  try { const wsOp = wb.getWorksheet("運転管理月報"); if (wsOp) fillOperationMonthlySheet(wsOp, yyyy, mm); } catch (e) { console.error("fillOperationMonthlySheet:", e); }
   try { const wsEq = wb.getWorksheet("主要機器運転時間"); if (wsEq) fillEquipSheet(wsEq, yyyy, mm); } catch (e) { console.error("fillEquipSheet:", e); }
   try { const wsEl = wb.getWorksheet("日常電気設備"); if (wsEl) fillElecSheet(wsEl, yyyy, mm); } catch (e) { console.error("fillElecSheet:", e); }
   try { const wsMe = wb.getWorksheet("日常機械設備"); if (wsMe) fillMechSheet(wsMe, yyyy, mm); } catch (e) { console.error("fillMechSheet:", e); }
@@ -4373,6 +4374,14 @@ async function exportExcel() {
       cellA6.numFmt = 'd';
     }
   } catch (e) { console.error("Daily dates fill:", e); }
+
+  // 全ての数式セルを Excel が開いた時に再計算させる設定
+  // sheet2.xml (運転管理月報) の数式チェーンが ExcelJS の出力XMLで <v> 値タグなしの状態になり
+  // Excel が開く際に修復メッセージを出すケースがあるため、calcProperties を明示する
+  try {
+    if (!wb.calcProperties) wb.calcProperties = {};
+    wb.calcProperties.fullCalcOnLoad = true;
+  } catch(e) { console.warn("calcProperties設定失敗:", e); }
 
   const out = await wb.xlsx.writeBuffer();
   const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -4552,21 +4561,17 @@ function fillReportFinalData(wb, yyyy, mm) {
 
 function fillEquipSheet(ws, yyyy, mm) {
   // 主要機器運転時間: 22機器 × 5日（GAS [4] 相当）
-  console.log("[fillEquipSheet] 開始:", { yyyy, mm, startDate: weeklyData.startDate });
   for (let w = 1; w <= 5; w++) {
     const dateRow = T_EQUIP_WEEK_DATE_ROW[w];
     const monDay = getActualDate(w, "mon");
-    console.log(`[fillEquipSheet] W${w} dateRow=${dateRow} monDay=`, monDay);
     if (dateRow && monDay) {
       // A5:C5 などは結合セル。ExcelJS では結合範囲の左上セルに書く必要がある
       // 一旦 unmerge してから書き込み、再 merge することで確実に値を反映させる
       const mergeRange = `A${dateRow}:C${dateRow}`;
-      try { ws.unMergeCells(mergeRange); console.log(`[fillEquipSheet] unmerge OK: ${mergeRange}`); } catch(e) { console.log(`[fillEquipSheet] unmerge失敗: ${mergeRange}`, e.message); }
+      try { ws.unMergeCells(mergeRange); } catch(e) {}
       const cell = ws.getCell(dateRow, T_EQUIP_WEEK_DATE_COL);
-      const excelDate = toExcelDate(monDay);
-      cell.value = excelDate;
+      cell.value = toExcelDate(monDay);
       cell.numFmt = '[$-411]ggge"年"m"月"d"日";@';
-      console.log(`[fillEquipSheet] W${w} A${dateRow} 書込み:`, excelDate, "→ 確認:", cell.value);
       try { ws.mergeCells(mergeRange); } catch(e) {}
     }
     const eqWk = weeklyData.equipment && weeklyData.equipment[w];
@@ -4580,6 +4585,50 @@ function fillEquipSheet(ws, yyyy, mm) {
       for (const day of T_DAYS) {
         const v = ed[day];
         if (v != null && v !== "") setCell(ws, trgRow, T_EQUIP_HOUR_DAY_COL[day], v);
+      }
+    }
+  }
+}
+
+// ===== 運転管理月報シート: 日常水質の上段使用量を日付別に転記 =====
+// テンプレ構造: A6=月初日付, A7=A6+1...連鎖。日付X日の行 = 5 + X
+// 列マッピング: powerAllDay→C(3), powerMeasure→D(4), powerReactive→E(5),
+//              water→F(6), returnSludge1→J(10), returnSludge2→L(12), discharge→N(14)
+function fillOperationMonthlySheet(ws, yyyy, mm) {
+  if (!ws) return;
+  const COL_MAP = {
+    powerAllDay: 3,
+    powerMeasure: 4,
+    powerReactive: 5,
+    water: 6,
+    returnSludge1: 10,
+    returnSludge2: 12,
+    discharge: 14
+  };
+  // 月初+α (5+1〜5+31) の対象月の日のみ書き込み
+  const seen = new Set();
+  for (let w = 1; w <= 5; w++) {
+    const usageWk = weeklyData.waterUsage && weeklyData.waterUsage[w];
+    if (!usageWk) continue;
+    // 月〜金 + 翌月の月曜の各日付
+    for (const cellKey of T_USAGE_CELLS) {
+      const actualDate = getActualDate(w, cellKey);
+      if (!actualDate) continue;
+      // 対象月外はスキップ
+      if (actualDate.getFullYear() !== yyyy || (actualDate.getMonth() + 1) !== mm) continue;
+      const dayOfMonth = actualDate.getDate();
+      const row = 5 + dayOfMonth;
+      // 重複防止（W1のnextMon と W2のmonは同じ日付）
+      const key = row + ":" + cellKey;
+      if (seen.has(row)) continue;
+      seen.add(row);
+      for (const usageKey in COL_MAP) {
+        const item = usageWk[usageKey];
+        if (!item) continue;
+        const v = item[cellKey];
+        if (v != null && v !== "") {
+          setCell(ws, row, COL_MAP[usageKey], v);
+        }
       }
     }
   }
