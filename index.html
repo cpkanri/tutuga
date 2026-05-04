@@ -4405,13 +4405,16 @@ async function exportExcel() {
   // ===== ファイル修復メッセージ対策 =====
   // ExcelJS は数式セルから <v> 値タグを削除して出力するため、Excel が
   // 「ファイル修復済み」メッセージを出す。出力後の xlsx (=ZIP) を一旦解凍し、
-  // 各シートの数式セル直後に空の <v></v> を補完してから再 ZIP 化する
+  // 各シートの数式セル直後に空の <v></v> を補完してから再 ZIP 化する。
+  // 同時に、ExcelJS が pageSetup の horizontalDpi/verticalDpi を無効値
+  // (uint32 最大値 4294967295) で出力してしまう問題も修正する
   let finalBuf = out;
   try {
     if (typeof JSZip !== "undefined") {
       const zip = await JSZip.loadAsync(out);
       const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
       let totalFix = 0;
+      let totalPS = 0;
       for (const sheetFile of sheetFiles) {
         let xml = await zip.file(sheetFile).async("string");
         // パターン1: <f>...</f></c> や <f>...</f><something_other_than_v>
@@ -4426,12 +4429,15 @@ async function exportExcel() {
           fixCount++;
           return f + '<v></v>';
         });
-        if (fixCount > 0) {
-          zip.file(sheetFile, xml);
-          totalFix += fixCount;
-        }
+        // pageSetup の無効な dpi 値 (4294967295 = uint32 最大値) を含むため
+        // pageSetup を丸ごとシンプルなものに置換（テンプレと同じ形式）
+        const psBefore = xml;
+        xml = xml.replace(/<pageSetup[^>]*\/?>/g, '<pageSetup orientation="landscape" paperSize="9"/>');
+        if (xml !== psBefore) totalPS++;
+        zip.file(sheetFile, xml);
+        totalFix += fixCount;
       }
-      console.log("[修復メッセージ対策] <v>タグ補完:", totalFix, "セル");
+      console.log("[修復メッセージ対策] <v>タグ補完:", totalFix, "セル, pageSetup置換:", totalPS, "シート");
       finalBuf = await zip.generateAsync({ type: "arraybuffer" });
     }
   } catch (e) {
