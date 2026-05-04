@@ -3,10 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <link rel="manifest" href="./manifest.json">
-<link rel="icon" type="image/x-icon" href="./icons/favicon.ico">
-<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png">
-<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./icon-192.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="format-detection" content="telephone=no">
 <title>筒賀水質管理センター 週報入力</title>
@@ -3799,7 +3796,7 @@ function bindEvents() {
     btnSync.disabled = false;
   });
 
-  // Excel出力ボタン（GAS側で生成 → ダウンロード）
+  // Excel出力ボタン（クライアント側 ExcelJS で高速生成）
   document.getElementById("btnExcelHeader").addEventListener("click", async () => {
     const btnExcel = document.getElementById("btnExcelHeader");
     if (!weeklyData.targetMonth) {
@@ -3809,23 +3806,7 @@ function bindEvents() {
     btnExcel.textContent = "生成中...";
     btnExcel.disabled = true;
     try {
-      // 現在編集中のタブを先に保存
-      if (currentSheet === "water") saveFormToData();
-      else if (currentSheet === "equip") saveEquipFormToData();
-      else if (currentSheet === "elec") saveElecFormToData();
-      else if (currentSheet === "mech") saveMechFormToData();
-      // 念のためサーバ同期（ローカル変更をサーバに反映）
-      try { await saveCurrentToServer(); } catch (e) { /* オフライン時は既存データで生成 */ }
-      // GAS の exportExcel エンドポイントを呼ぶ
-      const url = withToken(GAS_URL + '?action=exportExcel&month=' + encodeURIComponent(weeklyData.targetMonth));
-      const res = await fetchWithTimeout(url, { method: 'GET' }, 60000);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      if (!data.downloadUrl) throw new Error("ダウンロードURLが返されませんでした");
-      // 別タブで開いてブラウザのダウンロードを発火
-      window.open(data.downloadUrl, '_blank');
-      showToast("Excel生成完了：ダウンロード開始");
+      await exportExcel();
     } catch (e) {
       console.error(e);
       showToast("Excel生成に失敗しました: " + e.message, "error");
@@ -3835,6 +3816,347 @@ function bindEvents() {
     }
   });
 }
+
+
+// ===========================================================================
+// 筒賀マッピング定数（Phase A: GAS → JS 移植）
+// ===========================================================================
+// =============================================================================
+// 筒賀マッピング定数（GAS から JS に移植）— Phase A
+// =============================================================================
+
+// 基本定数
+const T_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri'];
+const T_DAY_NAMES = { mon:'月', tue:'火', wed:'水', thu:'木', fri:'金' };
+const T_DAY_REVERSE = { '月':'mon', '火':'tue', '水':'wed', '木':'thu', '金':'fri' };
+const T_DAY_OFFSETS = { mon:0, tue:1, wed:2, thu:3, fri:4 };
+
+// シートインデックス（テンプレ順）
+const T_SHEET_IDX = {
+  daily_water: 0,
+  operation_monthly: 1,
+  water_report: 2,
+  daily_mech: 3,
+  daily_elec: 4,
+  equipment_hours: 5
+};
+
+// ===== 日常水質 =====
+const T_WATER_BLOCK_ROW = { 1: 1, 2: 53, 3: 105, 4: 157, 5: 209 };
+const T_WATER_INSPECTOR_ROW_OFFSET = 14;  // r15
+const T_WATER_BIKOU_ROW_OFFSET = 43;       // r44
+const T_USAGE_ROW_OFFSET = {
+  powerAllDay: 3, powerMeasure: 4, powerReactive: 5, demand: 6,
+  water: 7, diesel: 8,
+  returnSludge1: 9, returnSludge2: 10, discharge: 11
+};
+const T_USAGE_DAY_COL = { mon: 9, tue: 10, wed: 11, thu: 12, fri: 13, nextMon: 14 };
+const T_USAGE_CELLS = ['mon','tue','wed','thu','fri','nextMon'];
+const T_MEASURE_ROW_OFFSET = {
+  tempIn: 15, tempD1: 16, tempD2: 17, tempOut: 18,
+  appearIn: 19, appearD1: 20, appearD2: 21, appearOut: 22,
+  transIn: 23, transOut: 24,
+  odorIn: 25, odorD1: 26, odorD2: 27, odorOut: 28,
+  phIn: 29, phD1: 30, phD2: 31, phOut: 32,
+  sv1_30: 33, sv1_24h: 34, sv2_30: 35, sv2_24h: 36,
+  mlss1: 37, mlss2: 38,
+  sludge1: 39, sludge2: 40,
+  chlorine: 41, chlorineDose: 42
+};
+const T_MEASURE_DAY_COL = { mon: 10, tue: 11, wed: 12, thu: 13, fri: 14 };
+
+// ===== 水質管理報告 =====
+const T_REPORT_FRONT_COL = {
+  tempIn: 3, tempD1: 4, tempD2: 5,
+  tempFinal1: 6, tempFinal2: 7, tempOut: 8,
+  transIn: 15, transFinal1: 16, transFinal2: 17, transOut: 18
+};
+const T_REPORT_BACK_COL = {
+  doNo1: 9, doNo2: 10,
+  phIn: 11, phD1: 12, phD2: 13,
+  phFinal1: 14, phFinal2: 15, phOut: 16,
+  chlorine: 17,
+  sv1_30: 18, sv2_30: 19
+};
+function tReportRowFront(date) { return 7 + date.getDate(); }
+function tReportRowBack(date)  { return 48 + date.getDate(); }
+
+// ===== 主要機器運転時間 =====
+const T_EQUIP_NAMES = [
+  'mainPump1Hr','mainPump2Hr',
+  'aeration1Hr','aeration2Hr','aeration3Hr','aeration4Hr',
+  'finalScraper1Hr','finalScraper2Hr',
+  'returnPump1Hr','returnPump2Hr','returnPump3Hr','returnPump4Hr',
+  'excessPump1Hr','excessPump2Hr',
+  'finalDrainPumpHr',
+  'thickPump1Hr','thickPump2Hr',
+  'returnWaterPump1Hr','returnWaterPump2Hr',
+  'sludgeRoomDrainPumpHr',
+  'deodorFanHr','generatorHr'
+];
+const T_EQUIP_WEEK_START = { 1: 8, 2: 46, 3: 84, 4: 122, 5: 160 };
+const T_EQUIP_WEEK_DATE_ROW = { 1: 5, 2: 43, 3: 81, 4: 119, 5: 157 };
+const T_EQUIP_WEEK_DATE_COL = 1;  // A列
+const T_EQUIP_HOUR_DAY_COL = { mon: 4, tue: 5, wed: 6, thu: 7, fri: 8 };
+
+// ===== 日常電気設備 =====
+const T_ELEC_DAY_COL = { mon: 7, tue: 8, wed: 9, thu: 10, fri: 11 };
+const T_WEEK_OFFSETS_ELEC = {
+  sub1: [0, 103, 203, 303, 403],
+  sub2: [0, 101, 201, 301, 401],
+  sub3: [0, 100, 200, 300, 400]
+};
+const T_ELEC1_ROW_W1 = {
+  "引込・受電__電圧__KV": 3,
+  "引込・受電__電圧__モード": 4,
+  "引込・受電__力率__ψ": 5,
+  "引込・受電__電流__A": 6,
+  "引込・受電__電流__モード": 7,
+  "引込・受電__普通電力量(×10kw)__読み": 8,
+  "引込・受電__普通電力量(×10kw)__使用量": 9,
+  "引込・受電__引込・受電設定__手動/自動": 10,
+  "引込・受電__引込・受電設定__切/入": 11,
+  "変圧器__主変圧器温度__℃": 12,
+  "変圧器__異音、脱臭の有無__有・無": 13,
+  "低圧分岐__動力(210V)電圧__V": 14,
+  "低圧分岐__動力(210V)電圧__モード": 15,
+  "低圧分岐__動力(210V)電流__A": 16,
+  "低圧分岐__動力(210V)電流__モード": 17,
+  "低圧分岐__照明(210-105V)電流__A": 18,
+  "低圧分岐__照明(210-105V)電流__モード": 19,
+  "低圧分岐__低圧分岐設備__買電/自家発": 20,
+  "低圧分岐__沈砂池ポンプ設備__読み": 21,
+  "低圧分岐__沈砂池ポンプ設備__使用量": 22,
+  "低圧分岐__水処理設備(1)__読み": 23,
+  "低圧分岐__水処理設備(1)__使用量": 24,
+  "低圧分岐__水処理設備(2)__読み": 25,
+  "低圧分岐__水処理設備(2)__使用量": 26,
+  "低圧分岐__汚泥処理設備電力量__読み": 27,
+  "低圧分岐__汚泥処理設備電力量__使用量": 28,
+  "低圧分岐__No.1コンデンサー__切/入": 29,
+  "低圧分岐__No.2コンデンサー__切/入": 30,
+  "低圧分岐__No.3コンデンサー__切/入": 31
+};
+const T_ELEC2_ROW_W1 = {
+  "Nｏ．１オキシデーションディッチＤＯ計__外観の確認": 40,
+  "Nｏ．１オキシデーションディッチＤＯ計__指示状況の確認": 41,
+  "Nｏ．１オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ": 42,
+  "Nｏ．２オキシデーションディッチＤＯ計__外観の確認": 43,
+  "Nｏ．２オキシデーションディッチＤＯ計__指示状況の確認": 44,
+  "Nｏ．２オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ": 45,
+  "Nｏ．１返送汚泥流量計__外観の確認": 46,
+  "Nｏ．１返送汚泥流量計__指示状況の確認": 47,
+  "Nｏ．１返送汚泥流量計__流量計の読み__㎥/ｈ": 48,
+  "Nｏ．１返送汚泥流量計__流量計積算計読み__㎥": 49,
+  "Nｏ．２返送汚泥流量計__外観の確認": 50,
+  "Nｏ．２返送汚泥流量計__指示状況の確認": 51,
+  "Nｏ．２返送汚泥流量計__流量計の読み__㎥/ｈ": 52,
+  "Nｏ．２返送汚泥流量計__流量計積算計読み__㎥": 53,
+  "余剰汚泥流量計__外観の確認": 54,
+  "余剰汚泥流量計__指示状況の確認": 55,
+  "余剰汚泥流量計__No.１余剰汚泥ポンプ流量計読み__㎥/ｈ": 56,
+  "余剰汚泥流量計__No.２余剰汚泥ポンプ流量計読み__㎥/ｈ": 57,
+  "放流流量計__外観の確認": 58,
+  "放流流量計__指示状況の確認": 59,
+  "放流流量計__流量計の読み__㎥/ｈ": 60,
+  "放流流量計__流量計積算の読み__㎥": 61,
+  "汚濁負荷量計__外観の確認": 62,
+  "汚濁負荷量計__指示状況の確認": 63,
+  "（放流水ＵＶ）__ＵＶ値__Abs": 64,
+  "（放流水ＵＶ）__ＣＯＤ値__㎎/ℓ": 65
+};
+const T_ELEC3_ROW_W1 = {
+  "全窒素・全燐計__外観の確認": 72,
+  "全窒素・全燐計__指示状況の確認": 73,
+  "全窒素・全燐計__計器読み（全窒素）__㎎/ℓ": 74,
+  "全窒素・全燐計__計器読み（全りん）__㎎/ℓ": 75,
+  "圧力式液位計__外観の確認": 76,
+  "圧力式液位計__指示状況の確認": 77,
+  "圧力式液位計__機器指示地の記録__ｍ": 78,
+  "発電機盤__外観の確認": 79,
+  "エンジン__外観の確認": 80,
+  "燃料タンク__外観の確認": 81,
+  "燃料タンク__残量の値__ℓ": 82,
+  "通報装置__通報状態の確認": 83
+};
+
+// ===== 自動転記キー =====
+const T_ELEC_DO_KEY_NO1 = "Nｏ．１オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ";
+const T_ELEC_DO_KEY_NO2 = "Nｏ．２オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ";
+const T_ELEC_RETURN_SLUDGE_KEY_NO1 = "Nｏ．１返送汚泥流量計__流量計積算計読み__㎥";
+const T_ELEC_RETURN_SLUDGE_KEY_NO2 = "Nｏ．２返送汚泥流量計__流量計積算計読み__㎥";
+const T_ELEC_DISCHARGE_KEY = "放流流量計__流量計積算の読み__㎥";
+const T_ELEC_FUEL_TANK_KEY = "燃料タンク__残量の値__ℓ";
+
+// ===== 日常機械設備 =====
+const T_MECH_DAY_COL = { mon: 5, tue: 6, wed: 7, thu: 8, fri: 9 };
+const T_WEEK_OFFSETS_MECH = [0, 177, 354, 531, 707];
+
+const T_MECH1_ROW_W1 = {
+  "ポンプ井__common1__内部状況確認": 4,
+  "汚水ポンプ__1__電流値": 5,
+  "汚水ポンプ__1__吐出圧力": 6,
+  "汚水ポンプ__1__異音、振動": 7,
+  "汚水ポンプ__2__電流値": 8,
+  "汚水ポンプ__2__吐出圧力": 9,
+  "汚水ポンプ__2__異音、振動": 10,
+  "汚水ポンプ__common1__モード確認": 11,
+  "汚水ポンプ__common1__機種選択": 12,
+  "自動除塵機__油圧圧力": 13,
+  "自動除塵機__異音、振動": 14,
+  "自動除塵機__し渣量の確認": 15,
+  "自動除塵機__運転動作": 16,
+  "エアレーション装置__No1__電流値": 17,
+  "エアレーション装置__No1__異音、振動": 18,
+  "エアレーション装置__No1__モード確認": 19,
+  "エアレーション装置__No2__電流値": 20,
+  "エアレーション装置__No2__異音、振動": 21,
+  "エアレーション装置__No2__モード確認": 22,
+  "エアレーション装置__No3__電流値": 23,
+  "エアレーション装置__No3__異音、振動": 24,
+  "エアレーション装置__No3__モード確認": 25,
+  "エアレーション装置__No4__電流値": 26,
+  "エアレーション装置__No4__異音、振動": 27,
+  "エアレーション装置__No4__モード確認": 28,
+  "消泡装置__common1__消泡ノズル": 29,
+  "消泡装置__common1__消泡状態": 30,
+  "流出可動堰__1__開度": 31,
+  "流出可動堰__2__開度": 32,
+  "流出ゲート__1__開度": 33,
+  "流出ゲート__2__開度": 34,
+  "連絡ゲート__common1__開度": 35,
+  "終沈汚泥掻寄機__1__電流値": 36,
+  "終沈汚泥掻寄機__1__異音、振動等": 37,
+  "終沈汚泥掻寄機__2__電流値": 38,
+  "終沈汚泥掻寄機__2__異音、振動等": 39,
+  "スカムスキマー__1__動作状況": 40,
+  "スカムスキマー__1__スカムの状況": 41,
+  "スカムスキマー__2__動作状況": 42,
+  "スカムスキマー__2__スカムの状況": 43,
+  "返送汚泥ポンプ__No1__電流値": 44,
+  "返送汚泥ポンプ__No1__吐出圧力": 45,
+  "返送汚泥ポンプ__No1__異音、振動": 46,
+  "返送汚泥ポンプ__No2__電流値": 47,
+  "返送汚泥ポンプ__No2__吐出圧力": 48,
+  "返送汚泥ポンプ__No2__異音、振動": 49,
+  "返送汚泥ポンプ__common1__モード確認": 50,
+  "返送汚泥ポンプ__common1__常用機選択": 51,
+  "返送汚泥ポンプ__No3__電流値": 52,
+  "返送汚泥ポンプ__No3__吐出圧力": 53,
+  "返送汚泥ポンプ__No3__異音、振動": 54,
+  "返送汚泥ポンプ__No4__電流値": 55,
+  "返送汚泥ポンプ__No4__吐出圧力": 56,
+  "返送汚泥ポンプ__No4__異音、振動": 57,
+  "返送汚泥ポンプ__common2__モード確認": 58,
+  "返送汚泥ポンプ__common2__常用機選択": 59
+};
+
+const T_MECH2_ROW_W1 = {
+  "余剰汚泥ポンプ__1__電流値": 64,
+  "余剰汚泥ポンプ__1__吐出圧力": 65,
+  "余剰汚泥ポンプ__1__異音、振動": 66,
+  "余剰汚泥ポンプ__1__液漏れ": 67,
+  "余剰汚泥ポンプ__1__モード確認": 68,
+  "余剰汚泥ポンプ__2__電流値": 69,
+  "余剰汚泥ポンプ__2__吐出圧力": 70,
+  "余剰汚泥ポンプ__2__異音、振動": 71,
+  "余剰汚泥ポンプ__2__液漏れ": 72,
+  "余剰汚泥ポンプ__2__モード確認": 73,
+  "終沈床排水ポンプ__common1__電流値": 74,
+  "終沈床排水ポンプ__common1__吐出圧力": 75,
+  "終沈床排水ポンプ__common1__異音、振動": 76,
+  "終沈床排水ポンプ__common1__モード確認": 77,
+  "返流水ポンプ__No1__吐出圧力": 78,
+  "返流水ポンプ__No1__異音、振動": 79,
+  "返流水ポンプ__No2__吐出圧力": 80,
+  "返流水ポンプ__No2__異音、振動": 81,
+  "返流水ポンプ__common1__モード確認": 82,
+  "返流水ポンプ__common1__機種選択": 83,
+  "濃縮汚泥引抜ポンプ__1__電流値": 84,
+  "濃縮汚泥引抜ポンプ__1__吐出圧力": 85,
+  "濃縮汚泥引抜ポンプ__1__異音、振動": 86,
+  "濃縮汚泥引抜ポンプ__2__電流値": 87,
+  "濃縮汚泥引抜ポンプ__2__吐出圧力": 88,
+  "濃縮汚泥引抜ポンプ__2__異音、振動": 89,
+  "濃縮汚泥引抜ポンプ__common1__モード確認": 90,
+  "濃縮汚泥引抜ポンプ__common1__機種選択": 91,
+  "濃縮汚泥引抜弁__common1__電流値": 92,
+  "濃縮汚泥引抜弁__common1__異音、振動": 93,
+  "濃縮汚泥引抜弁__common1__動作状況": 94,
+  "濃縮汚泥引抜弁__common1__モード確認": 95,
+  "汚泥ポンプ室床排水ポンプ__common1__電流値": 96,
+  "汚泥ポンプ室床排水ポンプ__common1__吐出圧力": 97,
+  "汚泥ポンプ室床排水ポンプ__common1__異音、振動": 98,
+  "汚泥ポンプ室床排水ポンプ__common1__モード確認": 99,
+  "濃縮汚泥掻寄機__電流値": 100,
+  "濃縮汚泥掻寄機__異音、振動": 101,
+  "スカムスキマー__動作状況": 102,
+  "汚泥供給ポンプ__1__吐出圧力": 103,
+  "汚泥供給ポンプ__1__異音、振動": 104,
+  "汚泥供給ポンプ__1__液漏れ": 105,
+  "汚泥供給ポンプ__2__吐出圧力": 106,
+  "汚泥供給ポンプ__2__異音、振動": 107,
+  "汚泥供給ポンプ__2__液漏れ": 108,
+  "汚泥貯留槽攪拌機__common1__電流値": 109,
+  "汚泥貯留槽攪拌機__common1__異音、振動": 110,
+  "汚泥貯留槽攪拌機__common1__モード確認": 111,
+  "空気圧縮機__common1__異音、振動等": 112,
+  "空気圧縮機__common1__安全弁等の動作確認": 113
+};
+
+const T_MECH3_ROW_W1 = {
+  "井水揚水ポンプ__common1__異音、振動等": 120,
+  "自動給水装置__1__電流値": 121,
+  "自動給水装置__1__異音、振動等": 122,
+  "自動給水装置__2__電流値": 123,
+  "自動給水装置__2__異音、振動等": 124,
+  "自動給水装置__common1__モード確認": 125,
+  "井水貯留槽__common1__水漏れ": 126,
+  "混和池ＢＧ__common1__開閉": 127,
+  "塩素接触装置__common1__薬剤残量確認": 128,
+  "臭気ガス吸引装置__common1__ボルト・ナットの緩み": 129,
+  "臭気ガス吸引装置__common1__モード確認": 130,
+  "吸着脱装置__common1__マノメータ等の作動確認": 131,
+  "吸着脱装置__common1__ボルト・ナットの緩み": 132,
+  "電気室給気ファン__common1__電流値": 133,
+  "電気室給気ファン__common1__異音、振動等": 134,
+  "電気室給気ファン__common1__モード確認": 135,
+  "電気室排気ファン__common1__電流値": 136,
+  "電気室排気ファン__common1__異音、振動等": 137,
+  "電気室排気ファン__common1__モード確認": 138,
+  "自家発室給気ファン__common1__異音、振動": 139,
+  "自家発室給気ファン__common1__モード確認": 140,
+  "汚泥ポンプ室排気ファン__common1__電流値": 141,
+  "汚泥ポンプ室排気ファン__common1__異音、振動": 142,
+  "汚泥ポンプ室排気ファン__common1__モード確認": 143,
+  "汚泥ポンプ室吸気ファン__common1__電流値": 144,
+  "汚泥ポンプ室吸気ファン__common1__異音、振動": 145,
+  "汚泥ポンプ室吸気ファン__common1__モード確認": 146,
+  "脱水作業室排気ファン__common1__電流値": 147,
+  "脱水作業室排気ファン__common1__異音、振動": 148,
+  "脱水作業室排気ファン__common1__モード確認": 149,
+  "脱水作業室吸気ファン__common1__電流値": 150,
+  "脱水作業室吸気ファン__common1__異音、振動": 151,
+  "脱水作業室吸気ファン__common1__モード確認": 152,
+  "脱臭機械室排気ファン__common1__電流値": 153,
+  "脱臭機械室排気ファン__common1__異音、振動": 154,
+  "脱臭機械室排気ファン__common1__モード確認": 155,
+  "脱臭機械室吸気ファン__common1__電流値": 156,
+  "脱臭機械室吸気ファン__common1__異音、振動": 157,
+  "脱臭機械室吸気ファン__common1__モード確認": 158,
+  "終沈ポンプ室排気ファン__common1__電流値": 159,
+  "終沈ポンプ室排気ファン__common1__異音、振動": 160,
+  "終沈ポンプ室排気ファン__common1__モード確認": 161,
+  "終沈ポンプ室吸気ファン__common1__電流値": 162,
+  "終沈ポンプ室吸気ファン__common1__異音、振動": 163,
+  "終沈ポンプ室吸気ファン__common1__モード確認": 164,
+  "自動巻取型エアフィルター__common1__巻取完了表示点灯確認": 165,
+  "自動巻取型エアフィルター__common1__差圧": 166,
+  "自動巻取型エアフィルター__common1__モード確認": 167,
+  "自動巻取型エアフィルター__common1__設定": 168
+};
+
+
 
 // ===== Excel 出力（クライアントサイド ExcelJS + template.js） =====
 
@@ -4151,116 +4473,57 @@ function getPrevMonthLastDayData(targetMonth, firstMonday, holidaySet) {
 }
 
 function fillWaterSheet(ws, yyyy, mm, holidaySet) {
-  holidaySet = holidaySet || new Set();
-  const WEEK_OFFSETS = { 1: 0, 2: 52, 3: 104, 4: 156, 5: 208 };
-  // 月 I=9, 火 J=10, 水 K=11, 木 L=12, 金 M=13
-  const DAY_COL = { mon: 9, tue: 10, wed: 11, thu: 12, fri: 13 };
-  const NEXT_WEEK_COL = 14; // N列 = 次週の最初の平日
-  // 筒賀テンプレ: 積算テーブル R4-R12（無効電力量 R6 / デマンド R7 が上殿より +2 行追加）
-  // 測定テーブル R16-R36（測定者 R15 / 見出し R13-R14 / 備考 R38）
-  // 上殿のオフセットから一律 +2 ずれている。R6/R7/R37 はキー未定義のため空欄のまま。
-  const ITEM_OFFSETS = {
-    power200v: 0, power100v: 1,           // R4 全日電力量, R5 力測電力量
-    water: 4, diesel: 5,                   // R8 水道使用量, R9 軽油残量
-    returnSludge: 6, excessSludge: 7, discharge: 8,  // R10/R11/R12 各種流量
-    tempIn: 12, tempDitch: 13, tempOut: 14,           // R16/R17/R18 水温
-    transIn: 18, transOut: 19,             // R22/R23 透視度
-    phIn: 23, phDitch: 24, phOut: 25,      // R27/R28/R29 PH
-    sv10: 26, sv20: 27, sv30: 28, sv24h: 29,          // R30-R33 SV
-    mlss: 30, sludgeLevel: 31, chlorine: 32           // R34/R35/R36 MLSS/汚泥界面/残留塩素
-  };
-  // 筒賀: 第1週データRow=4, dateRow=3, inspectorRow=15（各週+46オフセット）
-  const DATA_ROW_BASE = 4;
-  const DATE_ROW_BASE = 3;
-  const INSP_ROW_BASE = 15;
-
-  // ===== 第1週I列: 前月最終点検日のデータを書き込む =====
-  // （第2週以降のI列はテンプレート数式 =N49 等で自動参照される）
-  const firstMondayDate = getActualDate(1, "mon");
-  if (firstMondayDate) {
-    const prevLast = getPrevMonthLastDayData(weeklyData.targetMonth, firstMondayDate, holidaySet);
-    const RUISAN_KEYS_I = ["power200v", "power100v", "water", "diesel", "returnSludge", "excessSludge", "discharge"];
-    if (prevLast) {
-      const cell = ws.getCell(DATE_ROW_BASE, 9);
-      cell.value = toExcelDate(prevLast.date);
-      cell.numFmt = 'm"月"d"日("aaa")"';
-      RUISAN_KEYS_I.forEach((key) => {
-        const off = ITEM_OFFSETS[key];
-        if (off == null) return;
-        ws.getCell(DATA_ROW_BASE + off, 9).value = prevLast.data[key] !== undefined ? prevLast.data[key] : null;
-      });
-    } else {
-      ws.getCell(DATE_ROW_BASE, 9).value = null;
-      RUISAN_KEYS_I.forEach((key) => {
-        const off = ITEM_OFFSETS[key];
-        if (off == null) return;
-        ws.getCell(DATA_ROW_BASE + off, 9).value = null;
-      });
-    }
-  }
-
+  // GAS と完全に同じロジック（Phase A 移植版）
+  // weeklyData.weeks[w] = { mon:{...}, tue:{...}, ..., powerAllDay:{mon:..., tue:...}, ... }
+  // 上段使用量と下段水質測定が weeklyData.weeks[w] にフラット格納されているため、
+  // T_USAGE_ROW_OFFSET / T_MEASURE_ROW_OFFSET でそれぞれ取り出す
   for (let w = 1; w <= 5; w++) {
-    const offset = WEEK_OFFSETS[w];
-    const dateRow = DATE_ROW_BASE + offset;
-    const dataRowBase = DATA_ROW_BASE + offset;
-    const inspRow = INSP_ROW_BASE + offset;
+    const blockRow = T_WATER_BLOCK_ROW[w];
+    if (!blockRow) continue;
+    const wkObj = weeklyData.weeks[w];
+    if (!wkObj) continue;
 
-    // ===== 日付を値で書き込み（数式を完全に上書き、UTC正午で1日ずれ防止） =====
-    // I〜M: 月〜金 の日付を値として書く
-    for (const dk in DAY_COL) {
-      const col = DAY_COL[dk];
-      const actual = getActualDate(w, dk);
-      if (actual) {
-        const cell = ws.getCell(dateRow, col);
-        cell.value = toExcelDate(actual);
+    // 月曜日付を I列(9)に書き込み（第1週のみ; 他週はテンプレ数式で参照）
+    if (w === 1) {
+      const monDay = getActualDate(1, "mon");
+      if (monDay) {
+        const cell = ws.getCell(3, 9);
+        cell.value = toExcelDate(monDay);
         cell.numFmt = 'm"月"d"日("aaa")"';
       }
     }
-    // N列: 次週の最初の平日（祝日・土日を除く）
-    const fri = getActualDate(w, "fri");
-    const nextWorkday = getNextWeekFirstWorkday(fri, holidaySet);
-    if (nextWorkday) {
-      const cell = ws.getCell(dateRow, NEXT_WEEK_COL);
-      cell.value = toExcelDate(nextWorkday);
-      cell.numFmt = 'm"月"d"日("aaa")"';
-    } else {
-      ws.getCell(dateRow, NEXT_WEEK_COL).value = null;
-    }
 
-    // ===== 各曜日データを書き込み =====
-    // アプリ側のデータキー: mon, tue, wed, thu, nextMon（アプリ上は「金」ラベル）
-    // 筒賀: 積算値テーブル(Row4-12)用の列マッピング: I列起点
-    const DAY_COL_RUISAN = { mon: 9, tue: 10, wed: 11, thu: 12, fri: 13 };
-    // 筒賀: 測定場所テーブル(Row16以降)用の列マッピング: J列起点（I列はラベル）
-    const DAY_COL_MEASURE = { mon: 10, tue: 11, wed: 12, thu: 13, fri: 14 };
-    // ITEM_OFFSETS のうち、積算値テーブル(Row4-12、offset 0-8)に属するキー
-    const RUISAN_KEYS = ["power200v", "power100v", "water", "diesel", "returnSludge", "excessSludge", "discharge"];
-
-    for (const dk in DAY_COL_RUISAN) {
-      const colRuisan = DAY_COL_RUISAN[dk];
-      const colMeasure = DAY_COL_MEASURE[dk];
-      const dataKey = APP_KEY_MAP[dk];
-      const day = weeklyData.weeks[w] && weeklyData.weeks[w][dataKey];
-      if (!day) continue;
-      for (const key in ITEM_OFFSETS) {
-        const row = dataRowBase + ITEM_OFFSETS[key];
-        const v = day[key];
-        // 積算値テーブルの項目はI列起点、測定場所テーブルの項目はJ列起点
-        const targetCol = RUISAN_KEYS.indexOf(key) >= 0 ? colRuisan : colMeasure;
-        setCell(ws, row, targetCol, v);
+    // ===== 上段使用量（per-week, 1行=1項目, 6セル分=月火水木金+次週月） =====
+    for (const key in T_USAGE_ROW_OFFSET) {
+      const item = wkObj[key];
+      if (!item) continue;
+      const rowAbs = blockRow + T_USAGE_ROW_OFFSET[key];
+      for (const cellKey of T_USAGE_CELLS) {
+        const v = item[cellKey];
+        if (v != null && v !== "") {
+          setCell(ws, rowAbs, T_USAGE_DAY_COL[cellKey], v);
+        }
       }
-      // 測定者: 測定場所テーブル所属なのでJ列起点
-      if (day.inspector) setCell(ws, inspRow, colMeasure, day.inspector);
     }
 
-    // 備考（筒賀: Row = dataRowBase + 34 → 第1週R38）: 測定場所テーブル所属なのでJ列起点
-    const bikouRow = dataRowBase + 34;
-    for (const dk in DAY_COL_MEASURE) {
-      const col = DAY_COL_MEASURE[dk];
-      const dataKey = APP_KEY_MAP[dk];
-      const day = weeklyData.weeks[w] && weeklyData.weeks[w][dataKey];
-      if (day && day.bikou) {
-        setCell(ws, bikouRow, col, day.bikou);
+    // ===== 下段水質測定（per-day, 1日=1列, 各項目=1行） =====
+    for (const day of T_DAYS) {
+      const col = T_MEASURE_DAY_COL[day];
+      const dd = wkObj[day];
+      if (!dd) continue;
+      for (const fk in T_MEASURE_ROW_OFFSET) {
+        const v = dd[fk];
+        if (v != null && v !== "") {
+          setCell(ws, blockRow + T_MEASURE_ROW_OFFSET[fk], col, v);
+        }
+      }
+      // 測定者
+      if (dd.inspector) {
+        setCell(ws, blockRow + T_WATER_INSPECTOR_ROW_OFFSET, col, dd.inspector);
+      }
+      // 備考
+      if (dd.bikou) {
+        setCell(ws, blockRow + T_WATER_BIKOU_ROW_OFFSET, col, dd.bikou);
       }
     }
   }
@@ -4271,273 +4534,128 @@ function fillWaterSheet(ws, yyyy, mm, holidaySet) {
 // 各日付の行(A列日付と一致するrow)に直接書き込む。
 // 行: A8=Day1, A9=Day2, ..., A38=Day31 → r = 7 + dayOfMonth
 function fillReportFinalData(wb, yyyy, mm) {
+  // 水質管理報告: 終沈・重複データ・DO値を当該日付の行に書き込む（GAS [2] 相当）
   const ws = wb.getWorksheet("水質管理報告");
   if (!ws) return;
-  const FINAL_COLS = { tempFinal: 5, phFinal: 9, transFinal: 12 }; // E, I, L
   for (let w = 1; w <= 5; w++) {
-    const wkObj = weeklyData.weeks[w];
-    if (!wkObj) continue;
-    for (const dk of ["mon", "tue", "wed", "thu", "nextMon"]) {
-      const ek = (dk === "nextMon") ? "fri" : dk;
-      const actual = getActualDate(w, ek);
-      if (!actual) continue;
-      if (actual.getFullYear() !== yyyy || (actual.getMonth() + 1) !== mm) continue;
-      const dayData = wkObj[dk];
-      if (!dayData) continue;
-      const r = 7 + actual.getDate();
-      for (const key in FINAL_COLS) {
-        const v = dayData[key];
-        if (v != null && v !== "") {
-          ws.getCell(r, FINAL_COLS[key]).value = Number(v);
-        }
+    const wkObj = weeklyData.weeks[w] || {};
+    for (const day of T_DAYS) {
+      const date = getActualDate(w, day);
+      if (!date || date.getMonth() !== mm - 1 || date.getFullYear() !== yyyy) continue;
+      const rowF = tReportRowFront(date);
+      const rowB = tReportRowBack(date);
+      const meas = wkObj[day] || {};
+      // 前半: 水温/透視度/終沈水温/終沈透視度
+      const frontMap = {
+        tempIn: meas.tempIn, tempD1: meas.tempD1, tempD2: meas.tempD2, tempOut: meas.tempOut,
+        tempFinal1: meas.tempFinal1, tempFinal2: meas.tempFinal2,
+        transIn: meas.transIn, transOut: meas.transOut,
+        transFinal1: meas.transFinal1, transFinal2: meas.transFinal2
+      };
+      for (const k in frontMap) {
+        const v = frontMap[k];
+        if (v != null && v !== "") setCell(ws, rowF, T_REPORT_FRONT_COL[k], v);
+      }
+      // 後半: PH/残留塩素/SV30/DO
+      const elec = meas; // electrical は別保管 - 後で対応
+      const backMap = {
+        phIn: meas.phIn, phD1: meas.phD1, phD2: meas.phD2, phOut: meas.phOut,
+        phFinal1: meas.phFinal1, phFinal2: meas.phFinal2,
+        chlorine: meas.chlorine,
+        sv1_30: meas.sv1_30, sv2_30: meas.sv2_30
+      };
+      for (const k in backMap) {
+        const v = backMap[k];
+        if (v != null && v !== "") setCell(ws, rowB, T_REPORT_BACK_COL[k], v);
+      }
+      // DO値（電気設備データから取得）
+      const elecWk = weeklyData.electrical && weeklyData.electrical[w];
+      const elecDay = elecWk && elecWk[day];
+      if (elecDay) {
+        const do1 = elecDay[T_ELEC_DO_KEY_NO1];
+        const do2 = elecDay[T_ELEC_DO_KEY_NO2];
+        if (do1 != null && do1 !== "") setCell(ws, rowB, T_REPORT_BACK_COL.doNo1, do1);
+        if (do2 != null && do2 !== "") setCell(ws, rowB, T_REPORT_BACK_COL.doNo2, do2);
       }
     }
   }
 }
 
-// 機器運転時間シート（筒賀水質管理センター 22項目、29行ブロック）
-// ※対象月内の日付のみ書き込み（月跨ぎ日はスキップ）
-// ※A列・F列には週の開始・終了日付を令和形式で書き込む
 function fillEquipSheet(ws, yyyy, mm) {
-  const WEEK_START = { 1: 7, 2: 36, 3: 65, 4: 94, 5: 123 };
-  const DAY_COL = { mon: 4, tue: 5, wed: 6, thu: 7, fri: 8 };
-  // 各週ごとの日付ヘッダー位置: 1ブロック=29行間隔
-  const DATE_HEADER_ROW = { 1: 3, 2: 32, 3: 61, 4: 90, 5: 119 };
-  const REIWA_FORMAT = '[$-411]ggge"年"m"月"d"日";@';
-
+  // 主要機器運転時間: 22機器 × 5日（GAS [4] 相当）
   for (let w = 1; w <= 5; w++) {
-    const base = WEEK_START[w];
-    const wData = weeklyData.equipment[w];
-
-    // 日付ヘッダー設定（A列=対象月内の最初の日, F列=対象月内の最後の日、令和形式）
-    const headerRow = DATE_HEADER_ROW[w];
-    if (headerRow) {
-      // その週の月〜金のうち、対象月内にある日付を収集
-      const weekDates = [];
-      for (const dk of ["mon", "tue", "wed", "thu", "fri"]) {
-        const dt = getActualDate(w, dk);
-        if (dt && dt.getFullYear() === yyyy && (dt.getMonth() + 1) === mm) {
-          weekDates.push(dt);
-        }
-      }
-      // 対象月内の最初の日 → A列
-      if (weekDates.length > 0) {
-        const firstDay = weekDates[0];
-        const lastDay = weekDates[weekDates.length - 1];
-        const cellA = ws.getCell(headerRow, 1);
-        cellA.value = toExcelDate(firstDay);
-        cellA.numFmt = REIWA_FORMAT;
-        const cellF = ws.getCell(headerRow, 6);
-        cellF.value = toExcelDate(lastDay);
-        cellF.numFmt = REIWA_FORMAT;
-      } else {
-        // その週が全部対象月外ならA列もF列も空
-        ws.getCell(headerRow, 1).value = null;
-        ws.getCell(headerRow, 6).value = null;
+    const dateRow = T_EQUIP_WEEK_DATE_ROW[w];
+    const monDay = getActualDate(w, "mon");
+    if (dateRow && monDay) {
+      const cell = ws.getCell(dateRow, T_EQUIP_WEEK_DATE_COL);
+      cell.value = toExcelDate(monDay);
+      cell.numFmt = '[$-411]ggge"年"m"月"d"日";@';
+    }
+    const eqWk = weeklyData.equipment && weeklyData.equipment[w];
+    if (!eqWk) continue;
+    const rowBase = T_EQUIP_WEEK_START[w];
+    if (!rowBase) continue;
+    for (let i = 0; i < T_EQUIP_NAMES.length; i++) {
+      const ed = eqWk[T_EQUIP_NAMES[i]];
+      if (!ed) continue;
+      const trgRow = rowBase + i;
+      for (const day of T_DAYS) {
+        const v = ed[day];
+        if (v != null && v !== "") setCell(ws, trgRow, T_EQUIP_HOUR_DAY_COL[day], v);
       }
     }
-
-    if (!wData) continue;
-    EQUIP_KEYS.forEach((key, i) => {
-      const row = base + i;
-      const dayData = wData[key];
-      if (!dayData) return;
-      for (const dk in DAY_COL) {
-        // その曜日の実日付を取得 → 対象月でなければスキップ
-        const actual = getActualDate(w, dk);
-        if (!actual) continue;
-        if (actual.getFullYear() !== yyyy || (actual.getMonth() + 1) !== mm) continue;
-        setCell(ws, row, DAY_COL[dk], dayData[dk]);
-      }
-    });
   }
 }
 
-// 電気設備シート（筒賀: 1ブロック=71行、page1 R3-R31 / page2 R38-R70）
-// ※対象月内の日付のみ書き込み（月跨ぎ日はスキップ）
-// ※日付ヘッダー: 各週の WEEK_START - 1 の G〜K列
 function fillElecSheet(ws, yyyy, mm) {
-  const WEEK_START = { 1: 3, 2: 74, 3: 145, 4: 216, 5: 287 };
-  const DAY_COL = { mon: 7, tue: 8, wed: 9, thu: 10, fri: 11 };
-  // 日付ヘッダー行: 各週の開始行の1つ上
-  const DATE_HEADER_ROW = { 1: 2, 2: 73, 3: 144, 4: 215, 5: 286 };
-  // 筒賀の項目別オフセット (tutuga_gscode.txt の ELEC_OFFSETS と一致させる)
-  const OFFSETS = {
-    // page 1 (R3-R31)
-    voltage:0, voltageMode:1, powerFactor:2, current:3, currentMode:4,
-    ePowerRead:5, ePowerUse:6, eReceiveSet:7, eOnOff:8,
-    trMainTemp:9, trNoise:10,
-    voltage210:11, voltage210Mode:12, current210:13, current210Mode:14,
-    light210:15, lightMode:16, lowVoltSrc:17,
-    ctrlPanel1Read:18, ctrlPanel1Use:19, ctrlPanel2Read:20, ctrlPanel2Use:21,
-    ctrlPanel3Read:22, ctrlPanel3Use:23, ctrlPanel4Read:24, ctrlPanel4Use:25,
-    cap1:26, cap2:27, cap3:28,
-    // page 2 (R38=offset 35)
-    pumpWellLook:35, pumpWellStatus:36, pumpWellReading:37,
-    doLook:38, doStatus:39, doReading:40,
-    returnFlowLook:41, returnFlowStatus:42, returnFlowReading:43, returnFlowTotal:44,
-    excessFlowLook:45, excessFlowStatus:46, excessFlowReading:47, excessFlowTotal:48,
-    outFlowLook:49, outFlowStatus:50, outFlowReading:51, outFlowTotal:52,
-    uvLook:53, uvStatus:54, uvValue:55, codValue:56,
-    tnLook:57, tnStatus:58, tnReading:59, tpReading:60,
-    pressureLook:61, pressureStatus:62, pressureReading:63,
-    generatorLook:64, fuelTankLook:65, fuelRemain:66,
-    alarmStatus:67
-  };
+  // 日常電気設備（GAS [5] 相当）
+  // 3つのサブタブ × 各週で W1基準行 + 週オフセットで書き込み
+  const ELEC_PAGES = [
+    { sub: 'sub1', map: T_ELEC1_ROW_W1 },
+    { sub: 'sub2', map: T_ELEC2_ROW_W1 },
+    { sub: 'sub3', map: T_ELEC3_ROW_W1 }
+  ];
   for (let w = 1; w <= 5; w++) {
-    const base = WEEK_START[w];
-    const headerRow = DATE_HEADER_ROW[w];
-    const wData = weeklyData.electrical[w];
-
-    // 日付ヘッダー書き込み（対象月の日付のみ、月跨ぎ日はスキップ）
-    for (const dk in DAY_COL) {
-      const col = DAY_COL[dk];
-      const actual = getActualDate(w, dk);
-      if (!actual) {
-        ws.getCell(headerRow, col).value = null;
-        continue;
-      }
-      if (actual.getFullYear() !== yyyy || (actual.getMonth() + 1) !== mm) {
-        // 対象月外なら空に
-        ws.getCell(headerRow, col).value = null;
-        continue;
-      }
-      const cell = ws.getCell(headerRow, col);
-      cell.value = toExcelDate(actual);
-      cell.numFmt = 'd"日("aaa")"';
-    }
-
-    if (!wData) continue;
-    for (const dk in DAY_COL) {
-      const actual = getActualDate(w, dk);
-      if (!actual) continue;
-      if (actual.getFullYear() !== yyyy || (actual.getMonth() + 1) !== mm) continue;
-      const col = DAY_COL[dk];
-      const day = wData[dk];
-      if (!day) continue;
-      for (const key in OFFSETS) {
-        setCell(ws, base + OFFSETS[key], col, day[key]);
+    const elecWk = (weeklyData.electrical && weeklyData.electrical[w]) || {};
+    const usageWk = weeklyData.weeks[w] || {};
+    for (const day of T_DAYS) {
+      const col = T_ELEC_DAY_COL[day];
+      const dd = elecWk[day] || {};
+      for (const page of ELEC_PAGES) {
+        const off = T_WEEK_OFFSETS_ELEC[page.sub][w - 1];
+        for (const k in page.map) {
+          let v = dd[k];
+          // sub2: 返送汚泥/放流流量 は上段使用量から自動転記
+          if (page.sub === 'sub2') {
+            if (k === T_ELEC_RETURN_SLUDGE_KEY_NO1 && usageWk.returnSludge1 && usageWk.returnSludge1[day] != null) v = usageWk.returnSludge1[day];
+            else if (k === T_ELEC_RETURN_SLUDGE_KEY_NO2 && usageWk.returnSludge2 && usageWk.returnSludge2[day] != null) v = usageWk.returnSludge2[day];
+            else if (k === T_ELEC_DISCHARGE_KEY && usageWk.discharge && usageWk.discharge[day] != null) v = usageWk.discharge[day];
+          }
+          // sub3: 燃料タンク残量は上段の軽油残量から自動転記
+          if (page.sub === 'sub3' && k === T_ELEC_FUEL_TANK_KEY && usageWk.diesel && usageWk.diesel[day] != null) {
+            v = usageWk.diesel[day];
+          }
+          if (v != null && v !== "") setCell(ws, page.map[k] + off, col, v);
+        }
       }
     }
   }
 }
 
-// 機械設備シート（筒賀: 1ブロック=132行、page1 R4-R65 / page2 R70-R116）
-// ※対象月内の日付のみ書き込み（月跨ぎ日はスキップ）
-// ※日付ヘッダー: 各週 page1 ヘッダー(Row3) / page2 ヘッダー(Row69) の E, G, I, K, M 列
 function fillMechSheet(ws, yyyy, mm) {
-  // 筒賀: 1ブロック=132行、page2 は p1+66 の位置
-  const MECH_WEEK = {
-    1: { p1: 0,   p2: 66 },
-    2: { p1: 132, p2: 198 },
-    3: { p1: 264, p2: 330 },
-    4: { p1: 396, p2: 462 },
-    5: { p1: 528, p2: 594 }
-  };
-  // データ書き込み列: 月E=5, 火G=7, 水I=9, 木K=11, 金M=13
-  const DAY_COL = { mon: 5, tue: 7, wed: 9, thu: 11, fri: 13 };
-  // page 1 (week 1: row offset = absolute row、p1=0 のため絶対行)
-  const MAP1 = {
-    pumpWellCheck: 4,
-    sewagePump1Current: 5, sewagePump1Pressure: 6, sewagePump1Vibration: 7,
-    sewagePump2Current: 8, sewagePump2Pressure: 9, sewagePump2Vibration: 10,
-    sewagePumpMode: 11, sewagePumpSelect: 12,
-    screenVibration: 13, screenDebris: 14, screenOperation: 15,
-    aeration11Current: 16, aeration11Vibration: 17, aeration11Mode: 18,
-    aeration12Current: 19, aeration12Vibration: 20, aeration12Mode: 21,
-    aerationBlower1Current: 22, aerationBlower1Vibration: 23, aerationBlower1Mode: 24,
-    aerationBlower2Current: 25, aerationBlower2Vibration: 26, aerationBlower2Mode: 27,
-    defoamNozzle: 28, defoamStatus: 29,
-    ditchWeir: 30, ditchOutGate: 31, ditchConnectGate: 32,
-    finalScraperCurrent: 33, finalScraperVibration: 34,
-    finalSkimmerOperation: 35, finalSkimmerScum: 36,
-    returnPump11Current: 37, returnPump11Pressure: 38, returnPump11Vibration: 39,
-    returnPump12Current: 40, returnPump12Pressure: 41, returnPump12Vibration: 42,
-    returnPumpMode: 43, returnPumpSelect: 44,
-    excessPumpCurrent: 45, excessPumpPressure: 46, excessPumpVibration: 47,
-    excessPumpLeak: 48, excessPumpMode: 49,
-    drainPump1Current: 50, drainPump1Pressure: 51, drainPump1Vibration: 52,
-    drainPump2Current: 53, drainPump2Pressure: 54, drainPump2Vibration: 55,
-    drainPumpMode: 56, drainPumpSelect: 57,
-    returnWater1Current: 58, returnWater1Pressure: 59, returnWater1Vibration: 60,
-    returnWater2Current: 61, returnWater2Pressure: 62, returnWater2Vibration: 63,
-    returnWaterMode: 64, returnWaterSelect: 65
-  };
-  // page 2 (week 1: 絶対行 70-116、p2=66 の場合 setCell には MAP2[key] + wk.p2 - 66)
-  const MAP2 = {
-    thickPump1Current: 70, thickPump1Pressure: 71, thickPump1Vibration: 72,
-    thickPump2Current: 73, thickPump2Pressure: 74, thickPump2Vibration: 75,
-    thickPumpMode: 76, thickPumpSelect: 77,
-    thickScraperCurrent: 78, thickScraperVibration: 79, thickScraperMode: 80,
-    thickSkimmerOperation: 81, thickSkimmerScum: 82,
-    sludgeMixerCurrent: 83, sludgeMixerVibration: 84, sludgeMixerMode: 85,
-    thickAerationCurrent: 86, thickAerationVibration: 87, thickAerationMode: 88,
-    autoSupply1Current: 89, autoSupply1Vibration: 90,
-    autoSupply2Current: 91, autoSupply2Vibration: 92,
-    autoSupplyMode: 93,
-    mixingTankBG: 94,
-    chlorineContact: 95,
-    deodorFanCurrent: 96, deodorFanBolt: 97, deodorFanMode: 98,
-    treatDamperVibration: 99, treatDamperMode: 100,
-    sludgeDamperVibration: 101, sludgeDamperMode: 102,
-    adsorptionMano: 103, adsorptionVibration: 104,
-    generatorSupplyVibration: 105, generatorSupplyMode: 106,
-    generatorExhaustVibration: 107, generatorExhaustMode: 108,
-    sludgeRoomSupplyVibration: 109, sludgeRoomSupplyMode: 110,
-    sludgeRoomExhaustVibration: 111, sludgeRoomExhaustMode: 112,
-    dewateringSupplyVibration: 113, dewateringSupplyMode: 114,
-    dewateringExhaustVibration: 115, dewateringExhaustMode: 116
-  };
-  // 筒賀の日付ヘッダー行: 1/2 ページ=Row3, 2/2 ページ=Row69 (=66+3)
-  const MECH_DATE_HEADER_ROWS = {
-    1: [3, 69],
-    2: [135, 201],
-    3: [267, 333],
-    4: [399, 465],
-    5: [531, 597]
-  };
-
+  // 日常機械設備（GAS [6] 相当）
+  const MECH_PAGE_MAPS = [T_MECH1_ROW_W1, T_MECH2_ROW_W1, T_MECH3_ROW_W1];
   for (let w = 1; w <= 5; w++) {
-    const wk = MECH_WEEK[w];
-    const wData = weeklyData.mechanical[w];
-
-    // 日付ヘッダー書き込み（対象月の日付のみ、月跨ぎ日はスキップ）
-    const headerRows = MECH_DATE_HEADER_ROWS[w] || [];
-    for (const hr of headerRows) {
-      for (const dk in DAY_COL) {
-        // 日付ヘッダー列は DAY_COL と同じ（E=5, G=7, I=9, K=11, M=13）
-        const dateCol = DAY_COL[dk];
-        const actual = getActualDate(w, dk);
-        if (!actual) {
-          ws.getCell(hr, dateCol).value = null;
-          continue;
+    const mechWk = (weeklyData.mechanical && weeklyData.mechanical[w]) || {};
+    const weekOff = T_WEEK_OFFSETS_MECH[w - 1];
+    for (const day of T_DAYS) {
+      const col = T_MECH_DAY_COL[day];
+      const dd = mechWk[day] || {};
+      for (const m of MECH_PAGE_MAPS) {
+        for (const k in m) {
+          const v = dd[k];
+          if (v != null && v !== "") setCell(ws, m[k] + weekOff, col, v);
         }
-        if (actual.getFullYear() !== yyyy || (actual.getMonth() + 1) !== mm) {
-          ws.getCell(hr, dateCol).value = null;
-          continue;
-        }
-        const cell = ws.getCell(hr, dateCol);
-        cell.value = toExcelDate(actual);
-        cell.numFmt = 'd"日("aaa")"';
-      }
-    }
-
-    if (!wData) continue;
-    for (const dk in DAY_COL) {
-      // 対象月チェック
-      const actual = getActualDate(w, dk);
-      if (!actual) continue;
-      if (actual.getFullYear() !== yyyy || (actual.getMonth() + 1) !== mm) continue;
-      const col = DAY_COL[dk];
-      const day = wData[dk];
-      if (!day) continue;
-      // 1/2 ページ: 絶対行(週1基準) + p1 オフセット
-      for (const key in MAP1) {
-        setCell(ws, MAP1[key] + wk.p1, col, day[key]);
-      }
-      // 2/2 ページ: 絶対行(週1基準) + (wk.p2 - 66) で各週の page2 ブロックへ
-      for (const key in MAP2) {
-        setCell(ws, MAP2[key] + wk.p2 - 66, col, day[key]);
       }
     }
   }
