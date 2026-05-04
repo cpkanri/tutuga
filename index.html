@@ -4552,17 +4552,21 @@ function fillReportFinalData(wb, yyyy, mm) {
 
 function fillEquipSheet(ws, yyyy, mm) {
   // 主要機器運転時間: 22機器 × 5日（GAS [4] 相当）
+  console.log("[fillEquipSheet] 開始:", { yyyy, mm, startDate: weeklyData.startDate });
   for (let w = 1; w <= 5; w++) {
     const dateRow = T_EQUIP_WEEK_DATE_ROW[w];
     const monDay = getActualDate(w, "mon");
+    console.log(`[fillEquipSheet] W${w} dateRow=${dateRow} monDay=`, monDay);
     if (dateRow && monDay) {
       // A5:C5 などは結合セル。ExcelJS では結合範囲の左上セルに書く必要がある
       // 一旦 unmerge してから書き込み、再 merge することで確実に値を反映させる
       const mergeRange = `A${dateRow}:C${dateRow}`;
-      try { ws.unMergeCells(mergeRange); } catch(e) {}
+      try { ws.unMergeCells(mergeRange); console.log(`[fillEquipSheet] unmerge OK: ${mergeRange}`); } catch(e) { console.log(`[fillEquipSheet] unmerge失敗: ${mergeRange}`, e.message); }
       const cell = ws.getCell(dateRow, T_EQUIP_WEEK_DATE_COL);
-      cell.value = toExcelDate(monDay);
+      const excelDate = toExcelDate(monDay);
+      cell.value = excelDate;
       cell.numFmt = '[$-411]ggge"年"m"月"d"日";@';
+      console.log(`[fillEquipSheet] W${w} A${dateRow} 書込み:`, excelDate, "→ 確認:", cell.value);
       try { ws.mergeCells(mergeRange); } catch(e) {}
     }
     const eqWk = weeklyData.equipment && weeklyData.equipment[w];
