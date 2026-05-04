@@ -4402,11 +4402,9 @@ async function exportExcel() {
 
   const out = await wb.xlsx.writeBuffer();
 
-  // ===== ファイル修復メッセージ対策 v3（方策B 主経路）=====
-  // 方策A(SheetJS round-trip) は cols の style 属性を落として罫線を消すため使用しない。
-  // ExcelJS出力を JSZip で正規化（既存対策＋新規対策）。
-  // 既存: <v>補完, pageSetup簡略, x14ac:dyDescent/spans削除, worksheet xmlns整理
-  // 新規: dimension短縮, cols max="16384"→"22", P列以降の空スタイルセル削除
+  // ===== ファイル修復メッセージ対策 v4（リスクある変更を撤回）=====
+  // Excelがdimension="A1"を厳格解釈してA6以降のデータを削除する事象が発生したため、
+  // dimension変更とP列以降の空セル削除を取りやめ、無害な変更のみ残す。
   let finalBuf = null;
   let methodUsed = "";
 
@@ -4414,7 +4412,7 @@ async function exportExcel() {
     if (typeof JSZip === "undefined") throw new Error("JSZip 未読込");
     const zip = await JSZip.loadAsync(out);
     const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
-    let totalFix = 0, cleaned = 0;
+    let totalFix = 0;
     for (const sheetFile of sheetFiles) {
       let xml = await zip.file(sheetFile).async("string");
       let fixCount = 0;
@@ -4430,20 +4428,15 @@ async function exportExcel() {
       xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:mc="[^"]*"/, '$1');
       xml = xml.replace(/(<worksheet[^>]*?)\s+mc:Ignorable="[^"]*"/, '$1');
       xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:x14ac="[^"]*"/, '$1');
-      // (6) dimension を Excel 自動計算に委ねる
-      xml = xml.replace(/<dimension\s+ref="[A-Z]+\d+(?::[A-Z]+\d+)?"\s*\/>/, '<dimension ref="A1"/>');
-      // (7) cols max="16384" を 22 に縮小（保険、テンプレで対応済みだが念のため）
+      // (6) cols max="16384" を 22 に縮小（保険）
       xml = xml.replace(/(<col\b[^>]*?)\s+max="16384"/g, '$1 max="22"');
-      // (8) P列以降（テンプレ範囲外）の空スタイルセル削除
-      const before = xml.length;
-      xml = xml.replace(/<c\s+r="(?:P|Q|R|S|T|U|V|W|X|Y|Z|A[A-Z])\d+"\s+s="\d+"\s*\/>/g, '');
-      if (xml.length < before) cleaned++;
+      // ★ dimension変更とP列以降空セル削除は害が大きいため撤回
       zip.file(sheetFile, xml);
       totalFix += fixCount;
     }
     finalBuf = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
-    methodUsed = "B:JSZip後処理";
-    console.log("[修復対策] 完了 <v>補完=" + totalFix + " 空セル削除シート数=" + cleaned + " size=" + finalBuf.byteLength);
+    methodUsed = "B:JSZip後処理(安全版)";
+    console.log("[修復対策] 完了 <v>補完=" + totalFix + " size=" + finalBuf.byteLength);
   } catch (eB) {
     console.warn("[修復対策] 後処理失敗、ExcelJS出力をそのまま使用:", eB);
     finalBuf = out;
