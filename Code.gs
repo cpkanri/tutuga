@@ -1,0 +1,733 @@
+// =====================================================================
+// 筒賀水質管理センター 週報アプリ GAS バックエンド (Phase 3)
+// 作成日: 2026-05-04
+//
+// 旧 tutuga_gscode.gs (_handover/) のロジックを移植し、ExcelJS 方式に
+// 対応するため Excel 出力部 (exportExcel) を削除。クライアント (index.html)
+// は GAS から JSON を取得し、ExcelJS で xlsx を生成する方針。
+//
+// 8 シート構成:
+//   日常水質_上段       per-week JSON      [月, 週, データJSON, 更新日時]
+//   日常水質_下段       per-day  JSON      [月, 週, 曜日, データJSON, 更新日時]
+//   日常電気設備        per-day  JSON      [月, 週, 曜日, データJSON, 更新日時]
+//   日常機械設備        per-day  JSON      [月, 週, 曜日, データJSON, 更新日時]
+//   機器運転時間        per-week JSON      [月, 週, データJSON, 更新日時]
+//   祝日リスト          [日付, 名称]
+//   設定                [key, value]
+//   ユーザー管理        [ID, パスワードハッシュ, 氏名, 有効, 最終ログイン, 備考]
+//
+// データ列スキーマは Sheets セル容量上限 (50,000 文字) に収まるよう
+// month / week / day を独立したキー列に分け、JSON は data 列のみに格納する。
+// =====================================================================
+
+// ===== 定数: Spreadsheet ID / シート名 =====
+var SS_ID = '1XFPH90_XXvyGQfewQXZORcdvc-jH2jAzP_yxV2pcrpQ';
+
+var SHEET_WATER_USAGE   = '日常水質_上段';
+var SHEET_WATER_MEASURE = '日常水質_下段';
+var SHEET_ELECTRICAL    = '日常電気設備';
+var SHEET_MECHANICAL    = '日常機械設備';
+var SHEET_EQUIPMENT     = '機器運転時間';
+var SHEET_HOLIDAYS      = '祝日リスト';
+var SHEET_SETTINGS      = '設定';
+var SHEET_USERS         = 'ユーザー管理';
+
+// ===== 列ヘッダ定義 =====
+var HEADERS_WATER_USAGE   = ['月', '週', 'データJSON', '更新日時'];
+var HEADERS_WATER_MEASURE = ['月', '週', '曜日', 'データJSON', '更新日時'];
+var HEADERS_ELECTRICAL    = ['月', '週', '曜日', 'データJSON', '更新日時'];
+var HEADERS_MECHANICAL    = ['月', '週', '曜日', 'データJSON', '更新日時'];
+var HEADERS_EQUIPMENT     = ['月', '週', 'データJSON', '更新日時'];
+
+// ===== 認証: 単一ユーザ (cpkanri / cptutuga) =====
+// Phase 3 時点ではハードコード。Phase 5+ で ユーザー管理シートに移行する場合あり。
+var TUTUGA_USERS = [
+  { id: 'cpkanri', password: 'cptutuga', name: '筒賀' }
+];
+var PUBLIC_ACTIONS = { ping: 1, login: 1, verifyToken: 1 };
+
+// ===== 曜日マッピング =====
+var DAYS         = ['mon', 'tue', 'wed', 'thu', 'fri'];
+var DAY_NAMES    = { mon: '月', tue: '火', wed: '水', thu: '木', fri: '金' };
+var DAY_REVERSE  = { '月': 'mon', '火': 'tue', '水': 'wed', '木': 'thu', '金': 'fri' };
+var DAY_OFFSETS  = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4 };
+
+// ===== excessSludge1/2・autoFrom 転記キー (電気 sub2/sub3) =====
+// 上段使用量フォームの該当キーを、保存時に日常電気設備の per-day JSON に転記する。
+// (excessSludge1/2 は日常水質_上段 JSON には含めない)
+var T_ELEC_EXCESS_KEY_NO1     = '余剰汚泥流量計__No.１余剰汚泥ポンプ流量計読み__㎥/ｈ';   // sub2 r56
+var T_ELEC_EXCESS_KEY_NO2     = '余剰汚泥流量計__No.２余剰汚泥ポンプ流量計読み__㎥/ｈ';   // sub2 r57
+var T_ELEC_RETURN_SLUDGE_NO1  = 'Nｏ．１返送汚泥流量計__流量計積算計読み__㎥';            // sub2 r49
+var T_ELEC_RETURN_SLUDGE_NO2  = 'Nｏ．２返送汚泥流量計__流量計積算計読み__㎥';            // sub2 r53
+var T_ELEC_DISCHARGE          = '放流流量計__流量計積算の読み__㎥';                       // sub2 r61
+var T_ELEC_FUEL_TANK          = '燃料タンク__残量の値__ℓ';                                // sub3 r82
+
+
+// =====================================================================
+// ユーティリティ
+// =====================================================================
+
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 入力値を 'YYYY-MM' 形式に正規化する。
+// CSV インポート時の落とし穴 ('YYYY-MM-DD' / 先頭アポストロフィ / Date オブジェクト)
+// を全てカバーする。判定は instanceof ではなく duck typing (getFullYear) で行う。
+function normalizeMonth(v) {
+  if (v === null || v === undefined || v === '') return '';
+  // Date-like (instanceof Date は GAS で誤判定するので getFullYear 関数の有無で判定)
+  if (typeof v === 'object' && typeof v.getFullYear === 'function') {
+    return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2);
+  }
+  var s = String(v).trim();
+  if (s.length === 0) return '';
+  // 先頭アポストロフィ (Sheets で文字列化されたセル) を剥がす
+  if (s.charAt(0) === "'") s = s.substring(1).trim();
+  // 'YYYY-MM-DD' / 'YYYY/MM/DD' → 先頭 7 文字 (CSV 落とし穴対策の本体)
+  var m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2);
+  // 'YYYY-MM' / 'YYYY/MM'
+  m = s.match(/^(\d{4})[-\/](\d{1,2})$/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2);
+  // 'YYYY年M月'
+  m = s.match(/^(\d{4})年(\d{1,2})月$/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2);
+  // 'M月' (年は当年)
+  m = s.match(/^(\d{1,2})月$/);
+  if (m) {
+    var y = new Date().getFullYear();
+    return y + '-' + ('0' + m[1]).slice(-2);
+  }
+  return '';
+}
+
+function toDateStr(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'object' && typeof v.getFullYear === 'function') {
+    return v.getFullYear() + '-' +
+           ('0' + (v.getMonth() + 1)).slice(-2) + '-' +
+           ('0' + v.getDate()).slice(-2);
+  }
+  return String(v);
+}
+
+function matchMonth(cellValue, month) {
+  if (cellValue === month) return true;
+  return normalizeMonth(cellValue) === month;
+}
+
+function getOrCreateSheet(name, headers) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    if (headers && headers.length) {
+      sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sh.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e8eef6');
+    }
+  }
+  return sh;
+}
+
+// 月列が一致する行を探す (per-week)。見つからなければ -1。
+function findRowByMonthWeek(sheet, month, week) {
+  var lr = sheet.getLastRow();
+  if (lr <= 1) return -1;
+  var data = sheet.getRange(2, 1, lr - 1, 2).getValues();
+  var w = parseInt(week, 10);
+  for (var i = 0; i < data.length; i++) {
+    if (!matchMonth(data[i][0], month)) continue;
+    if (parseInt(data[i][1], 10) === w) return i + 2;
+  }
+  return -1;
+}
+
+// 月+週+曜日が一致する行を探す (per-day)。曜日は日本語 ('月'…'金')。
+function findRowByMonthWeekDay(sheet, month, week, dayName) {
+  var lr = sheet.getLastRow();
+  if (lr <= 1) return -1;
+  var data = sheet.getRange(2, 1, lr - 1, 3).getValues();
+  var w = parseInt(week, 10);
+  for (var i = 0; i < data.length; i++) {
+    if (!matchMonth(data[i][0], month)) continue;
+    if (parseInt(data[i][1], 10) !== w) continue;
+    if (String(data[i][2]) === dayName) return i + 2;
+  }
+  return -1;
+}
+
+
+// =====================================================================
+// 認証 (TUTUGA_USERS をハードコード参照、トークンは ScriptProperties に保管)
+// =====================================================================
+
+function login(data) {
+  var userId   = data && data.userId;
+  var password = data && data.password;
+  if (!userId || !password) {
+    return jsonResponse({ error: 'IDとパスワードを入力してください' });
+  }
+  for (var i = 0; i < TUTUGA_USERS.length; i++) {
+    var u = TUTUGA_USERS[i];
+    if (u.id !== userId) continue;
+    if (u.password !== password) {
+      return jsonResponse({ error: 'IDまたはパスワードが正しくありません' });
+    }
+    var t = issueToken(u.id);
+    return jsonResponse({
+      status: 'ok', token: t.token, expires: t.expires,
+      userId: u.id, name: u.name
+    });
+  }
+  return jsonResponse({ error: 'IDまたはパスワードが正しくありません' });
+}
+
+function issueToken(userId) {
+  var props = PropertiesService.getScriptProperties();
+  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  var now = new Date().getTime();
+  var expires = now + 30 * 24 * 60 * 60 * 1000; // 30 日
+  props.setProperty('TK_' + token, JSON.stringify({ userId: userId, expires: expires }));
+  try { cleanupExpiredTokens(); } catch (e) {}
+  return { token: token, expires: expires };
+}
+
+function cleanupExpiredTokens() {
+  var props = PropertiesService.getScriptProperties();
+  var all = props.getProperties();
+  var now = new Date().getTime();
+  for (var key in all) {
+    if (key.indexOf('TK_') !== 0) continue;
+    try {
+      var obj = JSON.parse(all[key]);
+      if (obj.expires < now) props.deleteProperty(key);
+    } catch (e) {
+      props.deleteProperty(key);
+    }
+  }
+}
+
+function verifyToken(token) {
+  if (!token) return null;
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty('TK_' + token);
+  if (!raw) return null;
+  try {
+    var obj = JSON.parse(raw);
+    if (obj.expires < new Date().getTime()) {
+      props.deleteProperty('TK_' + token);
+      return null;
+    }
+    // TUTUGA_USERS にユーザが存在することを再確認
+    for (var i = 0; i < TUTUGA_USERS.length; i++) {
+      if (TUTUGA_USERS[i].id === obj.userId) return obj.userId;
+    }
+    props.deleteProperty('TK_' + token);
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function logout(data) {
+  var token = data && data.token;
+  if (token) PropertiesService.getScriptProperties().deleteProperty('TK_' + token);
+  return jsonResponse({ status: 'ok' });
+}
+
+function verifyTokenApi(token) {
+  var userId = verifyToken(token);
+  if (userId) return jsonResponse({ valid: true, userId: userId });
+  return jsonResponse({ valid: false });
+}
+
+function requireAuth(action, token) {
+  if (PUBLIC_ACTIONS[action]) return null;
+  var userId = verifyToken(token);
+  if (!userId) return jsonResponse({ error: '認証が必要です', authRequired: true });
+  return null;
+}
+
+
+// =====================================================================
+// 祝日リスト
+// =====================================================================
+
+function getHolidays() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(SHEET_HOLIDAYS);
+    if (!sheet) return jsonResponse({ holidays: [] });
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 3) return jsonResponse({ holidays: [] });
+    var data = sheet.getRange(3, 1, lastRow - 2, 2).getValues();
+    var result = [];
+    for (var i = 0; i < data.length; i++) {
+      var d = data[i][0];
+      if (!d) continue;
+      if (typeof d === 'object' && typeof d.getFullYear === 'function') {
+        var y = d.getFullYear();
+        var m = ('0' + (d.getMonth() + 1)).slice(-2);
+        var day = ('0' + d.getDate()).slice(-2);
+        result.push({ date: y + '-' + m + '-' + day, name: data[i][1] || '' });
+      } else {
+        var ds = toDateStr(d);
+        if (ds) result.push({ date: ds, name: data[i][1] || '' });
+      }
+    }
+    return jsonResponse({ holidays: result });
+  } catch (err) {
+    return jsonResponse({ error: err.message });
+  }
+}
+
+
+// =====================================================================
+// HTTP エンドポイント
+// =====================================================================
+
+function doGet(e) {
+  try {
+    var a = e.parameter.action;
+    var token = e.parameter.token || '';
+    var authFail = requireAuth(a, token);
+    if (authFail) return authFail;
+
+    if (a === 'ping')         return jsonResponse({ status: 'ok', message: '筒賀週報API稼働中 (Phase3)' });
+    if (a === 'verifyToken')  return verifyTokenApi(token);
+    if (a === 'getAllData')   return getAllData(e.parameter.month);
+    if (a === 'getHolidays')  return getHolidays();
+    return jsonResponse({ error: '不明なアクション: ' + a });
+  } catch (err) {
+    return jsonResponse({ error: err.message });
+  }
+}
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var a = data.action;
+    var token = data.token || '';
+    var authFail = requireAuth(a, token);
+    if (authFail) return authFail;
+
+    if (a === 'login')           return login(data);
+    if (a === 'logout')          return logout(data);
+    if (a === 'saveWaterUsage')  return saveWaterUsage(data);
+    if (a === 'saveWaterMeasure') return saveWaterMeasure(data);
+    if (a === 'saveEquipment')   return saveEquipment(data);
+    if (a === 'saveElectrical')  return saveElectrical(data);
+    if (a === 'saveMechanical')  return saveMechanical(data);
+    if (a === 'saveEverything')  return saveEverything(data);
+    return jsonResponse({ error: '不明なアクション: ' + a });
+  } catch (err) {
+    return jsonResponse({ error: err.message });
+  }
+}
+
+
+// =====================================================================
+// 保存関数 (5 種) + saveEverything オーケストレータ
+// =====================================================================
+
+// 上段使用量 (per-week, JSON)
+//
+// 仕様:
+//   - 11 キー (powerAllDay … excessSludge2) のうち、excessSludge1/2 は
+//     日常水質_上段 JSON には書き込まない (物理的に excessSludge は除外)
+//   - excessSludge1/2 を含む 6 個の day-level 値を 日常電気設備 JSON に転記:
+//       excessSludge1[day] → ELEC[day][T_ELEC_EXCESS_KEY_NO1]    (sub2 r56)
+//       excessSludge2[day] → ELEC[day][T_ELEC_EXCESS_KEY_NO2]    (sub2 r57)
+//       returnSludge1[day] → ELEC[day][T_ELEC_RETURN_SLUDGE_NO1] (sub2 r49)
+//       returnSludge2[day] → ELEC[day][T_ELEC_RETURN_SLUDGE_NO2] (sub2 r53)
+//       discharge[day]     → ELEC[day][T_ELEC_DISCHARGE]         (sub2 r61)
+//       diesel[day]        → ELEC[day][T_ELEC_FUEL_TANK]         (sub3 r82)
+//
+//   - 入力フィールドが未入力 (null/undefined/'') の場合は転記しない
+//
+function saveWaterUsage(data) {
+  var month = normalizeMonth(data.month);
+  var weeks = data.weeks;
+  if (!month || !weeks) return jsonResponse({ error: 'パラメータ不足' });
+
+  var sh = getOrCreateSheet(SHEET_WATER_USAGE, HEADERS_WATER_USAGE);
+  var elecSh = getOrCreateSheet(SHEET_ELECTRICAL, HEADERS_ELECTRICAL);
+  var now = new Date();
+  var savedWeeks = 0;
+  var transcribedDays = 0;
+
+  for (var wn in weeks) {
+    var weekData = weeks[wn]; if (!weekData) continue;
+    var w = parseInt(wn, 10);
+    if (!w) continue;
+
+    // 1) excessSludge1/2 を分離して 日常水質_上段 から除外
+    var sheetCopy = {};
+    for (var k in weekData) {
+      if (k === 'excessSludge1' || k === 'excessSludge2') continue;
+      sheetCopy[k] = weekData[k];
+    }
+    var ri = findRowByMonthWeek(sh, month, w);
+    var rv = [month, w, JSON.stringify(sheetCopy), now];
+    if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
+    else sh.appendRow(rv);
+    savedWeeks++;
+
+    // 2) 日常電気設備 への自動転記 (per-day マージ)
+    for (var di = 0; di < DAYS.length; di++) {
+      var dayKey = DAYS[di];
+      var transcribe = {};
+      var picked = false;
+
+      var es1 = pickDayValue(weekData.excessSludge1, dayKey);
+      var es2 = pickDayValue(weekData.excessSludge2, dayKey);
+      var rs1 = pickDayValue(weekData.returnSludge1, dayKey);
+      var rs2 = pickDayValue(weekData.returnSludge2, dayKey);
+      var dis = pickDayValue(weekData.discharge,     dayKey);
+      var dsl = pickDayValue(weekData.diesel,        dayKey);
+
+      if (es1 != null) { transcribe[T_ELEC_EXCESS_KEY_NO1]    = es1; picked = true; }
+      if (es2 != null) { transcribe[T_ELEC_EXCESS_KEY_NO2]    = es2; picked = true; }
+      if (rs1 != null) { transcribe[T_ELEC_RETURN_SLUDGE_NO1] = rs1; picked = true; }
+      if (rs2 != null) { transcribe[T_ELEC_RETURN_SLUDGE_NO2] = rs2; picked = true; }
+      if (dis != null) { transcribe[T_ELEC_DISCHARGE]         = dis; picked = true; }
+      if (dsl != null) { transcribe[T_ELEC_FUEL_TANK]         = dsl; picked = true; }
+
+      if (!picked) continue;
+
+      mergeIntoElectricalDay(elecSh, month, w, dayKey, transcribe, now);
+      transcribedDays++;
+    }
+  }
+
+  return jsonResponse({
+    status: 'ok',
+    message: '水質上段 ' + savedWeeks + ' 週保存 / 電気自動転記 ' + transcribedDays + ' 日',
+    savedWeeks: savedWeeks,
+    transcribedDays: transcribedDays
+  });
+}
+
+// per-day オブジェクト ({mon, tue, …, nextMon}) から指定曜日の値を取り出す。
+// 未入力 ('' / null / undefined) は null を返す。
+function pickDayValue(obj, dayKey) {
+  if (!obj || typeof obj !== 'object') return null;
+  var v = obj[dayKey];
+  if (v === null || v === undefined || v === '') return null;
+  return v;
+}
+
+// 日常電気設備 sheet の (month, week, day) 行を読み出し、transcribe を JSON にマージ
+// して書き戻す。既存値は保護され、transcribe で上書きされる。
+function mergeIntoElectricalDay(sheet, month, week, dayKey, transcribe, now) {
+  var dayName = DAY_NAMES[dayKey]; if (!dayName) return;
+  var ri = findRowByMonthWeekDay(sheet, month, week, dayName);
+  var existing = {};
+  if (ri > 0) {
+    try { existing = JSON.parse(sheet.getRange(ri, 4).getValue() || '{}'); }
+    catch (e) { existing = {}; }
+  }
+  for (var k in transcribe) existing[k] = transcribe[k];
+  var rv = [month, parseInt(week, 10), dayName, JSON.stringify(existing), now];
+  if (ri > 0) sheet.getRange(ri, 1, 1, rv.length).setValues([rv]);
+  else sheet.appendRow(rv);
+}
+
+// 下段水質測定 (per-day, JSON)
+function saveWaterMeasure(data) {
+  var month = normalizeMonth(data.month);
+  var week = data.week;
+  var days = data.days;
+  if (!month || !week || !days) return jsonResponse({ error: 'パラメータ不足' });
+
+  var sh = getOrCreateSheet(SHEET_WATER_MEASURE, HEADERS_WATER_MEASURE);
+  var now = new Date();
+  var cnt = 0;
+  for (var dc in days) {
+    var dd = days[dc]; if (!dd) continue;
+    var dn = DAY_NAMES[dc]; if (!dn) continue;
+    var ri = findRowByMonthWeekDay(sh, month, week, dn);
+    var rv = [month, parseInt(week, 10), dn, JSON.stringify(dd), now];
+    if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
+    else sh.appendRow(rv);
+    cnt++;
+  }
+  return jsonResponse({ status: 'ok', message: '水質下段 ' + cnt + ' 日保存', savedCount: cnt });
+}
+
+// 機器運転時間 (per-week, JSON)
+//   data.equipment = { [week]: { [machineKey]: { mon, tue, wed, thu, fri } } }
+function saveEquipment(data) {
+  var month = normalizeMonth(data.month);
+  var eq = data.equipment;
+  if (!month || !eq) return jsonResponse({ error: 'パラメータ不足' });
+
+  var sh = getOrCreateSheet(SHEET_EQUIPMENT, HEADERS_EQUIPMENT);
+  var now = new Date();
+  var cnt = 0;
+  for (var wn in eq) {
+    var wd = eq[wn]; if (!wd) continue;
+    var w = parseInt(wn, 10); if (!w) continue;
+    var ri = findRowByMonthWeek(sh, month, w);
+    var rv = [month, w, JSON.stringify(wd), now];
+    if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
+    else sh.appendRow(rv);
+    cnt++;
+  }
+  return jsonResponse({ status: 'ok', message: '機器運転時間 ' + cnt + ' 週保存', savedCount: cnt });
+}
+
+// 日常電気設備 (per-day, JSON)
+//   data.electrical = { [week]: { [day]: { fieldKey: value, … } } }
+function saveElectrical(data) {
+  var month = normalizeMonth(data.month);
+  var el = data.electrical;
+  if (!month || !el) return jsonResponse({ error: 'パラメータ不足' });
+
+  var sh = getOrCreateSheet(SHEET_ELECTRICAL, HEADERS_ELECTRICAL);
+  var now = new Date();
+  var cnt = 0;
+  for (var wn in el) {
+    var wd = el[wn]; if (!wd) continue;
+    var w = parseInt(wn, 10); if (!w) continue;
+    for (var dc in wd) {
+      var dd = wd[dc]; if (!dd) continue;
+      var dn = DAY_NAMES[dc]; if (!dn) continue;
+      // 既存の自動転記値 (saveWaterUsage 由来) を破壊しないよう既存 JSON とマージ
+      var ri = findRowByMonthWeekDay(sh, month, w, dn);
+      var existing = {};
+      if (ri > 0) {
+        try { existing = JSON.parse(sh.getRange(ri, 4).getValue() || '{}'); }
+        catch (e) { existing = {}; }
+      }
+      for (var k in dd) existing[k] = dd[k];
+      var rv = [month, w, dn, JSON.stringify(existing), now];
+      if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
+      else sh.appendRow(rv);
+      cnt++;
+    }
+  }
+  return jsonResponse({ status: 'ok', message: '電気 ' + cnt + ' 日保存', savedCount: cnt });
+}
+
+// 日常機械設備 (per-day, JSON)
+//   data.mechanical = { [week]: { [day]: { fieldKey: value, … } } }
+function saveMechanical(data) {
+  var month = normalizeMonth(data.month);
+  var mech = data.mechanical;
+  if (!month || !mech) return jsonResponse({ error: 'パラメータ不足' });
+
+  var sh = getOrCreateSheet(SHEET_MECHANICAL, HEADERS_MECHANICAL);
+  var now = new Date();
+  var cnt = 0;
+  for (var wn in mech) {
+    var wd = mech[wn]; if (!wd) continue;
+    var w = parseInt(wn, 10); if (!w) continue;
+    for (var dc in wd) {
+      var dd = wd[dc]; if (!dd) continue;
+      var dn = DAY_NAMES[dc]; if (!dn) continue;
+      var ri = findRowByMonthWeekDay(sh, month, w, dn);
+      var rv = [month, w, dn, JSON.stringify(dd), now];
+      if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
+      else sh.appendRow(rv);
+      cnt++;
+    }
+  }
+  return jsonResponse({ status: 'ok', message: '機械 ' + cnt + ' 日保存', savedCount: cnt });
+}
+
+// オーケストレータ: 全データを 1 リクエストで保存
+function saveEverything(data) {
+  var month = normalizeMonth(data.month);
+  if (!month) return jsonResponse({ error: '月が指定されていません' });
+  var msgs = [];
+  if (data.waterUsage) {
+    var r = saveWaterUsage({ month: month, weeks: data.waterUsage });
+    msgs.push(JSON.parse(r.getContent()).message || '');
+  }
+  if (data.waterMeasure) {
+    var totalDays = 0;
+    for (var wn in data.waterMeasure) {
+      var r2 = saveWaterMeasure({ month: month, week: parseInt(wn, 10), days: data.waterMeasure[wn] });
+      try { totalDays += JSON.parse(r2.getContent()).savedCount || 0; } catch (e) {}
+    }
+    msgs.push('水質下段 ' + totalDays + ' 日保存');
+  }
+  if (data.equipment) {
+    var r3 = saveEquipment({ month: month, equipment: data.equipment });
+    msgs.push(JSON.parse(r3.getContent()).message || '');
+  }
+  if (data.electrical) {
+    var r4 = saveElectrical({ month: month, electrical: data.electrical });
+    msgs.push(JSON.parse(r4.getContent()).message || '');
+  }
+  if (data.mechanical) {
+    var r5 = saveMechanical({ month: month, mechanical: data.mechanical });
+    msgs.push(JSON.parse(r5.getContent()).message || '');
+  }
+  return jsonResponse({ status: 'ok', message: msgs.filter(function(m){return m;}).join(' / ') });
+}
+
+
+// =====================================================================
+// 全データ取得 (旧 tutuga_gscode.gs の戻り値構造を踏襲)
+// =====================================================================
+
+function getAllData(rawMonth) {
+  var month = normalizeMonth(rawMonth);
+  if (!month) return jsonResponse({ error: '月が指定されていません' });
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var result = {
+    month: month,
+    waterUsage:   {},
+    waterMeasure: {},
+    equipment:    {},
+    electrical:   {},
+    mechanical:   {},
+    holidays:     []
+  };
+
+  // 日常水質_上段 (per-week)
+  var ws = ss.getSheetByName(SHEET_WATER_USAGE);
+  if (ws && ws.getLastRow() > 1) {
+    var v = ws.getRange(2, 1, ws.getLastRow() - 1, 4).getValues();
+    for (var i = 0; i < v.length; i++) {
+      if (!matchMonth(v[i][0], month)) continue;
+      var w = parseInt(v[i][1], 10); if (!w) continue;
+      try { result.waterUsage[w] = JSON.parse(v[i][2] || '{}'); } catch (e) {}
+    }
+  }
+
+  // 日常水質_下段 (per-day)
+  var wsd = ss.getSheetByName(SHEET_WATER_MEASURE);
+  if (wsd && wsd.getLastRow() > 1) {
+    var v2 = wsd.getRange(2, 1, wsd.getLastRow() - 1, 5).getValues();
+    for (var i = 0; i < v2.length; i++) {
+      if (!matchMonth(v2[i][0], month)) continue;
+      var w = parseInt(v2[i][1], 10); if (!w) continue;
+      var dc = DAY_REVERSE[v2[i][2]]; if (!dc) continue;
+      result.waterMeasure[w] = result.waterMeasure[w] || {};
+      try { result.waterMeasure[w][dc] = JSON.parse(v2[i][3] || '{}'); } catch (e) {}
+    }
+  }
+
+  // 機器運転時間 (per-week)
+  var es = ss.getSheetByName(SHEET_EQUIPMENT);
+  if (es && es.getLastRow() > 1) {
+    var v3 = es.getRange(2, 1, es.getLastRow() - 1, 4).getValues();
+    for (var i = 0; i < v3.length; i++) {
+      if (!matchMonth(v3[i][0], month)) continue;
+      var w = parseInt(v3[i][1], 10); if (!w) continue;
+      try { result.equipment[w] = JSON.parse(v3[i][2] || '{}'); } catch (e) {}
+    }
+  }
+
+  // 日常電気設備 (per-day)
+  var els = ss.getSheetByName(SHEET_ELECTRICAL);
+  if (els && els.getLastRow() > 1) {
+    var v4 = els.getRange(2, 1, els.getLastRow() - 1, 5).getValues();
+    for (var i = 0; i < v4.length; i++) {
+      if (!matchMonth(v4[i][0], month)) continue;
+      var w = parseInt(v4[i][1], 10); if (!w) continue;
+      var dc = DAY_REVERSE[v4[i][2]]; if (!dc) continue;
+      result.electrical[w] = result.electrical[w] || {};
+      try { result.electrical[w][dc] = JSON.parse(v4[i][3] || '{}'); } catch (e) {}
+    }
+  }
+
+  // 日常機械設備 (per-day)
+  var ms = ss.getSheetByName(SHEET_MECHANICAL);
+  if (ms && ms.getLastRow() > 1) {
+    var v5 = ms.getRange(2, 1, ms.getLastRow() - 1, 5).getValues();
+    for (var i = 0; i < v5.length; i++) {
+      if (!matchMonth(v5[i][0], month)) continue;
+      var w = parseInt(v5[i][1], 10); if (!w) continue;
+      var dc = DAY_REVERSE[v5[i][2]]; if (!dc) continue;
+      result.mechanical[w] = result.mechanical[w] || {};
+      try { result.mechanical[w][dc] = JSON.parse(v5[i][3] || '{}'); } catch (e) {}
+    }
+  }
+
+  // 祝日リスト (全件、クライアントで月でフィルタする)
+  var hs = ss.getSheetByName(SHEET_HOLIDAYS);
+  if (hs && hs.getLastRow() >= 3) {
+    var v6 = hs.getRange(3, 1, hs.getLastRow() - 2, 2).getValues();
+    for (var i = 0; i < v6.length; i++) {
+      var d = v6[i][0];
+      if (!d) continue;
+      if (typeof d === 'object' && typeof d.getFullYear === 'function') {
+        var y = d.getFullYear();
+        var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+        var dd = ('0' + d.getDate()).slice(-2);
+        result.holidays.push({ date: y + '-' + mm + '-' + dd, name: v6[i][1] || '' });
+      } else {
+        var ds = toDateStr(d);
+        if (ds) result.holidays.push({ date: ds, name: v6[i][1] || '' });
+      }
+    }
+  }
+
+  return jsonResponse(result);
+}
+
+
+// =====================================================================
+// 初期セットアップ用ヘルパー (GAS エディタから手動実行)
+// =====================================================================
+
+function setupHolidays() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_HOLIDAYS);
+  if (sheet && sheet.getLastRow() >= 3) return '既に「祝日リスト」シートが存在します。';
+  if (!sheet) sheet = ss.insertSheet(SHEET_HOLIDAYS);
+  sheet.getRange(1, 1, 2, 2).setValues([['祝日一覧', ''], ['日付', '名称']]);
+  sheet.getRange(1, 1).setFontWeight('bold');
+  sheet.getRange(2, 1, 1, 2).setFontWeight('bold').setBackground('#e0f2e9');
+  var holidays = [
+    ['2026-01-01', '元日'], ['2026-01-02', '振替休日'], ['2026-01-12', '成人の日'],
+    ['2026-02-11', '建国記念の日'], ['2026-02-23', '天皇誕生日'], ['2026-03-20', '春分の日'],
+    ['2026-04-29', '昭和の日'], ['2026-05-03', '憲法記念日'], ['2026-05-04', 'みどりの日'],
+    ['2026-05-05', 'こどもの日'], ['2026-05-06', '振替休日'],
+    ['2026-07-20', '海の日'], ['2026-08-11', '山の日'], ['2026-09-21', '敬老の日'],
+    ['2026-09-23', '秋分の日'], ['2026-10-12', 'スポーツの日'],
+    ['2026-11-03', '文化の日'], ['2026-11-23', '勤労感謝の日']
+  ];
+  var rows = holidays.map(function (h) {
+    var p = h[0].split('-').map(Number);
+    return [new Date(p[0], p[1] - 1, p[2]), h[1]];
+  });
+  sheet.getRange(3, 1, rows.length, 2).setValues(rows);
+  sheet.getRange(3, 1, rows.length, 1).setNumberFormat('yyyy-mm-dd');
+  sheet.setColumnWidth(1, 120);
+  sheet.setColumnWidth(2, 200);
+  return '「祝日リスト」シートを作成しました（' + rows.length + '件）。';
+}
+
+function setupSettings() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_SETTINGS);
+  if (sheet) return '既に「設定」シートが存在します。';
+  sheet = ss.insertSheet(SHEET_SETTINGS);
+  sheet.getRange(1, 1, 1, 2).setValues([['key', 'value']]);
+  sheet.getRange(1, 1, 1, 2).setFontWeight('bold').setBackground('#e0f2e9');
+  sheet.getRange(2, 1, 1, 2).setValues([['テンプレートID', '1lcdNltnqxjIYAK1dxZKLZ3D8ubNx6fjGYtsz-5ClqZg']]);
+  return '「設定」シートを作成しました。';
+}
+
+function setupUsers() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_USERS);
+  if (sheet) return '既に「ユーザー管理」シートが存在します。';
+  sheet = ss.insertSheet(SHEET_USERS);
+  sheet.getRange(1, 1, 1, 6).setValues([['ID', 'パスワードハッシュ', '氏名', '有効', '最終ログイン', '備考']]);
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#e0f2e9');
+  sheet.getRange(2, 1, 1, 6).setValues([['cpkanri', '(未使用)', '筒賀', true, '', 'Phase 3 では TUTUGA_USERS 配列を使用、本シートは将来の拡張用']]);
+  return '「ユーザー管理」シートを作成しました。';
+}
+
+function setupAll() {
+  var msgs = [setupHolidays(), setupSettings(), setupUsers()];
+  return msgs.join('\n');
+}
