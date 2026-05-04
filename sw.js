@@ -1,5 +1,5 @@
 // 筒賀水質管理センター 週報 Service Worker
-const CACHE_NAME = 'tutuga-v1';
+const CACHE_NAME = 'tutuga-v2';
 const ASSETS = [
   './',
   './index.html',

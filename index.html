@@ -4418,9 +4418,10 @@ async function exportExcel() {
 
   const out = await wb.xlsx.writeBuffer();
   // 吉和パターンに合わせて post-processing は実施しない
-  // （views/tabColor クリアでExcelの修復メッセージは消える）
+  // （views/tabColor クリアでExcelの修復メッセージは消える、
+  //   <v></v>補完は逆効果なので削除した）
   const finalBuf = out;
-  console.log("[Excel出力] size=" + (finalBuf.byteLength || finalBuf.length));
+  console.log("[Excel出力 v5/yoshiwa-pattern] size=" + (finalBuf.byteLength || finalBuf.length) + " ※post-processing無し");
 
   const blob = new Blob([finalBuf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
