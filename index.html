@@ -4556,9 +4556,14 @@ function fillEquipSheet(ws, yyyy, mm) {
     const dateRow = T_EQUIP_WEEK_DATE_ROW[w];
     const monDay = getActualDate(w, "mon");
     if (dateRow && monDay) {
+      // A5:C5 などは結合セル。ExcelJS では結合範囲の左上セルに書く必要がある
+      // 一旦 unmerge してから書き込み、再 merge することで確実に値を反映させる
+      const mergeRange = `A${dateRow}:C${dateRow}`;
+      try { ws.unMergeCells(mergeRange); } catch(e) {}
       const cell = ws.getCell(dateRow, T_EQUIP_WEEK_DATE_COL);
       cell.value = toExcelDate(monDay);
       cell.numFmt = '[$-411]ggge"年"m"月"d"日";@';
+      try { ws.mergeCells(mergeRange); } catch(e) {}
     }
     const eqWk = weeklyData.equipment && weeklyData.equipment[w];
     if (!eqWk) continue;
