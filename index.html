@@ -4296,26 +4296,17 @@ async function exportExcel() {
         }
       }
     }
-    // 水質管理報告 A列 日付参照
-    const wsReport = wb.getWorksheet("水質管理報告");
-    if (wsReport) {
-      for (const r of [...Array(31).keys()].map(i => 8 + i).concat([...Array(31).keys()].map(i => 49 + i))) {
-        wsReport.getCell(r, 1).value = null;
-      }
-    }
-    // 運転管理月報 A列 日付参照
-    const wsMonthly = wb.getWorksheet("運転管理月報");
-    if (wsMonthly) {
-      for (let r = 6; r <= 36; r++) {
-        wsMonthly.getCell(r, 1).value = null;
-      }
-    }
-    // 機器運転時間 A/F列 日付式
+    // 水質管理報告の A 列は運転管理月報!A6 を参照する数式チェーン
+    // 運転管理月報 A6 が更新されれば自動連鎖するため何もしない
+    // 運転管理月報の A 列は数式チェーン (A6=月初, A7=A6+1...) なのでクリアしない
+    // A6 だけ値で上書きすれば連鎖して A7 以降も更新される
+    // 機器運転時間 A列の各週ヘッダー位置（筒賀: 38行ピッチ）
+    // テンプレに固定日付2026-03-02 等が入っているのでクリアして fillEquipSheet で書き直す
+    // F列は =A5+4 等の数式が入っているのでクリアしない（A列が更新されれば連動）
     const wsEq0 = wb.getWorksheet("機器運転時間");
     if (wsEq0) {
-      for (const r of [3, 32, 61, 90, 119]) {
+      for (const r of [5, 43, 81, 119, 157]) {
         wsEq0.getCell(r, 1).value = null;
-        wsEq0.getCell(r, 6).value = null;
       }
     }
     // 日常電気設備 日付ヘッダー（筒賀: 1ブロック=71行）
@@ -4367,44 +4358,16 @@ async function exportExcel() {
   try { const wsEl = wb.getWorksheet("日常電気設備"); if (wsEl) fillElecSheet(wsEl, yyyy, mm); } catch (e) { console.error("fillElecSheet:", e); }
   try { const wsMe = wb.getWorksheet("日常機械設備"); if (wsMe) fillMechSheet(wsMe, yyyy, mm); } catch (e) { console.error("fillMechSheet:", e); }
 
-  // 水質管理報告と運転管理月報の日付列（A列）に日次日付を書き込み
-  // 修正済みテンプレでは A列の日付参照式が削除されているため、値で書き込む必要がある
+  // 水質管理報告と運転管理月報の日付列（A列）
+  // 水質管理報告 A8 は ='運転管理月報'!A6 を参照し、A9=A8+1 と連鎖するため
+  // 運転管理月報 A6 だけ書き込めば全部自動更新される
   try {
-    const daysInMonth = new Date(yyyy, mm, 0).getDate();
-
-    // 水質管理報告 A8-A38（1/2ページ）と A49-A79（2/2ページ）に1-31日
-    const wsReport = wb.getWorksheet("水質管理報告");
-    if (wsReport) {
-      for (let d = 0; d < daysInMonth; d++) {
-        const dateValue = toExcelDate(new Date(yyyy, mm - 1, d + 1));
-        // 1/2 ページ
-        const cell1 = wsReport.getCell(8 + d, 1);
-        cell1.value = dateValue;
-        cell1.numFmt = 'd';
-        // 2/2 ページ
-        const cell2 = wsReport.getCell(49 + d, 1);
-        cell2.value = dateValue;
-        cell2.numFmt = 'd';
-      }
-      // 対象月に存在しない日の行は空に（例：2月の29-31日、4月の31日など）
-      for (let d = daysInMonth; d < 31; d++) {
-        wsReport.getCell(8 + d, 1).value = null;
-        wsReport.getCell(49 + d, 1).value = null;
-      }
-    }
-
-    // 運転管理月報 A6-A36
+    // 運転管理月報 A6 (月初) のみ書き込み、A7以降は数式チェーンで自動更新
     const wsMonthly = wb.getWorksheet("運転管理月報");
     if (wsMonthly) {
-      for (let d = 0; d < daysInMonth; d++) {
-        const cell = wsMonthly.getCell(6 + d, 1);
-        cell.value = toExcelDate(new Date(yyyy, mm - 1, d + 1));
-        cell.numFmt = 'd';
-      }
-      // 対象月に存在しない日の行は空に
-      for (let d = daysInMonth; d < 31; d++) {
-        wsMonthly.getCell(6 + d, 1).value = null;
-      }
+      const cellA6 = wsMonthly.getCell(6, 1);
+      cellA6.value = toExcelDate(new Date(yyyy, mm - 1, 1));
+      cellA6.numFmt = 'd';
     }
   } catch (e) { console.error("Daily dates fill:", e); }
 
@@ -4474,14 +4437,11 @@ function getPrevMonthLastDayData(targetMonth, firstMonday, holidaySet) {
 
 function fillWaterSheet(ws, yyyy, mm, holidaySet) {
   // GAS と完全に同じロジック（Phase A 移植版）
-  // weeklyData.weeks[w] = { mon:{...}, tue:{...}, ..., powerAllDay:{mon:..., tue:...}, ... }
-  // 上段使用量と下段水質測定が weeklyData.weeks[w] にフラット格納されているため、
-  // T_USAGE_ROW_OFFSET / T_MEASURE_ROW_OFFSET でそれぞれ取り出す
+  // 上段使用量は weeklyData.waterUsage[w][key][cell] に格納
+  // 下段水質測定は weeklyData.weeks[w][day][field] に格納
   for (let w = 1; w <= 5; w++) {
     const blockRow = T_WATER_BLOCK_ROW[w];
     if (!blockRow) continue;
-    const wkObj = weeklyData.weeks[w];
-    if (!wkObj) continue;
 
     // 月曜日付を I列(9)に書き込み（第1週のみ; 他週はテンプレ数式で参照）
     if (w === 1) {
@@ -4494,36 +4454,42 @@ function fillWaterSheet(ws, yyyy, mm, holidaySet) {
     }
 
     // ===== 上段使用量（per-week, 1行=1項目, 6セル分=月火水木金+次週月） =====
-    for (const key in T_USAGE_ROW_OFFSET) {
-      const item = wkObj[key];
-      if (!item) continue;
-      const rowAbs = blockRow + T_USAGE_ROW_OFFSET[key];
-      for (const cellKey of T_USAGE_CELLS) {
-        const v = item[cellKey];
-        if (v != null && v !== "") {
-          setCell(ws, rowAbs, T_USAGE_DAY_COL[cellKey], v);
+    const usageWk = weeklyData.waterUsage && weeklyData.waterUsage[w];
+    if (usageWk) {
+      for (const key in T_USAGE_ROW_OFFSET) {
+        const item = usageWk[key];
+        if (!item) continue;
+        const rowAbs = blockRow + T_USAGE_ROW_OFFSET[key];
+        for (const cellKey of T_USAGE_CELLS) {
+          const v = item[cellKey];
+          if (v != null && v !== "") {
+            setCell(ws, rowAbs, T_USAGE_DAY_COL[cellKey], v);
+          }
         }
       }
     }
 
     // ===== 下段水質測定（per-day, 1日=1列, 各項目=1行） =====
-    for (const day of T_DAYS) {
-      const col = T_MEASURE_DAY_COL[day];
-      const dd = wkObj[day];
-      if (!dd) continue;
-      for (const fk in T_MEASURE_ROW_OFFSET) {
-        const v = dd[fk];
-        if (v != null && v !== "") {
-          setCell(ws, blockRow + T_MEASURE_ROW_OFFSET[fk], col, v);
+    const measureWk = weeklyData.weeks && weeklyData.weeks[w];
+    if (measureWk) {
+      for (const day of T_DAYS) {
+        const col = T_MEASURE_DAY_COL[day];
+        const dd = measureWk[day];
+        if (!dd) continue;
+        for (const fk in T_MEASURE_ROW_OFFSET) {
+          const v = dd[fk];
+          if (v != null && v !== "") {
+            setCell(ws, blockRow + T_MEASURE_ROW_OFFSET[fk], col, v);
+          }
         }
-      }
-      // 測定者
-      if (dd.inspector) {
-        setCell(ws, blockRow + T_WATER_INSPECTOR_ROW_OFFSET, col, dd.inspector);
-      }
-      // 備考
-      if (dd.bikou) {
-        setCell(ws, blockRow + T_WATER_BIKOU_ROW_OFFSET, col, dd.bikou);
+        // 測定者
+        if (dd.inspector) {
+          setCell(ws, blockRow + T_WATER_INSPECTOR_ROW_OFFSET, col, dd.inspector);
+        }
+        // 備考
+        if (dd.bikou) {
+          setCell(ws, blockRow + T_WATER_BIKOU_ROW_OFFSET, col, dd.bikou);
+        }
       }
     }
   }
@@ -4617,7 +4583,7 @@ function fillElecSheet(ws, yyyy, mm) {
   ];
   for (let w = 1; w <= 5; w++) {
     const elecWk = (weeklyData.electrical && weeklyData.electrical[w]) || {};
-    const usageWk = weeklyData.weeks[w] || {};
+    const usageWk = (weeklyData.waterUsage && weeklyData.waterUsage[w]) || {};
     for (const day of T_DAYS) {
       const col = T_ELEC_DAY_COL[day];
       const dd = elecWk[day] || {};
