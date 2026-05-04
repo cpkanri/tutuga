@@ -2855,7 +2855,11 @@ function pruneOldMonthData(currentMonth) {
 
 function saveToStorage() {
   function doSave() {
-    if (currentSheet === "water") saveFormToData();
+    if (currentSheet === "water") {
+      // 上段使用量サブタブにいる場合は使用量の保存関数を呼ぶ
+      if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
+      else saveFormToData();
+    }
     else if (currentSheet === "equip") saveEquipFormToData();
     else if (currentSheet === "elec") saveElecFormToData();
     else if (currentSheet === "mech") saveMechFormToData();
@@ -3724,9 +3728,16 @@ function bindEvents() {
     btnSave.disabled = true;
 
     const sheetLabel = getSheetLabel(currentSheet);
-    const scope = currentSheet === 'water'
-      ? '第' + currentWeek + '週' + currentDay + '曜日【' + sheetLabel + '】'
-      : '第' + currentWeek + '週【' + sheetLabel + '】';
+    let scope;
+    if (currentSheet === 'water') {
+      if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") {
+        scope = '第' + currentWeek + '週【使用量】';
+      } else {
+        scope = '第' + currentWeek + '週' + currentDay + '曜日【' + sheetLabel + '】';
+      }
+    } else {
+      scope = '第' + currentWeek + '週【' + sheetLabel + '】';
+    }
 
     try {
       await saveCurrentToServer();
