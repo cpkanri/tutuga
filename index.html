@@ -1215,7 +1215,7 @@ header > .conn-status {
 
 <script>
 // ===== GAS URL =====
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyCo-UnGHg-8u9E21F3H3vcyeE1cml_E088N2xBTS3fZXeKMwEfax6lxIeL6xMNRvAJ/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbymItbLRkZyFMOpTZ6wZglZEYfFegbLhkdVEijpvm3S-ofdbGZ9myuyJznIHvoymd8/exec';
 
 // ===== 認証 =====
 const AUTH_KEYS = { token: 'tutuga_auth_token', userId: 'tutuga_auth_userId', userName: 'tutuga_auth_userName', expires: 'tutuga_auth_expires' };
@@ -4274,162 +4274,66 @@ function base64ToArrayBuffer(b64) {
 }
 
 async function exportExcel() {
-  if (!window.EXCEL_TEMPLATE_B64) {
-    throw new Error("テンプレートが読み込まれていません（template.js）");
-  }
-  if (typeof ExcelJS === "undefined") {
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js");
-  }
-  // 現在タブを保存（水質タブは上段/下段サブタブも判定）
-  if (currentSheet === "water") {
-    if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
-    else saveFormToData();
-  }
-  else if (currentSheet === "equip") saveEquipFormToData();
-  else if (currentSheet === "elec") saveElecFormToData();
-  else if (currentSheet === "mech") saveMechFormToData();
-
-  const buf = base64ToArrayBuffer(window.EXCEL_TEMPLATE_B64);
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf);
-
-  const ym = weeklyData.targetMonth || document.getElementById("targetMonth").value;
-  const [yyyy, mm] = ym.split("-").map(Number);
-
-  // ===== テンプレートの日付関連数式を一括削除 =====
-  // ExcelJS で読み込んだ直後に、日付関連の問題のあるセルを null にすることで、
-  // Excel の再計算で月がずれる問題を根本解決する
+  const btn = document.getElementById("btnExcel");
+  const orig = btn ? btn.textContent : "";
+  if (btn) { btn.textContent = "保存中..."; btn.disabled = true; }
   try {
-    const wsWater = wb.getWorksheet("日常水質");
-    if (wsWater) {
-      // P1 の月判定式
-      wsWater.getCell(1, 16).value = null;
-      // I3〜N3（5週分）の日付式を全削除（後で値で書き込み）
-      for (const r of [3, 55, 107, 159, 211]) {
-        for (let c = 9; c <= 14; c++) {
-          wsWater.getCell(r, c).value = null;
-        }
-      }
-      // 各週の I4〜I10 の N列参照式（=N188, =N4 等）を削除
-      // これは「前週のN列データを次週Iに引き継ぐ」仕組みだが、現在のN列は日付のみなので不要
-      const WATER_WEEK_OFFSETS = { 1: 0, 2: 52, 3: 104, 4: 156, 5: 208 };
-      for (const w of [1, 2, 3, 4, 5]) {
-        const offset = WATER_WEEK_OFFSETS[w];
-        // I4〜I10（月曜データ7項目分）の N列参照を削除
-        for (let r = 4 + offset; r <= 10 + offset; r++) {
-          wsWater.getCell(r, 9).value = null;
-        }
-      }
+    // 1. 現在タブのフォームデータをlocalStorageに反映
+    if (currentSheet === "water") {
+      if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
+      else saveFormToData();
     }
-    // 水質管理報告の A 列は運転管理月報!A6 を参照する数式チェーン
-    // 運転管理月報 A6 が更新されれば自動連鎖するため何もしない
-    // 運転管理月報の A 列は数式チェーン (A6=月初, A7=A6+1...) なのでクリアしない
-    // A6 だけ値で上書きすれば連鎖して A7 以降も更新される
-    // 機器運転時間 A列の各週ヘッダー位置（筒賀: 38行ピッチ）
-    // テンプレに固定日付2026-03-02 等が入っているのでクリアして fillEquipSheet で書き直す
-    // F列は =A5+4 等の数式が入っているのでクリアしない（A列が更新されれば連動）
-    const wsEq0 = wb.getWorksheet("主要機器運転時間");
-    if (wsEq0) {
-      for (const r of [5, 43, 81, 119, 157]) {
-        wsEq0.getCell(r, 1).value = null;
-      }
-    }
-    // 日常電気設備 日付ヘッダー（筒賀: 1ブロック=71行）
-    const wsEl0 = wb.getWorksheet("日常電気設備");
-    if (wsEl0) {
-      for (const r of [2, 73, 144, 215, 286]) {
-        for (let c = 7; c <= 11; c++) {
-          wsEl0.getCell(r, c).value = null;
-        }
-      }
-    }
-    // 日常機械設備 日付ヘッダー（筒賀: 1ブロック=132行、page2 は p1+66）
-    const wsMe0 = wb.getWorksheet("日常機械設備");
-    if (wsMe0) {
-      for (const r of [2,3,68,69,134,135,200,201,266,267,332,333,398,399,464,465,530,531,596,597]) {
-        for (let c = 5; c <= 14; c++) {
-          wsMe0.getCell(r, c).value = null;
-        }
-      }
-    }
-  } catch (e) { console.error("テンプレ日付式クリア:", e); }
+    else if (currentSheet === "equip") saveEquipFormToData();
+    else if (currentSheet === "elec") saveElecFormToData();
+    else if (currentSheet === "mech") saveMechFormToData();
 
-  // 祝日リストを取得（日常水質N列の次週最初の平日計算用）
-  // まず localStorage キャッシュから取得、なければテンプレから読み取り
-  let holidaySet = getHolidaySetFromCache();
-  if (holidaySet.size === 0) {
-    // キャッシュなし → GAS に非同期でリクエスト（結果は次回以降使う）
-    fetchHolidaysFromServer();
-    // 今回のExcel出力は、テンプレに祝日リストシートがあればそこから読む（フォールバック）
-    holidaySet = getHolidaySet(wb);
+    // 2. 対象月の取得
+    const ym = weeklyData.targetMonth || document.getElementById("targetMonth").value;
+    if (!ym) {
+      showToast("対象年月を設定してください", "error");
+      return;
+    }
+
+    // 3. 現在タブをサーバー（GAS）に同期 — GASがスプレッドシートから読むため
+    if (btn) btn.textContent = "サーバーへ同期中...";
+    try {
+      await saveCurrentToServer();
+    } catch (syncErr) {
+      console.warn("同期失敗（処理は続行）:", syncErr && syncErr.message);
+    }
+
+    // 4. GASにExcel生成を依頼（doGet で exportExcel）
+    if (btn) btn.textContent = "Excel生成中(15秒程度)...";
+    const url = withToken(GAS_URL + "?action=exportExcel&month=" + encodeURIComponent(ym));
+    const res = await fetchWithTimeout(url, { method: "GET" }, 90000);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (data && data.error) throw new Error(data.error);
+    if (!data || !data.fileBase64) {
+      throw new Error("Excelデータの取得に失敗（GAS応答: " + JSON.stringify(data).substring(0, 200) + "）");
+    }
+
+    // 5. base64 → Blob → ダウンロード
+    const bytes = Uint8Array.from(atob(data.fileBase64), c => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const dlUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = dlUrl;
+    a.download = data.fileName || ("筒賀水質管理センター記録表_" + ym + ".xlsx");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(dlUrl);
+
+    console.log("[Excel出力 v8/GAS] " + (data.fileName || "(unknown)") + " size=" + bytes.length);
+    showToast("Excelファイルをダウンロードしました");
+
+  } catch (e) {
+    console.error("Excel出力エラー:", e);
+    showToast("Excel出力に失敗: " + (e && e.message ? e.message : e), "error");
+  } finally {
+    if (btn) { btn.textContent = orig || "📄 Excel出力"; btn.disabled = false; }
   }
-
-  // 日常水質シート: P1 に対象月の1日を固定値として書き込む
-  // テンプレの P1 は I3 参照式なので、これを値で上書きして月報シート連動を安定化
-  try {
-    const wsWater = wb.getWorksheet("日常水質");
-    if (wsWater) {
-      const p1Cell = wsWater.getCell(1, 16);
-      // 既存の数式をクリアしてから値を設定（ExcelJSの仕様対策）
-      p1Cell.value = null;
-      p1Cell.value = toExcelDate(new Date(yyyy, mm - 1, 1));
-      p1Cell.numFmt = 'yyyy"年"m"月"';
-      fillWaterSheet(wsWater, yyyy, mm, holidaySet);
-    }
-  } catch (e) { console.error("fillWaterSheet:", e); }
-
-  try { fillReportFinalData(wb, yyyy, mm); } catch (e) { console.error("fillReportFinalData:", e); }
-  try { const wsOp = wb.getWorksheet("運転管理月報"); if (wsOp) fillOperationMonthlySheet(wsOp, yyyy, mm); } catch (e) { console.error("fillOperationMonthlySheet:", e); }
-  try { const wsEq = wb.getWorksheet("主要機器運転時間"); if (wsEq) fillEquipSheet(wsEq, yyyy, mm); } catch (e) { console.error("fillEquipSheet:", e); }
-  try { const wsEl = wb.getWorksheet("日常電気設備"); if (wsEl) fillElecSheet(wsEl, yyyy, mm); } catch (e) { console.error("fillElecSheet:", e); }
-  try { const wsMe = wb.getWorksheet("日常機械設備"); if (wsMe) fillMechSheet(wsMe, yyyy, mm); } catch (e) { console.error("fillMechSheet:", e); }
-
-  // 水質管理報告と運転管理月報の日付列（A列）
-  // 水質管理報告 A8 は ='運転管理月報'!A6 を参照し、A9=A8+1 と連鎖するため
-  // 運転管理月報 A6 だけ書き込めば全部自動更新される
-  try {
-    // 運転管理月報 A6 (月初) のみ書き込み、A7以降は数式チェーンで自動更新
-    const wsMonthly = wb.getWorksheet("運転管理月報");
-    if (wsMonthly) {
-      const cellA6 = wsMonthly.getCell(6, 1);
-      cellA6.value = toExcelDate(new Date(yyyy, mm - 1, 1));
-      cellA6.numFmt = 'd';
-    }
-  } catch (e) { console.error("Daily dates fill:", e); }
-
-  // ===== 修復メッセージ根本対策（views完全リセット版）=====
-  // テンプレに残ったfrozen pane/selection/tabColor/pageBreakPreviewが
-  // Excel修復処理を誘発するため、各シートのviewsを完全リセット
-  try {
-    wb.eachSheet(ws => {
-      ws.views = [{
-        workbookViewId: 0,
-        showGridLines: true,
-        view: 'normal',
-        zoomScale: 100,
-        zoomScaleNormal: 100
-      }];
-      if (ws.properties) ws.properties.tabColor = undefined;
-    });
-  } catch (e) { console.warn("views/tabColor リセット失敗:", e); }
-
-  const out = await wb.xlsx.writeBuffer();
-  // 吉和パターンに合わせて post-processing は実施しない
-  // （views/tabColor クリアでExcelの修復メッセージは消える、
-  //   <v></v>補完は逆効果なので削除した）
-  const finalBuf = out;
-  console.log("[Excel出力 v7/views-reset] size=" + (finalBuf.byteLength || finalBuf.length) + " ※views完全リセット, post-processing無し");
-
-  const blob = new Blob([finalBuf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "筒賀水質管理センター記録表_" + ym + ".xlsx";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast("Excelファイルをダウンロードしました");
 }
 
 // 日常水質シート（週オフセット: 1→0, 2→46, 3→92, 4→138, 5→184）
