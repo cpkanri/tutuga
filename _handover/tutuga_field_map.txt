@@ -1,0 +1,371 @@
+# 筒賀PWA フィールドマップ（tutuga_gscode.gs から抽出）
+# 生成日: 2026-05-04
+#
+# 形式: fieldKey | Excel行(W1基準) | サブタブ | 備考
+# Excel行は第1週(W1)基準。第2週以降は WEEK_OFFSETS_{ELEC,MECH} で加算
+# データSS保存JSONのキー = fieldKey そのまま
+
+================================================================================
+# 水質 (water) - 37項目
+================================================================================
+
+## 水質_使用量上段 (waterUsage / data sheet: 日常水質_上段)
+# 保存形式: { week → { fieldKey → { mon, tue, wed, thu, fri, nextMon } } }
+# Excel行: WATER_BLOCK_ROW[week] + USAGE_ROW_OFFSET[fieldKey]
+# Excel列: USAGE_DAY_COL = mon=I,tue=J,wed=K,thu=L,fri=M,nextMon=N
+
+powerAllDay          | offset=3   | water/usage | (上段使用量)
+powerMeasure         | offset=4   | water/usage | (上段使用量)
+powerReactive        | offset=5   | water/usage | (上段使用量)
+demand               | offset=6   | water/usage | (上段使用量)
+water                | offset=7   | water/usage | (上段使用量)
+diesel               | offset=8   | water/usage | (上段使用量)
+returnSludge1        | offset=9   | water/usage | (上段使用量)
+returnSludge2        | offset=10  | water/usage | (上段使用量)
+discharge            | offset=11  | water/usage | (上段使用量)
+# 注: excessSludge1, excessSludge2 は上段使用量フォームにあるが
+#     日常水質シートには書き込まない (日常電気設備 sub2 に転記)
+
+## 水質_測定下段 (waterMeasure / data sheet: 日常水質_下段)
+# 保存形式: { week → { day(mon-fri) → { fieldKey → value } } }
+# 各日に inspector, bikou も含む
+# Excel行: WATER_BLOCK_ROW[week] + MEASURE_ROW_OFFSET[fieldKey]
+# Excel列: MEASURE_DAY_COL = mon=J,tue=K,wed=L,thu=M,fri=N
+
+tempIn               | offset=15  | water/measure | (下段水質測定)
+tempD1               | offset=16  | water/measure | (下段水質測定)
+tempD2               | offset=17  | water/measure | (下段水質測定)
+tempOut              | offset=18  | water/measure | (下段水質測定)
+appearIn             | offset=19  | water/measure | (下段水質測定)
+appearD1             | offset=20  | water/measure | (下段水質測定)
+appearD2             | offset=21  | water/measure | (下段水質測定)
+appearOut            | offset=22  | water/measure | (下段水質測定)
+transIn              | offset=23  | water/measure | (下段水質測定)
+transOut             | offset=24  | water/measure | (下段水質測定)
+odorIn               | offset=25  | water/measure | (下段水質測定)
+odorD1               | offset=26  | water/measure | (下段水質測定)
+odorD2               | offset=27  | water/measure | (下段水質測定)
+odorOut              | offset=28  | water/measure | (下段水質測定)
+phIn                 | offset=29  | water/measure | (下段水質測定)
+phD1                 | offset=30  | water/measure | (下段水質測定)
+phD2                 | offset=31  | water/measure | (下段水質測定)
+phOut                | offset=32  | water/measure | (下段水質測定)
+sv1_30               | offset=33  | water/measure | (下段水質測定)
+sv1_24h              | offset=34  | water/measure | (下段水質測定)
+sv2_30               | offset=35  | water/measure | (下段水質測定)
+sv2_24h              | offset=36  | water/measure | (下段水質測定)
+mlss1                | offset=37  | water/measure | (下段水質測定)
+mlss2                | offset=38  | water/measure | (下段水質測定)
+sludge1              | offset=39  | water/measure | (下段水質測定)
+sludge2              | offset=40  | water/measure | (下段水質測定)
+chlorine             | offset=41  | water/measure | (下段水質測定)
+chlorineDose         | offset=42  | water/measure | (下段水質測定)
+# tempFinal1, tempFinal2, transFinal1, transFinal2, phFinal1, phFinal2,
+# inspector, bikou は MEASURE_FIELDS にあるが MEASURE_ROW_OFFSET には無い
+# (MEASURE_FIELDS = フォーム同期用キー一覧、ROW_OFFSET = テンプレ書き込み用)
+
+================================================================================
+# 主要機器運転時間 (equip) - 32機器
+================================================================================
+
+# 保存形式: { week → { equipName → { mon, tue, wed, thu, fri } } }
+# Excel行: EQUIP_WEEK_START[week] + index_in_EQUIP_NAMES
+# Excel列: EQUIP_HOUR_DAY_COL = mon=D,tue=E,wed=F,thu=G,fri=H
+# サブタブなし（main only）
+
+mainPump1Hr                         | label=NO.1主ポンプ                       | row=W1+0  | equip
+mainPump2Hr                         | label=NO.2主ポンプ                       | row=W1+1  | equip
+aeration1Hr                         | label=NO.1エアレーション装置                  | row=W1+2  | equip
+aeration2Hr                         | label=NO.2エアレーション装置                  | row=W1+3  | equip
+aeration3Hr                         | label=NO.3エアレーション装置                  | row=W1+4  | equip
+aeration4Hr                         | label=NO.4エアレーション装置                  | row=W1+5  | equip
+finalScraper1Hr                     | label=№1終沈汚泥かき寄せ機                    | row=W1+6  | equip
+finalScraper2Hr                     | label=№2終沈汚泥かき寄せ機                    | row=W1+7  | equip
+returnPump1Hr                       | label=NO.1返送汚泥ポンプ                    | row=W1+8  | equip
+returnPump2Hr                       | label=NO.2返送汚泥ポンプ                    | row=W1+9  | equip
+returnPump3Hr                       | label=NO.3返送汚泥ポンプ                    | row=W1+10 | equip
+returnPump4Hr                       | label=NO.4返送汚泥ポンプ                    | row=W1+11 | equip
+excessPump1Hr                       | label=NO.1余剰汚泥ポンプ                    | row=W1+12 | equip
+excessPump2Hr                       | label=NO.2余剰汚泥ポンプ                    | row=W1+13 | equip
+finalDrainPumpHr                    | label=終沈室床排ポンプ                       | row=W1+14 | equip
+thickPump1Hr                        | label=№1濃縮汚泥引抜ポンプ                    | row=W1+15 | equip
+thickPump2Hr                        | label=№2濃縮汚泥引抜ポンプ                    | row=W1+16 | equip
+returnWaterPump1Hr                  | label=NO.1返流水ポンプ                     | row=W1+17 | equip
+returnWaterPump2Hr                  | label=NO.2返流水ポンプ                     | row=W1+18 | equip
+sludgeRoomDrainPumpHr               | label=汚泥ポンプ室床排ポンプ                    | row=W1+19 | equip
+deodorFanHr                         | label=臭気ガス吸引装置                       | row=W1+20 | equip
+generatorHr                         | label=発電機                            | row=W1+21 | equip
+
+================================================================================
+# 日常電気設備 (elec) - 67項目（1/3:29 + 2/3:26 + 3/3:12）
+================================================================================
+
+# 保存形式: { week → { day(mon-fri) → { fieldKey → value } } }
+# Excel行: ELEC{N}_ROW_W1[fieldKey] + WEEK_OFFSETS_ELEC.sub{N}[week-1]
+#   WEEK_OFFSETS_ELEC.sub1 = [0, 103, 203, 303, 403]
+#   WEEK_OFFSETS_ELEC.sub2 = [0, 101, 201, 301, 401]
+#   WEEK_OFFSETS_ELEC.sub3 = [0, 100, 200, 300, 400]
+# Excel列: ELEC_DAY_COL = mon=G,tue=H,wed=I,thu=J,fri=K
+
+## サブタブ1: 点検表 1/3 (電気室・配電系) - 29項目
+
+引込・受電__電圧__KV                                                          | row=W1+3   | elec/sub1
+引込・受電__電圧__モード                                                         | row=W1+4   | elec/sub1
+引込・受電__力率__ψ                                                           | row=W1+5   | elec/sub1
+引込・受電__電流__A                                                           | row=W1+6   | elec/sub1
+引込・受電__電流__モード                                                         | row=W1+7   | elec/sub1
+引込・受電__普通電力量(×10kw)__読み                                                | row=W1+8   | elec/sub1
+引込・受電__普通電力量(×10kw)__使用量                                               | row=W1+9   | elec/sub1
+引込・受電__引込・受電設定__手動/自動                                                  | row=W1+10  | elec/sub1
+引込・受電__引込・受電設定__切/入                                                    | row=W1+11  | elec/sub1
+変圧器__主変圧器温度__℃                                                         | row=W1+12  | elec/sub1
+変圧器__異音、脱臭の有無__有・無                                                     | row=W1+13  | elec/sub1
+低圧分岐__動力(210V)電圧__V                                                    | row=W1+14  | elec/sub1
+低圧分岐__動力(210V)電圧__モード                                                  | row=W1+15  | elec/sub1
+低圧分岐__動力(210V)電流__A                                                    | row=W1+16  | elec/sub1
+低圧分岐__動力(210V)電流__モード                                                  | row=W1+17  | elec/sub1
+低圧分岐__照明(210-105V)電流__A                                                | row=W1+18  | elec/sub1
+低圧分岐__照明(210-105V)電流__モード                                              | row=W1+19  | elec/sub1
+低圧分岐__低圧分岐設備__買電/自家発                                                   | row=W1+20  | elec/sub1
+低圧分岐__沈砂池ポンプ設備__読み                                                     | row=W1+21  | elec/sub1
+低圧分岐__沈砂池ポンプ設備__使用量                                                    | row=W1+22  | elec/sub1
+低圧分岐__水処理設備(1)__読み                                                     | row=W1+23  | elec/sub1
+低圧分岐__水処理設備(1)__使用量                                                    | row=W1+24  | elec/sub1
+低圧分岐__水処理設備(2)__読み                                                     | row=W1+25  | elec/sub1
+低圧分岐__水処理設備(2)__使用量                                                    | row=W1+26  | elec/sub1
+低圧分岐__汚泥処理設備電力量__読み                                                    | row=W1+27  | elec/sub1
+低圧分岐__汚泥処理設備電力量__使用量                                                   | row=W1+28  | elec/sub1
+低圧分岐__No.1コンデンサー__切/入                                                  | row=W1+29  | elec/sub1
+低圧分岐__No.2コンデンサー__切/入                                                  | row=W1+30  | elec/sub1
+低圧分岐__No.3コンデンサー__切/入                                                  | row=W1+31  | elec/sub1
+
+## サブタブ2: 点検表 2/3 (計装設備：流量計系・DO計含む) - 26項目
+
+Nｏ．１オキシデーションディッチＤＯ計__外観の確認                                             | row=W1+40  | elec/sub2
+Nｏ．１オキシデーションディッチＤＯ計__指示状況の確認                                           | row=W1+41  | elec/sub2
+Nｏ．１オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ                                          | row=W1+42  | elec/sub2
+Nｏ．２オキシデーションディッチＤＯ計__外観の確認                                             | row=W1+43  | elec/sub2
+Nｏ．２オキシデーションディッチＤＯ計__指示状況の確認                                           | row=W1+44  | elec/sub2
+Nｏ．２オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ                                          | row=W1+45  | elec/sub2
+Nｏ．１返送汚泥流量計__外観の確認                                                     | row=W1+46  | elec/sub2
+Nｏ．１返送汚泥流量計__指示状況の確認                                                   | row=W1+47  | elec/sub2
+Nｏ．１返送汚泥流量計__流量計の読み__㎥/ｈ                                               | row=W1+48  | elec/sub2
+Nｏ．１返送汚泥流量計__流量計積算計読み__㎥                                               | row=W1+49  | elec/sub2
+Nｏ．２返送汚泥流量計__外観の確認                                                     | row=W1+50  | elec/sub2
+Nｏ．２返送汚泥流量計__指示状況の確認                                                   | row=W1+51  | elec/sub2
+Nｏ．２返送汚泥流量計__流量計の読み__㎥/ｈ                                               | row=W1+52  | elec/sub2
+Nｏ．２返送汚泥流量計__流量計積算計読み__㎥                                               | row=W1+53  | elec/sub2
+余剰汚泥流量計__外観の確認                                                         | row=W1+54  | elec/sub2
+余剰汚泥流量計__指示状況の確認                                                       | row=W1+55  | elec/sub2
+余剰汚泥流量計__No.１余剰汚泥ポンプ流量計読み__㎥/ｈ                                         | row=W1+56  | elec/sub2
+余剰汚泥流量計__No.２余剰汚泥ポンプ流量計読み__㎥/ｈ                                         | row=W1+57  | elec/sub2
+放流流量計__外観の確認                                                           | row=W1+58  | elec/sub2
+放流流量計__指示状況の確認                                                         | row=W1+59  | elec/sub2
+放流流量計__流量計の読み__㎥/ｈ                                                     | row=W1+60  | elec/sub2
+放流流量計__流量計積算の読み__㎥                                                     | row=W1+61  | elec/sub2
+汚濁負荷量計__外観の確認                                                          | row=W1+62  | elec/sub2
+汚濁負荷量計__指示状況の確認                                                        | row=W1+63  | elec/sub2
+（放流水ＵＶ）__ＵＶ値__Abs                                                      | row=W1+64  | elec/sub2
+（放流水ＵＶ）__ＣＯＤ値__㎎/ℓ                                                     | row=W1+65  | elec/sub2
+# 特殊転記:
+#   ELEC_EXCESS_KEY_NO1 (余剰汚泥流量計 No.1) ← waterUsage.excessSludge1[day] 自動転記
+#   ELEC_EXCESS_KEY_NO2 (余剰汚泥流量計 No.2) ← waterUsage.excessSludge2[day] 自動転記
+#   ELEC_DO_KEY_NO1 (DO値 No.1) → 水質管理報告 doNo1 セル に転記
+#   ELEC_DO_KEY_NO2 (DO値 No.2) → 水質管理報告 doNo2 セル に転記
+
+## サブタブ3: 点検表 3/3 (発電機・消防系) - 12項目
+
+全窒素・全燐計__外観の確認                                                         | row=W1+72  | elec/sub3
+全窒素・全燐計__指示状況の確認                                                       | row=W1+73  | elec/sub3
+全窒素・全燐計__計器読み（全窒素）__㎎/ℓ                                                | row=W1+74  | elec/sub3
+全窒素・全燐計__計器読み（全りん）__㎎/ℓ                                                | row=W1+75  | elec/sub3
+圧力式液位計__外観の確認                                                          | row=W1+76  | elec/sub3
+圧力式液位計__指示状況の確認                                                        | row=W1+77  | elec/sub3
+圧力式液位計__機器指示地の記録__ｍ                                                    | row=W1+78  | elec/sub3
+発電機盤__外観の確認                                                            | row=W1+79  | elec/sub3
+エンジン__外観の確認                                                            | row=W1+80  | elec/sub3
+燃料タンク__外観の確認                                                           | row=W1+81  | elec/sub3
+燃料タンク__残量の値__ℓ                                                         | row=W1+82  | elec/sub3
+通報装置__通報状態の確認                                                          | row=W1+83  | elec/sub3
+# 特殊転記:
+#   ELEC_FUEL_TANK_KEY (燃料タンク残量) ← waterUsage.diesel[day] 自動転記
+
+## 第1週初日の使用量5項目 - GAS exportExcel で自動計算
+# 引込・受電__普通電力量(×10kw)__使用量      = 5/1読み − 4/30の最終読み
+# 低圧分岐__沈砂池ポンプ設備__使用量         = 同上
+# 低圧分岐__水処理設備(1)__使用量           = 同上
+# 低圧分岐__水処理設備(2)__使用量           = 同上
+# 低圧分岐__汚泥処理設備電力量__使用量       = 同上
+
+================================================================================
+# 日常機械設備 (mech) - 155項目（1/3:56 + 2/3:50 + 3/3:49）
+================================================================================
+
+# 保存形式: { week → { day(mon-fri) → { fieldKey → value } } }
+# Excel行: MECH{N}_ROW_W1[fieldKey] + WEEK_OFFSETS_MECH[week-1]
+#   WEEK_OFFSETS_MECH = [0, 177, 354, 531, 707] (sub1/2/3 共通)
+# Excel列: MECH_DAY_COL = mon=E,tue=F,wed=G,thu=H,fri=I
+
+## サブタブ1: 点検表 1/3 - 56項目
+
+ポンプ井__common1__内部状況確認                                                  | row=W1+4   | mech/sub1
+汚水ポンプ__1__電流値                                                          | row=W1+5   | mech/sub1
+汚水ポンプ__1__吐出圧力                                                         | row=W1+6   | mech/sub1
+汚水ポンプ__1__異音、振動                                                        | row=W1+7   | mech/sub1
+汚水ポンプ__2__電流値                                                          | row=W1+8   | mech/sub1
+汚水ポンプ__2__吐出圧力                                                         | row=W1+9   | mech/sub1
+汚水ポンプ__2__異音、振動                                                        | row=W1+10  | mech/sub1
+汚水ポンプ__common1__モード確認                                                  | row=W1+11  | mech/sub1
+汚水ポンプ__common1__機種選択                                                   | row=W1+12  | mech/sub1
+自動除塵機__油圧圧力                                                            | row=W1+13  | mech/sub1
+自動除塵機__異音、振動                                                           | row=W1+14  | mech/sub1
+自動除塵機__し渣量の確認                                                          | row=W1+15  | mech/sub1
+自動除塵機__運転動作                                                            | row=W1+16  | mech/sub1
+エアレーション装置__No1__電流値                                                    | row=W1+17  | mech/sub1
+エアレーション装置__No1__異音、振動                                                  | row=W1+18  | mech/sub1
+エアレーション装置__No1__モード確認                                                  | row=W1+19  | mech/sub1
+エアレーション装置__No2__電流値                                                    | row=W1+20  | mech/sub1
+エアレーション装置__No2__異音、振動                                                  | row=W1+21  | mech/sub1
+エアレーション装置__No2__モード確認                                                  | row=W1+22  | mech/sub1
+エアレーション装置__No3__電流値                                                    | row=W1+23  | mech/sub1
+エアレーション装置__No3__異音、振動                                                  | row=W1+24  | mech/sub1
+エアレーション装置__No3__モード確認                                                  | row=W1+25  | mech/sub1
+エアレーション装置__No4__電流値                                                    | row=W1+26  | mech/sub1
+エアレーション装置__No4__異音、振動                                                  | row=W1+27  | mech/sub1
+エアレーション装置__No4__モード確認                                                  | row=W1+28  | mech/sub1
+消泡装置__common1__消泡ノズル                                                   | row=W1+29  | mech/sub1
+消泡装置__common1__消泡状態                                                    | row=W1+30  | mech/sub1
+流出可動堰__1__開度                                                           | row=W1+31  | mech/sub1
+流出可動堰__2__開度                                                           | row=W1+32  | mech/sub1
+流出ゲート__1__開度                                                           | row=W1+33  | mech/sub1
+流出ゲート__2__開度                                                           | row=W1+34  | mech/sub1
+連絡ゲート__common1__開度                                                     | row=W1+35  | mech/sub1
+終沈汚泥掻寄機__1__電流値                                                        | row=W1+36  | mech/sub1
+終沈汚泥掻寄機__1__異音、振動等                                                     | row=W1+37  | mech/sub1
+終沈汚泥掻寄機__2__電流値                                                        | row=W1+38  | mech/sub1
+終沈汚泥掻寄機__2__異音、振動等                                                     | row=W1+39  | mech/sub1
+スカムスキマー__1__動作状況                                                       | row=W1+40  | mech/sub1
+スカムスキマー__1__スカムの状況                                                     | row=W1+41  | mech/sub1
+スカムスキマー__2__動作状況                                                       | row=W1+42  | mech/sub1
+スカムスキマー__2__スカムの状況                                                     | row=W1+43  | mech/sub1
+返送汚泥ポンプ__No1__電流値                                                      | row=W1+44  | mech/sub1
+返送汚泥ポンプ__No1__吐出圧力                                                     | row=W1+45  | mech/sub1
+返送汚泥ポンプ__No1__異音、振動                                                    | row=W1+46  | mech/sub1
+返送汚泥ポンプ__No2__電流値                                                      | row=W1+47  | mech/sub1
+返送汚泥ポンプ__No2__吐出圧力                                                     | row=W1+48  | mech/sub1
+返送汚泥ポンプ__No2__異音、振動                                                    | row=W1+49  | mech/sub1
+返送汚泥ポンプ__common1__モード確認                                                | row=W1+50  | mech/sub1
+返送汚泥ポンプ__common1__常用機選択                                                | row=W1+51  | mech/sub1
+返送汚泥ポンプ__No3__電流値                                                      | row=W1+52  | mech/sub1
+返送汚泥ポンプ__No3__吐出圧力                                                     | row=W1+53  | mech/sub1
+返送汚泥ポンプ__No3__異音、振動                                                    | row=W1+54  | mech/sub1
+返送汚泥ポンプ__No4__電流値                                                      | row=W1+55  | mech/sub1
+返送汚泥ポンプ__No4__吐出圧力                                                     | row=W1+56  | mech/sub1
+返送汚泥ポンプ__No4__異音、振動                                                    | row=W1+57  | mech/sub1
+返送汚泥ポンプ__common2__モード確認                                                | row=W1+58  | mech/sub1
+返送汚泥ポンプ__common2__常用機選択                                                | row=W1+59  | mech/sub1
+
+## サブタブ2: 点検表 2/3 - 50項目
+
+余剰汚泥ポンプ__1__電流値                                                        | row=W1+64  | mech/sub2
+余剰汚泥ポンプ__1__吐出圧力                                                       | row=W1+65  | mech/sub2
+余剰汚泥ポンプ__1__異音、振動                                                      | row=W1+66  | mech/sub2
+余剰汚泥ポンプ__1__液漏れ                                                        | row=W1+67  | mech/sub2
+余剰汚泥ポンプ__1__モード確認                                                      | row=W1+68  | mech/sub2
+余剰汚泥ポンプ__2__電流値                                                        | row=W1+69  | mech/sub2
+余剰汚泥ポンプ__2__吐出圧力                                                       | row=W1+70  | mech/sub2
+余剰汚泥ポンプ__2__異音、振動                                                      | row=W1+71  | mech/sub2
+余剰汚泥ポンプ__2__液漏れ                                                        | row=W1+72  | mech/sub2
+余剰汚泥ポンプ__2__モード確認                                                      | row=W1+73  | mech/sub2
+終沈床排水ポンプ__common1__電流値                                                 | row=W1+74  | mech/sub2
+終沈床排水ポンプ__common1__吐出圧力                                                | row=W1+75  | mech/sub2
+終沈床排水ポンプ__common1__異音、振動                                               | row=W1+76  | mech/sub2
+終沈床排水ポンプ__common1__モード確認                                               | row=W1+77  | mech/sub2
+返流水ポンプ__No1__吐出圧力                                                      | row=W1+78  | mech/sub2
+返流水ポンプ__No1__異音、振動                                                     | row=W1+79  | mech/sub2
+返流水ポンプ__No2__吐出圧力                                                      | row=W1+80  | mech/sub2
+返流水ポンプ__No2__異音、振動                                                     | row=W1+81  | mech/sub2
+返流水ポンプ__common1__モード確認                                                 | row=W1+82  | mech/sub2
+返流水ポンプ__common1__機種選択                                                  | row=W1+83  | mech/sub2
+濃縮汚泥引抜ポンプ__1__電流値                                                      | row=W1+84  | mech/sub2
+濃縮汚泥引抜ポンプ__1__吐出圧力                                                     | row=W1+85  | mech/sub2
+濃縮汚泥引抜ポンプ__1__異音、振動                                                    | row=W1+86  | mech/sub2
+濃縮汚泥引抜ポンプ__2__電流値                                                      | row=W1+87  | mech/sub2
+濃縮汚泥引抜ポンプ__2__吐出圧力                                                     | row=W1+88  | mech/sub2
+濃縮汚泥引抜ポンプ__2__異音、振動                                                    | row=W1+89  | mech/sub2
+濃縮汚泥引抜ポンプ__common1__モード確認                                              | row=W1+90  | mech/sub2
+濃縮汚泥引抜ポンプ__common1__機種選択                                               | row=W1+91  | mech/sub2
+濃縮汚泥引抜弁__common1__電流値                                                  | row=W1+92  | mech/sub2
+濃縮汚泥引抜弁__common1__異音、振動                                                | row=W1+93  | mech/sub2
+濃縮汚泥引抜弁__common1__動作状況                                                 | row=W1+94  | mech/sub2
+濃縮汚泥引抜弁__common1__モード確認                                                | row=W1+95  | mech/sub2
+汚泥ポンプ室床排水ポンプ__common1__電流値                                             | row=W1+96  | mech/sub2
+汚泥ポンプ室床排水ポンプ__common1__吐出圧力                                            | row=W1+97  | mech/sub2
+汚泥ポンプ室床排水ポンプ__common1__異音、振動                                           | row=W1+98  | mech/sub2
+汚泥ポンプ室床排水ポンプ__common1__モード確認                                           | row=W1+99  | mech/sub2
+濃縮汚泥掻寄機__電流値                                                           | row=W1+100 | mech/sub2
+濃縮汚泥掻寄機__異音、振動                                                         | row=W1+101 | mech/sub2
+スカムスキマー__動作状況                                                          | row=W1+102 | mech/sub2
+汚泥供給ポンプ__1__吐出圧力                                                       | row=W1+103 | mech/sub2
+汚泥供給ポンプ__1__異音、振動                                                      | row=W1+104 | mech/sub2
+汚泥供給ポンプ__1__液漏れ                                                        | row=W1+105 | mech/sub2
+汚泥供給ポンプ__2__吐出圧力                                                       | row=W1+106 | mech/sub2
+汚泥供給ポンプ__2__異音、振動                                                      | row=W1+107 | mech/sub2
+汚泥供給ポンプ__2__液漏れ                                                        | row=W1+108 | mech/sub2
+汚泥貯留槽攪拌機__common1__電流値                                                 | row=W1+109 | mech/sub2
+汚泥貯留槽攪拌機__common1__異音、振動                                               | row=W1+110 | mech/sub2
+汚泥貯留槽攪拌機__common1__モード確認                                               | row=W1+111 | mech/sub2
+空気圧縮機__common1__異音、振動等                                                 | row=W1+112 | mech/sub2
+空気圧縮機__common1__安全弁等の動作確認                                              | row=W1+113 | mech/sub2
+
+## サブタブ3: 点検表 3/3 - 49項目
+
+井水揚水ポンプ__common1__異音、振動等                                               | row=W1+120 | mech/sub3
+自動給水装置__1__電流値                                                         | row=W1+121 | mech/sub3
+自動給水装置__1__異音、振動等                                                      | row=W1+122 | mech/sub3
+自動給水装置__2__電流値                                                         | row=W1+123 | mech/sub3
+自動給水装置__2__異音、振動等                                                      | row=W1+124 | mech/sub3
+自動給水装置__common1__モード確認                                                 | row=W1+125 | mech/sub3
+井水貯留槽__common1__水漏れ                                                    | row=W1+126 | mech/sub3
+混和池ＢＧ__common1__開閉                                                     | row=W1+127 | mech/sub3
+塩素接触装置__common1__薬剤残量確認                                                | row=W1+128 | mech/sub3
+臭気ガス吸引装置__common1__ボルト・ナットの緩み                                          | row=W1+129 | mech/sub3
+臭気ガス吸引装置__common1__モード確認                                               | row=W1+130 | mech/sub3
+吸着脱装置__common1__マノメータ等の作動確認                                            | row=W1+131 | mech/sub3
+吸着脱装置__common1__ボルト・ナットの緩み                                             | row=W1+132 | mech/sub3
+電気室給気ファン__common1__電流値                                                 | row=W1+133 | mech/sub3
+電気室給気ファン__common1__異音、振動等                                              | row=W1+134 | mech/sub3
+電気室給気ファン__common1__モード確認                                               | row=W1+135 | mech/sub3
+電気室排気ファン__common1__電流値                                                 | row=W1+136 | mech/sub3
+電気室排気ファン__common1__異音、振動等                                              | row=W1+137 | mech/sub3
+電気室排気ファン__common1__モード確認                                               | row=W1+138 | mech/sub3
+自家発室給気ファン__common1__異音、振動                                              | row=W1+139 | mech/sub3
+自家発室給気ファン__common1__モード確認                                              | row=W1+140 | mech/sub3
+汚泥ポンプ室排気ファン__common1__電流値                                              | row=W1+141 | mech/sub3
+汚泥ポンプ室排気ファン__common1__異音、振動                                            | row=W1+142 | mech/sub3
+汚泥ポンプ室排気ファン__common1__モード確認                                            | row=W1+143 | mech/sub3
+汚泥ポンプ室吸気ファン__common1__電流値                                              | row=W1+144 | mech/sub3
+汚泥ポンプ室吸気ファン__common1__異音、振動                                            | row=W1+145 | mech/sub3
+汚泥ポンプ室吸気ファン__common1__モード確認                                            | row=W1+146 | mech/sub3
+脱水作業室排気ファン__common1__電流値                                               | row=W1+147 | mech/sub3
+脱水作業室排気ファン__common1__異音、振動                                             | row=W1+148 | mech/sub3
+脱水作業室排気ファン__common1__モード確認                                             | row=W1+149 | mech/sub3
+脱水作業室吸気ファン__common1__電流値                                               | row=W1+150 | mech/sub3
+脱水作業室吸気ファン__common1__異音、振動                                             | row=W1+151 | mech/sub3
+脱水作業室吸気ファン__common1__モード確認                                             | row=W1+152 | mech/sub3
+脱臭機械室排気ファン__common1__電流値                                               | row=W1+153 | mech/sub3
+脱臭機械室排気ファン__common1__異音、振動                                             | row=W1+154 | mech/sub3
+脱臭機械室排気ファン__common1__モード確認                                             | row=W1+155 | mech/sub3
+脱臭機械室吸気ファン__common1__電流値                                               | row=W1+156 | mech/sub3
+脱臭機械室吸気ファン__common1__異音、振動                                             | row=W1+157 | mech/sub3
+脱臭機械室吸気ファン__common1__モード確認                                             | row=W1+158 | mech/sub3
+終沈ポンプ室排気ファン__common1__電流値                                              | row=W1+159 | mech/sub3
+終沈ポンプ室排気ファン__common1__異音、振動                                            | row=W1+160 | mech/sub3
+終沈ポンプ室排気ファン__common1__モード確認                                            | row=W1+161 | mech/sub3
+終沈ポンプ室吸気ファン__common1__電流値                                              | row=W1+162 | mech/sub3
+終沈ポンプ室吸気ファン__common1__異音、振動                                            | row=W1+163 | mech/sub3
+終沈ポンプ室吸気ファン__common1__モード確認                                            | row=W1+164 | mech/sub3
+自動巻取型エアフィルター__common1__巻取完了表示点灯確認                                      | row=W1+165 | mech/sub3
+自動巻取型エアフィルター__common1__差圧                                              | row=W1+166 | mech/sub3
+自動巻取型エアフィルター__common1__モード確認                                           | row=W1+167 | mech/sub3
+自動巻取型エアフィルター__common1__設定                                              | row=W1+168 | mech/sub3

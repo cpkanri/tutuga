@@ -1,0 +1,4692 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" href="./icon-192.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="format-detection" content="telephone=no">
+<title>筒賀水質管理センター 週報入力</title>
+<style>
+/* ===== 基本スタイル ===== */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  background: #f0f2f5;
+  color: #222;
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 80px;
+  min-height: 100vh;
+  background: #f0f2f5;
+}
+
+/* ===== ヘッダー ===== */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: linear-gradient(135deg, #0d4f34, #1a7a56);
+  color: #fff;
+  padding: 12px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+header h1 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.header-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.header-controls label {
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 130px;
+}
+.header-controls label span { opacity: 0.85; }
+.header-controls input {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  background: rgba(255,255,255,0.95);
+  color: #222;
+  font-family: inherit;
+  min-height: 36px;
+}
+
+/* ===== 週タブ ===== */
+.week-tabs {
+  display: flex;
+  overflow-x: auto;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  scrollbar-width: none;
+}
+.week-tabs::-webkit-scrollbar { display: none; }
+.week-tabs button {
+  flex: 0 0 auto;
+  min-width: 80px;
+  padding: 14px 12px;
+  border: none;
+  background: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  color: #666;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.week-tabs button.active {
+  color: #0d4f34;
+  border-bottom-color: #0d4f34;
+  background: #f8fcfa;
+}
+.equip-table thead th .col-date {
+  display: block;
+  font-size: 10px;
+  color: #4a8a6a;
+  font-weight: 400;
+  margin-bottom: 2px;
+}
+
+/* ===== 日タブ ===== */
+.day-tabs {
+  display: flex;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+}
+.day-tabs button {
+  flex: 1;
+  padding: 12px 4px;
+  border: none;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  position: relative;
+}
+.day-tabs button.active {
+  color: #0d4f34;
+  border-bottom-color: #0d4f34;
+  background: #f8fcfa;
+  font-weight: 600;
+}
+.day-tabs button .check {
+  display: inline-block;
+  width: 14px;
+  color: #1a7a56;
+  font-weight: 700;
+}
+.day-tabs button .day-date {
+  display: block;
+  font-size: 10px;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+/* ===== 入力フォーム ===== */
+.form-wrap {
+  padding: 12px;
+}
+.section {
+  background: #fff;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.section-header {
+  background: #eef5f1;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0d4f34;
+  border-bottom: 1px solid #dde8e2;
+}
+.field {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 8px;
+  min-height: 56px;
+}
+.field:last-child { border-bottom: none; }
+.field .label {
+  flex: 1;
+  font-size: 15px;
+  color: #333;
+}
+.field .unit {
+  font-size: 13px;
+  color: #888;
+  min-width: 36px;
+  text-align: right;
+}
+.field input[type="number"],
+.field input[type="text"] {
+  width: 130px;
+  height: 50px;
+  padding: 8px 12px;
+  border: 1px solid #ccd;
+  border-radius: 8px;
+  font-size: 18px;
+  text-align: right;
+  font-family: inherit;
+  background: #fafbfc;
+}
+.field input[type="text"] { text-align: left; }
+.field input:focus {
+  outline: none;
+  border-color: #0d4f34;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(13,79,52,0.15);
+}
+
+/* ===== ボタン群 ===== */
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  background: rgba(240,242,245,0.92);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.actions button {
+  flex: 1;
+  min-width: 90px;
+  padding: 14px 8px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.05s, box-shadow 0.15s;
+  min-height: 52px;
+}
+.actions button:active { transform: scale(0.97); }
+.btn-copy {
+  background: #e8f0fe;
+  color: #1c4ba8;
+}
+.btn-clear {
+  background: #fdecea;
+  color: #b3261e;
+}
+.btn-undo {
+  background: #fff;
+  color: #555;
+  border: 1px solid #ccc !important;
+  font-size: 14px;
+  flex: 0 0 auto !important;
+  min-width: 70px !important;
+}
+.btn-undo:disabled { opacity: 0.4; }
+.btn-save {
+  background: linear-gradient(135deg, #0d4f34, #1a7a56);
+  color: #fff;
+  flex: 2;
+  box-shadow: 0 2px 6px rgba(13,79,52,0.25);
+}
+
+/* ===== トースト ===== */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: #0d4f34;
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 24px;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 200;
+  max-width: 90%;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.toast.error { background: #b3261e; }
+.toast.warn { background: #b8860b; }
+
+/* ===== Excel出力ボタン ===== */
+.excel-wrap {
+  padding: 0 12px 12px;
+}
+.btn-excel {
+  display: block;
+  width: 100%;
+  height: 48px;
+  background: #1565C0;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.05s, box-shadow 0.15s;
+  box-shadow: 0 2px 6px rgba(21,101,192,0.25);
+}
+.btn-excel:active { transform: scale(0.97); }
+.btn-excel:disabled { opacity: 0.6; cursor: default; }
+
+/* ===== 同期ボタン ===== */
+.btn-sync {
+  background: #e0e0e0;
+  color: #444;
+  flex: 1 !important;
+}
+
+/* ===== 接続状態 ===== */
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 4px 0 0 0;
+  opacity: 0.9;
+}
+.conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #888;
+}
+.conn-dot.online { background: #4caf50; }
+.conn-dot.offline { background: #888; }
+
+/* ===== メインタブ（シート切替） ===== */
+.main-tabs {
+  display: flex;
+  background: #fff;
+  border-bottom: 2px solid #e0e0e0;
+}
+.main-tabs button {
+  flex: 1;
+  padding: 12px 6px;
+  border: none;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #888;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.main-tabs button.active {
+  color: #0d4f34;
+  border-bottom-color: #0d4f34;
+  font-weight: 700;
+  background: #f8fcfa;
+}
+
+/* ===== サブタブ（水質・機械・電気の各メインタブ内） ===== */
+.sub-tabs {
+  display: flex;
+  background: #f8fcfa;
+  border-bottom: 1px solid #d6e3dc;
+  padding: 0 4px;
+}
+.sub-tabs button {
+  flex: 1;
+  padding: 9px 6px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.sub-tabs button.active {
+  color: #0d4f34;
+  border-bottom-color: #0d4f34;
+  font-weight: 700;
+  background: #fff;
+}
+
+/* ===== 機器運転時間テーブル ===== */
+.equip-panel { display: none; }
+.equip-panel.visible { display: block; }
+.equip-wrap {
+  padding: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.equip-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  font-size: 12px;
+}
+.equip-table thead th {
+  background: #eef5f1;
+  color: #0d4f34;
+  font-weight: 600;
+  padding: 8px 4px;
+  text-align: center;
+  border-bottom: 1px solid #dde8e2;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.equip-table thead th:first-child {
+  text-align: left;
+  padding-left: 10px;
+  width: 28%;
+}
+.equip-table thead th:not(:first-child) {
+  width: 14.4%;
+}
+.equip-table tbody td {
+  padding: 4px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: center;
+}
+.equip-table tbody td:first-child {
+  text-align: left;
+  padding-left: 10px;
+  font-size: 12px;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.equip-table tbody tr:last-child td { border-bottom: none; }
+.equip-table input[type="number"],
+.equip-table input[type="text"] {
+  width: 100%;
+  height: 38px;
+  padding: 4px 2px;
+  border: 1px solid #ccd;
+  border-radius: 6px;
+  font-size: 15px;
+  text-align: right;
+  font-family: inherit;
+  background: #fafbfc;
+  box-sizing: border-box;
+}
+.equip-table input[type="number"]:focus,
+.equip-table input[type="text"]:focus {
+  outline: none;
+  border-color: #0d4f34;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(13,79,52,0.15);
+}
+/* 主要機器運転時間タブのみ 80px × 40px（横スクロールで利用） */
+#equipTable { table-layout: auto; min-width: 560px; }
+#equipTable thead th:first-child { width: auto; min-width: 200px; }
+#equipTable thead th:not(:first-child) { width: 90px; }
+#equipTable input[type="number"],
+#equipTable input[type="text"] {
+  width: 80px;
+  height: 40px;
+  font-size: 16px;
+}
+/* 上段使用量テーブル: 6セル横スクロール対応 */
+#waterUsageTable { table-layout: auto; min-width: 720px; }
+#waterUsageTable thead th:first-child { min-width: 200px; }
+#waterUsageTable thead th:not(:first-child) { width: 90px; }
+#waterUsageTable input[type="number"] { width: 80px; height: 36px; font-size: 15px; }
+/* 上段使用量・電気・機械を含めた form-wrap */
+#waterUsageWrap { padding: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* 列コピーボタン */
+.col-copy-btn {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #e0e0e0;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #444;
+  font-family: inherit;
+  margin-top: 2px;
+}
+.col-copy-btn:active { background: #bdbdbd; }
+.col-clear-btn {
+  display: none;
+  padding: 2px 6px;
+  background: #ffcdd2;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #c62828;
+  font-family: inherit;
+  margin-top: 2px;
+}
+.col-clear-btn.visible { display: inline-block; }
+.col-clear-btn:active { background: #ef9a9a; }
+
+/* コピー済み表示 */
+.equip-table input.copied,
+.equip-table button.copied {
+  background-color: #e3f2fd !important;
+}
+
+.equip-unit {
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+  padding: 4px;
+}
+
+/* ===== 電気設備・機械設備パネル ===== */
+.elec-panel { display: none; }
+.elec-panel.visible { display: block; }
+.mech-panel { display: none; }
+.mech-panel.visible { display: block; }
+.equip-table .section-row td {
+  background: #eef5f1;
+  color: #0d4f34;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #dde8e2;
+}
+/* トグルボタン（○△×選択） */
+.toggle-btn {
+  min-width: 55px;
+  height: 44px;
+  border: 1px solid #ccd;
+  border-radius: 6px;
+  background: #fafbfc;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  color: #666;
+  padding: 0 4px;
+  line-height: 44px;
+  text-align: center;
+}
+.toggle-btn[data-val="○"] { background: #c8e6c9; color: #2e7d32; border-color: #a5d6a7; }
+.toggle-btn[data-val="△"] { background: #fff9c4; color: #f9a825; border-color: #fff176; }
+.toggle-btn[data-val="×"] { background: #ffcdd2; color: #c62828; border-color: #ef9a9a; }
+.toggle-btn[data-val="RO"] { background: #e3f2fd; color: #1565c0; border-color: #90caf9; }
+.toggle-btn[data-val="RS"] { background: #fce4ec; color: #c62828; border-color: #ef9a9a; }
+.toggle-btn[data-val="自動"] { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+.toggle-btn[data-val="手動"] { background: #fff3e0; color: #e65100; border-color: #ffcc80; }
+.toggle-btn[data-val="買電"] { background: #e3f2fd; color: #1565c0; border-color: #90caf9; }
+.toggle-btn[data-val="自家発"] { background: #fce4ec; color: #c62828; border-color: #ef9a9a; font-size: 11px; }
+.toggle-btn[data-val="－"] { background: #eceff1; color: #546e7a; border-color: #b0bec5; }
+.toggle-btn[data-val="交互"] { background: #e8eaf6; color: #283593; border-color: #9fa8da; font-size: 12px; }
+.toggle-btn[data-val="No.1"] { background: #e3f2fd; color: #1565c0; border-color: #90caf9; font-size: 12px; }
+.toggle-btn[data-val="No.2"] { background: #fce4ec; color: #c62828; border-color: #ef9a9a; font-size: 12px; }
+.toggle-btn[data-val="連動"] { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; font-size: 12px; }
+.toggle-btn[data-val="無"] { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+.toggle-btn[data-val="有"] { background: #ffcdd2; color: #c62828; border-color: #ef9a9a; }
+
+/* ===== モバイル: 機器/電気/機械タブの横スクロール ===== */
+/* 項目名を左固定 / 月〜金カラムを横スクロール / 入力欄を拡大 */
+@media (max-width: 768px) {
+  .equip-wrap {
+    padding: 8px 0;
+  }
+  .equip-table {
+    /* 1列目140 + 5日×80 = 540px。viewport 390px より広いので横スクロール発火 */
+    width: auto;
+    min-width: 540px;
+    border-radius: 0;
+    box-shadow: none;
+    /* sticky 動作のため overflow:hidden を解除 */
+    overflow: visible;
+  }
+  /* 1列目（項目名）を左固定 */
+  .equip-table thead th:first-child,
+  .equip-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+    background: #fff;
+    z-index: 4;
+    /* 右端に薄い影を出して「ここから右はスクロール領域」と示す */
+    box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+  }
+  /* 左上コーナー: thead と left:0 の交差。最前面に */
+  .equip-table thead th:first-child {
+    background: #eef5f1;
+    z-index: 6;
+  }
+  /* 2-6列目（月〜金）: 80px固定 */
+  .equip-table thead th:not(:first-child),
+  .equip-table tbody td:not(:first-child) {
+    width: 80px;
+    min-width: 80px;
+    max-width: 80px;
+  }
+  /* 1列目テキスト: 折り返し許可（省略しない） */
+  .equip-table tbody td:first-child {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.25;
+    word-break: break-word;
+    font-size: 12px;
+  }
+  /* セル余白を拡大しタップしやすく */
+  .equip-table tbody td {
+    padding: 8px 4px;
+  }
+  /* セクション見出し行（colspan で全幅）も左固定 */
+  .equip-table .section-row td {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+  }
+  /* 入力ボックス: 高さを少し拡大 */
+  .equip-table input[type="number"],
+  .equip-table input[type="text"] {
+    height: 42px;
+    font-size: 16px;  /* iOS 自動ズーム抑制 */
+  }
+}
+
+/* ===== フッター情報 ===== */
+.info-bar {
+  padding: 8px 14px;
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+  background: #fafafa;
+}
+
+/* ===== 入力パーセンテージ表示 ===== */
+.week-tabs button .pct, .day-tabs button .pct {
+  display: block;
+  font-size: 9px;
+  opacity: 0.7;
+  margin-top: 1px;
+  font-weight: 400;
+}
+
+/* ===== 未保存マーカー ===== */
+.btn-save.unsaved {
+  animation: pulse-save 1.5s infinite;
+  background: #ff8f00 !important;
+}
+@keyframes pulse-save {
+  0%, 100% { box-shadow: 0 2px 6px rgba(13,79,52,0.25); }
+  50% { box-shadow: 0 2px 12px rgba(255,152,0,0.6); }
+}
+
+/* ===== ログイン画面 ===== */
+.login-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0d4f34, #1a7a56);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 9999;
+  padding: 60px 20px 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.login-card {
+  background: white;
+  border-radius: 12px;
+  padding: 28px 24px;
+  width: 100%;
+  max-width: 340px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  margin-top: 40px;
+}
+.login-card h2 {
+  margin: 0 0 8px;
+  color: #0d4f34;
+  text-align: center;
+  font-size: 18px;
+}
+.login-card .subtitle {
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+.login-card label {
+  display: block;
+  font-size: 13px;
+  color: #555;
+  margin: 10px 0 4px;
+}
+.login-card input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ccd;
+  border-radius: 8px;
+  font-size: 16px; /* iOSで16px以上だとズームされない */
+  font-family: inherit;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+}
+/* パスワード欄：type="text" だが見た目はドット表示 */
+/* type="password" を使わずにChromeのパスワードマネージャー介入を回避 */
+.login-card input.pw-masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+  font-family: text-security-disc, inherit;
+}
+.login-card button {
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px;
+  background: #0d4f34;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.login-card button:disabled {
+  opacity: 0.6;
+}
+.login-error {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #ffebee;
+  color: #c62828;
+  border-radius: 6px;
+  font-size: 13px;
+  display: none;
+}
+.login-error.visible { display: block; }
+
+/* ログイン画面表示中は body のスクロールを止める */
+body.login-active {
+  overflow: hidden;
+}
+
+/* ===== ログアウトボタン ===== */
+.user-info {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.9);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-logout {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+/* 強制更新ボタン */
+#btnForceRefresh {
+  background: rgba(255,180,80,0.35);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-right: 6px;
+}
+#btnForceRefresh:hover {
+  background: rgba(255,180,80,0.55);
+}
+#btnForceRefresh.refreshing {
+  background: rgba(255,180,80,0.7);
+  animation: pulse-refresh 1s infinite;
+}
+@keyframes pulse-refresh {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ===== ヘッダー上部: タイトルとユーザー情報を横並び ===== */
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.header-top h1 {
+  margin: 0;
+  font-size: 18px;
+  flex: 1 1 auto;
+  min-width: 200px;
+}
+
+/* ユーザー情報エリア（上書き）: 接続状態 + ユーザー名 + ログアウト */
+header .user-info {
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  font-size: 13px;
+}
+
+/* インライン接続状態 */
+.conn-status-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.9);
+}
+.conn-status-inline .conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+  display: inline-block;
+}
+.conn-status-inline .conn-dot.online { background: #2ecc71; }
+.conn-status-inline .conn-dot.offline { background: #e74c3c; }
+
+.user-info .user-name {
+  font-size: 13px;
+  color: rgba(255,255,255,0.95);
+}
+
+/* ヘッダーアクションボタン横一列 */
+.header-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.btn-header-action {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+  text-align: center;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn-header-action:hover {
+  background: rgba(255,255,255,0.28);
+}
+.btn-header-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-header-action.btn-excel-header {
+  background: rgba(46, 113, 195, 0.85);
+}
+.btn-header-action.btn-excel-header:hover {
+  background: rgba(46, 113, 195, 1);
+}
+
+/* 古い conn-status の表示を非表示にしておく（CSSが他で参照する場合の保険） */
+header > .conn-status {
+  display: none;
+}
+
+/* スマホ対応: 狭い画面でヘッダーアクションを縦並びに */
+@media (max-width: 480px) {
+  .header-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .btn-header-action.btn-excel-header {
+    grid-column: span 2;
+  }
+  .header-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  header .user-info {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== ログイン画面 ===== -->
+<div class="login-overlay" id="loginOverlay" style="display:none;">
+  <div class="login-card">
+    <h2>筒賀水質管理センター 週報</h2>
+    <div class="subtitle">ログインしてください</div>
+    <label for="loginId">ID</label>
+    <input type="text" id="loginId" name="uid-tutuga-app" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" readonly>
+    <label for="loginPassword">パスワード</label>
+    <input type="text" id="loginPassword" name="pw-tutuga-app" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" readonly class="pw-masked">
+    <button type="button" id="btnLogin">ログイン</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- ヘッダー -->
+<header style="position: relative;">
+  <div class="header-top">
+    <h1>筒賀水質管理センター 週報入力</h1>
+    <div class="user-info" id="userInfo" style="display:none;">
+      <div class="conn-status-inline" id="connStatus">
+        <span class="conn-dot" id="connDot"></span>
+        <span id="connLabel">接続確認中...</span>
+      </div>
+      <span class="user-name" id="userName"></span>
+      <button type="button" class="btn-logout" id="btnLogout">ログアウト</button>
+    </div>
+  </div>
+  <div class="header-controls">
+    <label>
+      <span>対象年月</span>
+      <input type="month" id="targetMonth">
+    </label>
+    <label>
+      <span>第1週 月曜日</span>
+      <input type="date" id="startDate" readonly style="opacity:0.8;pointer-events:none;">
+    </label>
+  </div>
+  <div class="header-actions">
+    <button type="button" class="btn-header-action" id="btnForceRefresh" title="アプリを最新版に更新">⟳ 更新</button>
+    <button type="button" class="btn-header-action" id="btnSyncHeader">同期</button>
+    <button type="button" class="btn-header-action btn-excel-header" id="btnExcelHeader">📄 Excel出力</button>
+  </div>
+</header>
+
+<!-- メインタブ（シート切替） -->
+<nav class="main-tabs" id="mainTabs">
+  <button type="button" data-sheet="water" class="active">水質</button>
+  <button type="button" data-sheet="equip">機器運転時間</button>
+  <button type="button" data-sheet="elec">電気設備</button>
+  <button type="button" data-sheet="mech">機械設備</button>
+</nav>
+
+<!-- ===== 日常水質パネル（2サブタブ: 上段使用量 / 下段水質測定） ===== -->
+<div id="waterPanel">
+
+<!-- 水質サブタブ -->
+<nav class="sub-tabs" id="waterSubTabs">
+  <button type="button" data-water-sub="usage" class="active">使用量</button>
+  <button type="button" data-water-sub="measure">水質測定</button>
+</nav>
+
+<!-- 週タブ（両サブタブで共通） -->
+<nav class="week-tabs" id="weekTabs">
+  <button type="button" data-week="1" class="active">第1週</button>
+  <button type="button" data-week="2">第2週</button>
+  <button type="button" data-week="3">第3週</button>
+  <button type="button" data-week="4">第4週</button>
+  <button type="button" data-week="5">第5週</button>
+</nav>
+
+<!-- 日タブ（measure サブタブでのみ表示） -->
+<nav class="day-tabs" id="dayTabs">
+  <button type="button" data-day="mon" class="active"><span class="check"></span>月<span class="day-date"></span></button>
+  <button type="button" data-day="tue"><span class="check"></span>火<span class="day-date"></span></button>
+  <button type="button" data-day="wed"><span class="check"></span>水<span class="day-date"></span></button>
+  <button type="button" data-day="thu"><span class="check"></span>木<span class="day-date"></span></button>
+  <button type="button" data-day="fri"><span class="check"></span>金<span class="day-date"></span></button>
+</nav>
+
+<!-- 上段使用量（週単位、11項目 × 6セル） -->
+<div class="form-wrap" id="waterUsageWrap" style="display:none;">
+  <table class="equip-table" id="waterUsageTable">
+    <thead>
+      <tr id="waterUsageHead">
+        <th>項目</th>
+        <th>月<br><span class="col-date" data-hday="mon"></span></th>
+        <th>火<br><span class="col-date" data-hday="tue"></span></th>
+        <th>水<br><span class="col-date" data-hday="wed"></span></th>
+        <th>木<br><span class="col-date" data-hday="thu"></span></th>
+        <th>金<br><span class="col-date" data-hday="fri"></span></th>
+        <th>翌月<br><span class="col-date" data-hday="nextMon"></span></th>
+      </tr>
+    </thead>
+    <tbody id="waterUsageBody">
+      <!-- JSで動的生成 -->
+    </tbody>
+  </table>
+</div>
+
+<!-- 下段水質測定（per-day, 34項目+終沈/測定者/備考） -->
+<div class="form-wrap" id="waterMeasureWrap">
+
+  <!-- 水温 (4 + 終沈2) -->
+  <div class="section">
+    <div class="section-header">水温（℃）</div>
+    <div class="field"><span class="label">流入</span><span class="unit">℃</span><input type="number" inputmode="decimal" step="0.1" data-field="tempIn"></div>
+    <div class="field"><span class="label">ディッチ１</span><span class="unit">℃</span><input type="number" inputmode="decimal" step="0.1" data-field="tempD1"></div>
+    <div class="field"><span class="label">ディッチ２</span><span class="unit">℃</span><input type="number" inputmode="decimal" step="0.1" data-field="tempD2"></div>
+    <div class="field"><span class="label">放流</span><span class="unit">℃</span><input type="number" inputmode="decimal" step="0.1" data-field="tempOut"></div>
+    <div class="field"><span class="label">No.1終沈</span><span class="unit">℃</span><input type="number" inputmode="decimal" step="0.1" data-field="tempFinal1"></div>
+    <div class="field"><span class="label">No.2終沈</span><span class="unit">℃</span><input type="number" inputmode="decimal" step="0.1" data-field="tempFinal2"></div>
+  </div>
+
+  <!-- 外観 (4) -->
+  <div class="section">
+    <div class="section-header">外観（有無）</div>
+    <div class="field"><span class="label">流入</span><span class="unit"></span><input type="text" data-field="appearIn"></div>
+    <div class="field"><span class="label">ディッチ１</span><span class="unit"></span><input type="text" data-field="appearD1"></div>
+    <div class="field"><span class="label">ディッチ２</span><span class="unit"></span><input type="text" data-field="appearD2"></div>
+    <div class="field"><span class="label">放流</span><span class="unit"></span><input type="text" data-field="appearOut"></div>
+  </div>
+
+  <!-- 透視度 (2 + 終沈2) -->
+  <div class="section">
+    <div class="section-header">透視度（cm）</div>
+    <div class="field"><span class="label">流入水</span><span class="unit">cm</span><input type="number" inputmode="decimal" step="0.1" data-field="transIn"></div>
+    <div class="field"><span class="label">放流水</span><span class="unit">cm</span><input type="number" inputmode="decimal" step="0.1" data-field="transOut"></div>
+    <div class="field"><span class="label">No.1終沈</span><span class="unit">cm</span><input type="number" inputmode="decimal" step="0.1" data-field="transFinal1"></div>
+    <div class="field"><span class="label">No.2終沈</span><span class="unit">cm</span><input type="number" inputmode="decimal" step="0.1" data-field="transFinal2"></div>
+  </div>
+
+  <!-- 臭気 (4) -->
+  <div class="section">
+    <div class="section-header">臭気（有無）</div>
+    <div class="field"><span class="label">流入</span><span class="unit"></span><input type="text" data-field="odorIn"></div>
+    <div class="field"><span class="label">ディッチ１</span><span class="unit"></span><input type="text" data-field="odorD1"></div>
+    <div class="field"><span class="label">ディッチ２</span><span class="unit"></span><input type="text" data-field="odorD2"></div>
+    <div class="field"><span class="label">放流</span><span class="unit"></span><input type="text" data-field="odorOut"></div>
+  </div>
+
+  <!-- PH (4 + 終沈2) -->
+  <div class="section">
+    <div class="section-header">PH</div>
+    <div class="field"><span class="label">流入</span><span class="unit"></span><input type="number" inputmode="decimal" step="0.01" data-field="phIn"></div>
+    <div class="field"><span class="label">ディッチ１</span><span class="unit"></span><input type="number" inputmode="decimal" step="0.01" data-field="phD1"></div>
+    <div class="field"><span class="label">ディッチ２</span><span class="unit"></span><input type="number" inputmode="decimal" step="0.01" data-field="phD2"></div>
+    <div class="field"><span class="label">放流</span><span class="unit"></span><input type="number" inputmode="decimal" step="0.01" data-field="phOut"></div>
+    <div class="field"><span class="label">No.1終沈</span><span class="unit"></span><input type="number" inputmode="decimal" step="0.01" data-field="phFinal1"></div>
+    <div class="field"><span class="label">No.2終沈</span><span class="unit"></span><input type="number" inputmode="decimal" step="0.01" data-field="phFinal2"></div>
+  </div>
+
+  <!-- SV 1系・2系 -->
+  <div class="section">
+    <div class="section-header">SV（％）— 1系</div>
+    <div class="field"><span class="label">SV・30</span><span class="unit">%</span><input type="number" inputmode="decimal" step="1" data-field="sv1_30"></div>
+    <div class="field"><span class="label">SV・24h</span><span class="unit">%</span><input type="number" inputmode="decimal" step="1" data-field="sv1_24h"></div>
+  </div>
+  <div class="section">
+    <div class="section-header">SV（％）— 2系</div>
+    <div class="field"><span class="label">SV・30</span><span class="unit">%</span><input type="number" inputmode="decimal" step="1" data-field="sv2_30"></div>
+    <div class="field"><span class="label">SV・24h</span><span class="unit">%</span><input type="number" inputmode="decimal" step="1" data-field="sv2_24h"></div>
+  </div>
+
+  <!-- MLSS / 汚泥界面 / 残留塩素 / 塩素投入 -->
+  <div class="section">
+    <div class="section-header">反応槽・終沈・塩素</div>
+    <div class="field"><span class="label">MLSS（1系）</span><span class="unit">mg/ℓ</span><input type="number" inputmode="decimal" step="1" data-field="mlss1"></div>
+    <div class="field"><span class="label">MLSS（2系）</span><span class="unit">mg/ℓ</span><input type="number" inputmode="decimal" step="1" data-field="mlss2"></div>
+    <div class="field"><span class="label">汚泥界面（1系終沈）</span><span class="unit">cm</span><input type="number" inputmode="decimal" step="1" data-field="sludge1"></div>
+    <div class="field"><span class="label">汚泥界面（2系終沈）</span><span class="unit">cm</span><input type="number" inputmode="decimal" step="1" data-field="sludge2"></div>
+    <div class="field"><span class="label">残留塩素（放流水）</span><span class="unit">mg/ℓ</span><input type="number" inputmode="decimal" step="0.1" data-field="chlorine"></div>
+    <div class="field"><span class="label">塩素投入量（塩素混和池）</span><span class="unit">kg</span><input type="number" inputmode="decimal" step="0.1" data-field="chlorineDose"></div>
+  </div>
+
+  <!-- 測定者 -->
+  <div class="section">
+    <div class="section-header">測定者</div>
+    <div class="field"><span class="label">測定者名</span><span class="unit"></span><input type="text" data-field="inspector"></div>
+  </div>
+
+  <!-- セクション8: 備考 -->
+  <div class="section">
+    <div class="section-header">備考</div>
+    <div class="field" style="padding:10px 14px;">
+      <textarea data-field="bikou" rows="3" style="width:100%;padding:8px;border:1px solid #ccd;border-radius:8px;font-size:14px;resize:vertical;font-family:inherit;" placeholder="備考を入力"></textarea>
+    </div>
+  </div>
+
+</div>
+
+</div><!-- /waterPanel -->
+
+<!-- ===== 機器運転時間パネル ===== -->
+<div id="equipPanel" class="equip-panel">
+
+<!-- 週タブ（機器用） -->
+<nav class="week-tabs" id="equipWeekTabs">
+  <button type="button" data-week="1" class="active">第1週</button>
+  <button type="button" data-week="2">第2週</button>
+  <button type="button" data-week="3">第3週</button>
+  <button type="button" data-week="4">第4週</button>
+  <button type="button" data-week="5">第5週</button>
+</nav>
+
+<div class="equip-wrap">
+  <table class="equip-table" id="equipTable">
+    <thead>
+      <tr>
+        <th>機器名称</th>
+        <th>月<br><span class="col-date" data-hday="mon"></span><button type="button" class="col-copy-btn" data-copy-day="mon" data-copy-table="equip">←</button><button type="button" class="col-clear-btn" data-clear-day="mon" data-clear-table="equip">×</button></th>
+        <th>火<br><span class="col-date" data-hday="tue"></span><button type="button" class="col-copy-btn" data-copy-day="tue" data-copy-table="equip">←</button><button type="button" class="col-clear-btn" data-clear-day="tue" data-clear-table="equip">×</button></th>
+        <th>水<br><span class="col-date" data-hday="wed"></span><button type="button" class="col-copy-btn" data-copy-day="wed" data-copy-table="equip">←</button><button type="button" class="col-clear-btn" data-clear-day="wed" data-clear-table="equip">×</button></th>
+        <th>木<br><span class="col-date" data-hday="thu"></span><button type="button" class="col-copy-btn" data-copy-day="thu" data-copy-table="equip">←</button><button type="button" class="col-clear-btn" data-clear-day="thu" data-clear-table="equip">×</button></th>
+        <th>金<br><span class="col-date" data-hday="fri"></span><button type="button" class="col-copy-btn" data-copy-day="fri" data-copy-table="equip">←</button><button type="button" class="col-clear-btn" data-clear-day="fri" data-clear-table="equip">×</button></th>
+      </tr>
+    </thead>
+    <tbody id="equipTableBody">
+      <!-- 筒賀水質管理センター 22項目をJSで動的生成 (renderEquipTableRows) -->
+    </tbody>
+  </table>
+</div>
+
+</div><!-- /equipPanel -->
+
+<!-- ===== 日常電気設備パネル（3サブタブ） ===== -->
+<div id="elecPanel" class="elec-panel">
+
+<nav class="sub-tabs" id="elecSubTabs">
+  <button type="button" data-elec-sub="1" class="active">点検表 1/3</button>
+  <button type="button" data-elec-sub="2">点検表 2/3</button>
+  <button type="button" data-elec-sub="3">点検表 3/3</button>
+</nav>
+
+<nav class="week-tabs" id="elecWeekTabs">
+  <button type="button" data-week="1" class="active">第1週</button>
+  <button type="button" data-week="2">第2週</button>
+  <button type="button" data-week="3">第3週</button>
+  <button type="button" data-week="4">第4週</button>
+  <button type="button" data-week="5">第5週</button>
+</nav>
+
+<div class="equip-wrap">
+  <table class="equip-table" id="elecTable">
+    <thead>
+      <tr>
+        <th>項目</th>
+        <th>月<br><span class="col-date" data-hday="mon"></span><button type="button" class="col-copy-btn" data-copy-day="mon" data-copy-table="elec">←</button><button type="button" class="col-clear-btn" data-clear-day="mon" data-clear-table="elec">×</button></th>
+        <th>火<br><span class="col-date" data-hday="tue"></span><button type="button" class="col-copy-btn" data-copy-day="tue" data-copy-table="elec">←</button><button type="button" class="col-clear-btn" data-clear-day="tue" data-clear-table="elec">×</button></th>
+        <th>水<br><span class="col-date" data-hday="wed"></span><button type="button" class="col-copy-btn" data-copy-day="wed" data-copy-table="elec">←</button><button type="button" class="col-clear-btn" data-clear-day="wed" data-clear-table="elec">×</button></th>
+        <th>木<br><span class="col-date" data-hday="thu"></span><button type="button" class="col-copy-btn" data-copy-day="thu" data-copy-table="elec">←</button><button type="button" class="col-clear-btn" data-clear-day="thu" data-clear-table="elec">×</button></th>
+        <th>金<br><span class="col-date" data-hday="fri"></span><button type="button" class="col-copy-btn" data-copy-day="fri" data-copy-table="elec">←</button><button type="button" class="col-clear-btn" data-clear-day="fri" data-clear-table="elec">×</button></th>
+      </tr>
+    </thead>
+    <tbody id="elecBody">
+    </tbody>
+  </table>
+</div>
+
+</div><!-- /elecPanel -->
+
+<!-- ===== 日常機械設備パネル（3サブタブ） ===== -->
+<div id="mechPanel" class="mech-panel">
+
+<nav class="sub-tabs" id="mechSubTabs">
+  <button type="button" data-mech-sub="1" class="active">点検表 1/3</button>
+  <button type="button" data-mech-sub="2">点検表 2/3</button>
+  <button type="button" data-mech-sub="3">点検表 3/3</button>
+</nav>
+
+<nav class="week-tabs" id="mechWeekTabs">
+  <button type="button" data-week="1" class="active">第1週</button>
+  <button type="button" data-week="2">第2週</button>
+  <button type="button" data-week="3">第3週</button>
+  <button type="button" data-week="4">第4週</button>
+  <button type="button" data-week="5">第5週</button>
+</nav>
+
+<div class="equip-wrap">
+  <table class="equip-table" id="mechTable">
+    <thead>
+      <tr>
+        <th>項目</th>
+        <th>月<br><span class="col-date" data-hday="mon"></span><button type="button" class="col-copy-btn" data-copy-day="mon" data-copy-table="mech">←</button><button type="button" class="col-clear-btn" data-clear-day="mon" data-clear-table="mech">×</button></th>
+        <th>火<br><span class="col-date" data-hday="tue"></span><button type="button" class="col-copy-btn" data-copy-day="tue" data-copy-table="mech">←</button><button type="button" class="col-clear-btn" data-clear-day="tue" data-clear-table="mech">×</button></th>
+        <th>水<br><span class="col-date" data-hday="wed"></span><button type="button" class="col-copy-btn" data-copy-day="wed" data-copy-table="mech">←</button><button type="button" class="col-clear-btn" data-clear-day="wed" data-clear-table="mech">×</button></th>
+        <th>木<br><span class="col-date" data-hday="thu"></span><button type="button" class="col-copy-btn" data-copy-day="thu" data-copy-table="mech">←</button><button type="button" class="col-clear-btn" data-clear-day="thu" data-clear-table="mech">×</button></th>
+        <th>金<br><span class="col-date" data-hday="fri"></span><button type="button" class="col-copy-btn" data-copy-day="fri" data-copy-table="mech">←</button><button type="button" class="col-clear-btn" data-clear-day="fri" data-clear-table="mech">×</button></th>
+      </tr>
+    </thead>
+    <tbody id="mechBody">
+    </tbody>
+  </table>
+</div>
+
+</div><!-- /mechPanel -->
+
+<!-- 操作ボタン -->
+<div class="actions">
+  <button type="button" class="btn-copy" id="btnCopy">前日コピー</button>
+  <button type="button" class="btn-clear" id="btnClear">全クリア</button>
+  <button type="button" class="btn-undo" id="btnUndo" disabled>↩ 戻す</button>
+  <button type="button" class="btn-save" id="btnSave">保存</button>
+</div>
+
+<div class="info-bar">データは端末に保存されます（localStorage）</div>
+
+<!-- トースト -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== GAS URL =====
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbymItbLRkZyFMOpTZ6wZglZEYfFegbLhkdVEijpvm3S-ofdbGZ9myuyJznIHvoymd8/exec';
+
+// ===== 認証 =====
+const AUTH_KEYS = { token: 'tutuga_auth_token', userId: 'tutuga_auth_userId', userName: 'tutuga_auth_userName', expires: 'tutuga_auth_expires' };
+// ============================================================
+// ストレージ管理（吉和から移植：QuotaExceededError 対策）
+// 5MB上限に近づいたら最古の月データを退避してから再試行
+// ============================================================
+const STORAGE_PREFIX = "tutuga_";
+const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024; // 想定上限 5MB（Androidブラウザ標準）
+
+function byteLength(str) {
+  if (str == null) return 0;
+  try { return new Blob([str]).size; } catch(e) { return str.length * 2; }
+}
+
+function getAllTutugaKeys() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(STORAGE_PREFIX)) keys.push(k);
+  }
+  return keys;
+}
+
+function parseMonthKey(key) {
+  // "tutuga_weekly_2026-04" → { type: "weekly", ym: "2026-04" }
+  // safeSetItem の容量超過時最古削除ロジックで使用
+  const types = [
+    { prefix: "tutuga_weekly_", type: "weekly", label: "週報" }
+  ];
+  for (const t of types) {
+    if (key.startsWith(t.prefix)) {
+      const ym = key.substring(t.prefix.length);
+      if (/^\d{4}-\d{2}$/.test(ym)) return { type: t.type, label: t.label, ym, key };
+    }
+  }
+  return null;
+}
+
+function computeStorageUsage() {
+  const keys = getAllTutugaKeys();
+  let totalBytes = 0;
+  const byMonth = {};
+  keys.forEach(k => {
+    const raw = localStorage.getItem(k) || "";
+    const bytes = byteLength(k) + byteLength(raw);
+    totalBytes += bytes;
+    const m = parseMonthKey(k);
+    if (m) {
+      if (!byMonth[m.ym]) byMonth[m.ym] = { ym: m.ym, bytes: 0, items: [] };
+      byMonth[m.ym].bytes += bytes;
+      byMonth[m.ym].items.push({ ...m, bytes });
+    }
+  });
+  const months = Object.values(byMonth).sort((a, b) => a.ym.localeCompare(b.ym));
+  const pct = Math.min(100, Math.round((totalBytes / STORAGE_QUOTA_BYTES) * 1000) / 10);
+  return { totalBytes, pct, months, quotaBytes: STORAGE_QUOTA_BYTES };
+}
+
+function isQuotaError(err) {
+  if (!err) return false;
+  const name = err.name || "";
+  const code = err.code;
+  return name === "QuotaExceededError" ||
+         name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+         code === 22 || code === 1014;
+}
+
+function safeSetItem(key, value) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      localStorage.setItem(key, value);
+      return { ok: true, attempt };
+    } catch(e) {
+      if (!isQuotaError(e)) return { ok: false, error: e, attempt };
+      // 容量超過時：現在編集中の月以外で最古のものを退避
+      const currentYm = (typeof weeklyData !== "undefined" && weeklyData.targetMonth) || "";
+      const usage = computeStorageUsage();
+      const victims = usage.months.filter(m => m.ym !== currentYm);
+      if (victims.length === 0) return { ok: false, error: e, attempt, quotaExhausted: true };
+      const oldest = victims[0];
+      oldest.items.forEach(it => localStorage.removeItem(it.key));
+    }
+  }
+  return { ok: false, error: new Error("retry limit"), attempt: 4, quotaExhausted: true };
+}
+
+// ネットワーク起因の例外判定（QuotaExceededError 等で誤って「オフライン」表示するのを防ぐ）
+function isNetworkError(e) {
+  if (!e) return false;
+  const name = e.name || "";
+  const msg = (e.message || "").toLowerCase();
+  return name === "AbortError" ||
+         (name === "TypeError" && msg.includes("fetch")) ||
+         msg.includes("networkerror") ||
+         msg.includes("load failed") ||
+         msg.includes("failed to fetch");
+}
+// ============================================================
+// ストレージ管理ここまで
+// ============================================================
+
+function getAuthToken() { return localStorage.getItem(AUTH_KEYS.token) || ''; }
+function getAuthUserId() { return localStorage.getItem(AUTH_KEYS.userId) || ''; }
+function getAuthUserName() { return localStorage.getItem(AUTH_KEYS.userName) || ''; }
+function saveAuth(token, userId, userName, expires) {
+  localStorage.setItem(AUTH_KEYS.token, token);
+  localStorage.setItem(AUTH_KEYS.userId, userId);
+  localStorage.setItem(AUTH_KEYS.userName, userName || userId);
+  localStorage.setItem(AUTH_KEYS.expires, String(expires || 0));
+}
+function clearAuth() {
+  Object.values(AUTH_KEYS).forEach(k => localStorage.removeItem(k));
+}
+function isAuthExpired() {
+  const exp = parseInt(localStorage.getItem(AUTH_KEYS.expires) || '0', 10);
+  if (!exp) return true;
+  return Date.now() >= exp;
+}
+// URLにtokenを付与するヘルパー
+function withToken(url) {
+  const token = getAuthToken();
+  if (!token) return url;
+  const sep = url.indexOf('?') >= 0 ? '&' : '?';
+  return url + sep + 'token=' + encodeURIComponent(token);
+}
+// POSTボディにtokenを付与
+function withTokenBody(obj) {
+  return Object.assign({}, obj, { token: getAuthToken() });
+}
+
+// ===== 祝日リスト管理 =====
+// 起動時にGASから祝日を取得してlocalStorageにキャッシュ、Excel出力時に使用
+const HOLIDAYS_CACHE_KEY = 'tutuga_holidays';
+const HOLIDAYS_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7日間キャッシュ
+
+function getCachedHolidays() {
+  try {
+    const raw = localStorage.getItem(HOLIDAYS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.ts || !parsed.data) return null;
+    if (Date.now() - parsed.ts > HOLIDAYS_CACHE_TTL) return null;
+    return parsed.data; // 配列 [{date:"YYYY-MM-DD", name:"..."}]
+  } catch (e) { return null; }
+}
+
+function saveHolidaysCache(arr) {
+  try {
+    localStorage.setItem(HOLIDAYS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: arr }));
+  } catch (e) {}
+}
+
+// GASから祝日リストを取得（オフライン時はキャッシュを使う）
+async function fetchHolidaysFromServer() {
+  try {
+    const url = withToken(GAS_URL + '?action=getHolidays');
+    const res = await fetchWithTimeout(url, { method: 'GET' }, 15000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.holidays) {
+      saveHolidaysCache(data.holidays);
+      return data.holidays;
+    }
+  } catch (e) { console.warn('祝日取得失敗、キャッシュ使用:', e); }
+  return getCachedHolidays();
+}
+
+// 祝日 Set（YYYY-MM-DD 文字列）として取得
+function getHolidaySetFromCache() {
+  const arr = getCachedHolidays();
+  const set = new Set();
+  if (arr) for (const h of arr) set.add(h.date);
+  return set;
+}
+
+
+function showLoginScreen(errorMsg) {
+  const overlay = document.getElementById('loginOverlay');
+  if (!overlay) return;
+  const wasHidden = overlay.style.display !== 'flex';
+  overlay.style.display = 'flex';
+  document.body.classList.add('login-active');
+  const errEl = document.getElementById('loginError');
+  if (errEl) {
+    if (errorMsg) { errEl.textContent = errorMsg; errEl.classList.add('visible'); }
+    else { errEl.textContent = ''; errEl.classList.remove('visible'); }
+  }
+  // 初回表示時のみフォーカス（重複呼び出しで入力中のフォーカスを奪わない）
+  if (wasHidden) {
+    setTimeout(() => {
+      const idEl = document.getElementById('loginId');
+      if (idEl && !idEl.value) idEl.focus();
+    }, 300);
+  }
+}
+function hideLoginScreen() {
+  const overlay = document.getElementById('loginOverlay');
+  if (overlay) overlay.style.display = 'none';
+  document.body.classList.remove('login-active');
+}
+function handleAuthFailure() {
+  clearAuth();
+  updateUserInfoUI();
+  showLoginScreen('セッションが切れました。再度ログインしてください。');
+}
+function updateUserInfoUI() {
+  const wrap = document.getElementById('userInfo');
+  const nameEl = document.getElementById('userName');
+  if (!wrap || !nameEl) return;
+  const name = getAuthUserName();
+  if (name) {
+    nameEl.textContent = name;
+    wrap.style.display = 'flex';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+async function doLogin(userId, password) {
+  const payload = { action: 'login', userId: userId, password: password };
+  const res = await fetchWithTimeout(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(payload)
+  }, 15000);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  if (data.status !== 'ok' || !data.token) throw new Error('ログイン応答が不正です');
+  saveAuth(data.token, data.userId, data.name || data.userId, data.expires || 0);
+  return data;
+}
+
+async function doLogout() {
+  const token = getAuthToken();
+  clearAuth();
+  updateUserInfoUI();
+  if (token) {
+    try {
+      await fetchWithTimeout(GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'logout', token: token })
+      }, 10000);
+    } catch (e) {}
+  }
+  showLoginScreen();
+}
+
+// サーバー側でトークンが生きているか確認（起動時に叩く）
+async function verifyStoredToken() {
+  const token = getAuthToken();
+  if (!token) return false;
+  if (isAuthExpired()) { clearAuth(); return false; }
+  try {
+    const res = await fetchWithTimeout(withToken(GAS_URL + '?action=verifyToken'), { method: 'GET' }, 10000);
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (data.valid) return true;
+    clearAuth();
+    return false;
+  } catch (e) {
+    // ネットワーク失敗時はローカル判定で継続（オフライン許容）
+    return !isAuthExpired();
+  }
+}
+
+// ===== 定数定義 =====
+
+// ===== 筒賀: 下段水質測定（34項目/日 + 終沈6項目 + 測定者・備考） =====
+const MEASURE_FIELDS = [
+  // 水温（4 + 終沈2）
+  "tempIn", "tempD1", "tempD2", "tempOut", "tempFinal1", "tempFinal2",
+  // 外観（4）
+  "appearIn", "appearD1", "appearD2", "appearOut",
+  // 透視度（2 + 終沈2）
+  "transIn", "transOut", "transFinal1", "transFinal2",
+  // 臭気（4）
+  "odorIn", "odorD1", "odorD2", "odorOut",
+  // PH（4 + 終沈2）
+  "phIn", "phD1", "phD2", "phOut", "phFinal1", "phFinal2",
+  // SV（1系・2系 SV30/SV24h）
+  "sv1_30", "sv1_24h", "sv2_30", "sv2_24h",
+  // MLSS（1系/2系）
+  "mlss1", "mlss2",
+  // 汚泥界面（1系終沈/2系終沈）
+  "sludge1", "sludge2",
+  // 残留塩素 / 塩素投入量
+  "chlorine", "chlorineDose",
+  // 測定者・備考
+  "inspector", "bikou"
+];
+// 「前日コピー」対象（測定者と備考は除外）
+const COPY_FIELDS = MEASURE_FIELDS.filter(k => k !== "inspector" && k !== "bikou");
+// 後方互換用エイリアス
+const ALL_FIELDS = MEASURE_FIELDS;
+
+// ===== 筒賀: 上段使用量（11項目／週、6セル: mon-fri+nextMon） =====
+const USAGE_KEYS = [
+  "powerAllDay", "powerMeasure", "powerReactive", "demand",
+  "water", "diesel",
+  "returnSludge1", "returnSludge2", "discharge",
+  "excessSludge1", "excessSludge2"
+];
+const USAGE_LABELS = {
+  powerAllDay:   { label: "全日電力量",        unit: "Kwh" },
+  powerMeasure:  { label: "力測電力量",        unit: "Kwh" },
+  powerReactive: { label: "無効電力量",        unit: "Kvar" },
+  demand:        { label: "デマンド",          unit: "Kw" },
+  water:         { label: "水道使用量",        unit: "㎥" },
+  diesel:        { label: "軽油（残量）",      unit: "ℓ" },
+  returnSludge1: { label: "返送汚泥流量（№1）", unit: "㎥" },
+  returnSludge2: { label: "返送汚泥流量（№2）", unit: "㎥" },
+  discharge:     { label: "放流流量",          unit: "㎥" },
+  excessSludge1: { label: "余剰汚泥流量（No.1）", unit: "㎥" },
+  excessSludge2: { label: "余剰汚泥流量（No.2）", unit: "㎥" }
+};
+const USAGE_CELLS = ["mon","tue","wed","thu","fri","nextMon"];
+const USAGE_CELL_LABELS = { mon:"月", tue:"火", wed:"水", thu:"木", fri:"金", nextMon:"翌月" };
+
+const DAYS = ["mon", "tue", "wed", "thu", "fri"];
+const DAY_LABELS = { mon: "月", tue: "火", wed: "水", thu: "木", fri: "金" };
+const WEEKS = [1, 2, 3, 4, 5];
+
+// 機器運転時間の曜日キー（data-eday属性と一致）
+const EQUIP_DAYS = ["mon", "tue", "wed", "thu", "fri"];
+// 旧コードとの互換性のため残置（kake時代は fri/nextMon のずれがあったが、tutugaでは統一）
+const APP_KEY_MAP = { mon: "mon", tue: "tue", wed: "wed", thu: "thu", fri: "fri" };
+// 機器キー（data-equip属性と一致）
+// 筒賀水質管理センター 22項目
+const EQUIP_KEYS = [
+  "mainPump1Hr", "mainPump2Hr",
+  "aeration1Hr", "aeration2Hr", "aeration3Hr", "aeration4Hr",
+  "finalScraper1Hr", "finalScraper2Hr",
+  "returnPump1Hr", "returnPump2Hr", "returnPump3Hr", "returnPump4Hr",
+  "excessPump1Hr", "excessPump2Hr",
+  "finalDrainPumpHr",
+  "thickPump1Hr", "thickPump2Hr",
+  "returnWaterPump1Hr", "returnWaterPump2Hr",
+  "sludgeRoomDrainPumpHr",
+  "deodorFanHr",
+  "generatorHr"
+];
+const EQUIP_LABELS = [
+  "NO.1主ポンプ", "NO.2主ポンプ",
+  "NO.1エアレーション装置", "NO.2エアレーション装置", "NO.3エアレーション装置", "NO.4エアレーション装置",
+  "№1終沈汚泥かき寄せ機", "№2終沈汚泥かき寄せ機",
+  "NO.1返送汚泥ポンプ", "NO.2返送汚泥ポンプ", "NO.3返送汚泥ポンプ", "NO.4返送汚泥ポンプ",
+  "NO.1余剰汚泥ポンプ", "NO.2余剰汚泥ポンプ",
+  "終沈室床排ポンプ",
+  "№1濃縮汚泥引抜ポンプ", "№2濃縮汚泥引抜ポンプ",
+  "NO.1返流水ポンプ", "NO.2返流水ポンプ",
+  "汚泥ポンプ室床排ポンプ",
+  "臭気ガス吸引装置",
+  "発電機"
+];
+
+// ===== 筒賀: 日常電気設備（3サブタブ構成、仕様 §5.4、計67項目） =====
+// 注意: field.key は GAS 側 ELEC{1,2,3}_ROW_W1 のキーと一致させる必要あり
+//       (筒賀_電気設備行マッピング.md / .js 由来。書式: "機器__識別子__項目")
+// サブタブ1: 点検表 1/3（電気室・配電系, 29項目）
+const ELEC_SECTIONS_1 = [
+  { title: "引込・受電", fields: [
+    { key: "引込・受電__電圧__KV",                      label: "電圧",                  type: "number", step: "0.1", unit: "KV" },
+    { key: "引込・受電__電圧__モード",                  label: "電圧モード",            type: "toggle", options: ["RS","ST","TR"] },
+    { key: "引込・受電__力率__ψ",                      label: "力率",                  type: "number", step: "0.01", unit: "ψ" },
+    { key: "引込・受電__電流__A",                       label: "電流",                  type: "number", step: "1",   unit: "A" },
+    { key: "引込・受電__電流__モード",                  label: "電流モード",            type: "toggle", options: ["R","S","T"] },
+    { key: "引込・受電__普通電力量(×10kw)__読み",       label: "普通電力量(×10kw) 読み", type: "number", step: "1", unit: "kw" },
+    { key: "引込・受電__普通電力量(×10kw)__使用量",     label: "普通電力量 使用量",     type: "number", step: "1", unit: "kw" },
+    { key: "引込・受電__引込・受電設定__手動/自動",     label: "引込・受電設定",        type: "toggle", options: ["手動","自動"] },
+    { key: "引込・受電__引込・受電設定__切/入",         label: "切/入",                 type: "toggle", options: ["切","入"] },
+  ]},
+  { title: "変圧器", fields: [
+    { key: "変圧器__主変圧器温度__℃",                   label: "主変圧器温度",          type: "number", step: "0.1", unit: "℃" },
+    { key: "変圧器__異音、脱臭の有無__有・無",          label: "異音・脱臭の有無",      type: "toggle", options: ["有","無"] },
+  ]},
+  { title: "低圧分岐", fields: [
+    { key: "低圧分岐__動力(210V)電圧__V",                label: "動力(210V) 電圧",      type: "number", step: "1",   unit: "V" },
+    { key: "低圧分岐__動力(210V)電圧__モード",           label: "電圧モード",           type: "toggle", options: ["RS","ST","TR"] },
+    { key: "低圧分岐__動力(210V)電流__A",                label: "動力(210V) 電流",      type: "number", step: "0.1", unit: "A" },
+    { key: "低圧分岐__動力(210V)電流__モード",           label: "電流モード",           type: "toggle", options: ["R","S","T"] },
+    { key: "低圧分岐__照明(210-105V)電流__A",            label: "照明(210-105V) 電流",  type: "number", step: "0.1", unit: "A" },
+    { key: "低圧分岐__照明(210-105V)電流__モード",       label: "照明モード",           type: "toggle", options: ["R","S","T"] },
+    { key: "低圧分岐__低圧分岐設備__買電/自家発",        label: "低圧分岐設備",         type: "toggle", options: ["買電","自家発"] },
+    { key: "低圧分岐__沈砂池ポンプ設備__読み",           label: "沈砂池ポンプ設備(×1kwh) 読み", type: "number", step: "1", unit: "kwh" },
+    { key: "低圧分岐__沈砂池ポンプ設備__使用量",         label: "沈砂池ポンプ設備 使用量",      type: "number", step: "1", unit: "kwh" },
+    { key: "低圧分岐__水処理設備(1)__読み",              label: "水処理設備(1)(×1kwh) 読み",    type: "number", step: "1", unit: "kwh" },
+    { key: "低圧分岐__水処理設備(1)__使用量",            label: "水処理設備(1) 使用量",         type: "number", step: "1", unit: "kwh" },
+    { key: "低圧分岐__水処理設備(2)__読み",              label: "水処理設備(2)(×1kwh) 読み",    type: "number", step: "1", unit: "kwh" },
+    { key: "低圧分岐__水処理設備(2)__使用量",            label: "水処理設備(2) 使用量",         type: "number", step: "1", unit: "kwh" },
+    { key: "低圧分岐__汚泥処理設備電力量__読み",         label: "汚泥処理設備電力量(×1kwh) 読み", type: "number", step: "1", unit: "kwh" },
+    { key: "低圧分岐__汚泥処理設備電力量__使用量",       label: "汚泥処理設備電力量 使用量",      type: "number", step: "1", unit: "kwh" },
+    { key: "低圧分岐__No.1コンデンサー__切/入",          label: "No.1 コンデンサー",     type: "toggle", options: ["切","入"] },
+    { key: "低圧分岐__No.2コンデンサー__切/入",          label: "No.2 コンデンサー",     type: "toggle", options: ["切","入"] },
+    { key: "低圧分岐__No.3コンデンサー__切/入",          label: "No.3 コンデンサー",     type: "toggle", options: ["切","入"] },
+  ]},
+];
+// サブタブ2: 点検表 2/3（計装設備：流量計系・DO計含む, 26項目）
+const ELEC_SECTIONS_2 = [
+  { title: "Nｏ．１オキシデーションディッチＤＯ計", fields: [
+    { key: "Nｏ．１オキシデーションディッチＤＯ計__外観の確認",       label: "外観の確認",     type: "toggle", options: ["○","△","×"] },
+    { key: "Nｏ．１オキシデーションディッチＤＯ計__指示状況の確認",   label: "指示状況の確認", type: "toggle", options: ["○","△","×"] },
+    { key: "Nｏ．１オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ",      label: "DO値",           type: "number", step: "0.01", unit: "mg/ℓ" },
+  ]},
+  { title: "Nｏ．２オキシデーションディッチＤＯ計", fields: [
+    { key: "Nｏ．２オキシデーションディッチＤＯ計__外観の確認",       label: "外観の確認",     type: "toggle", options: ["○","△","×"] },
+    { key: "Nｏ．２オキシデーションディッチＤＯ計__指示状況の確認",   label: "指示状況の確認", type: "toggle", options: ["○","△","×"] },
+    { key: "Nｏ．２オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ",      label: "DO値",           type: "number", step: "0.01", unit: "mg/ℓ" },
+  ]},
+  { title: "Nｏ．１返送汚泥流量計", fields: [
+    { key: "Nｏ．１返送汚泥流量計__外観の確認",         label: "外観の確認",       type: "toggle", options: ["○","△","×"] },
+    { key: "Nｏ．１返送汚泥流量計__指示状況の確認",     label: "指示状況の確認",   type: "toggle", options: ["○","△","×"] },
+    { key: "Nｏ．１返送汚泥流量計__流量計の読み__㎥/ｈ", label: "流量計の読み",     type: "number", step: "0.1", unit: "㎥/h" },
+    // 流量計積算計読み(㎥) は水質→使用量タブの「返送汚泥流量(№1)」から GAS が自動転記
+  ]},
+  { title: "Nｏ．２返送汚泥流量計", fields: [
+    { key: "Nｏ．２返送汚泥流量計__外観の確認",         label: "外観の確認",       type: "toggle", options: ["○","△","×"] },
+    { key: "Nｏ．２返送汚泥流量計__指示状況の確認",     label: "指示状況の確認",   type: "toggle", options: ["○","△","×"] },
+    { key: "Nｏ．２返送汚泥流量計__流量計の読み__㎥/ｈ", label: "流量計の読み",     type: "number", step: "0.1", unit: "㎥/h" },
+    // 流量計積算計読み(㎥) は水質→使用量タブの「返送汚泥流量(№2)」から GAS が自動転記
+  ]},
+  { title: "余剰汚泥流量計", fields: [
+    { key: "余剰汚泥流量計__外観の確認",     label: "外観の確認",     type: "toggle", options: ["○","△","×"] },
+    { key: "余剰汚泥流量計__指示状況の確認", label: "指示状況の確認", type: "toggle", options: ["○","△","×"] },
+    { key: "余剰汚泥流量計__No.１余剰汚泥ポンプ流量計読み__㎥/ｈ", label: "No.1余剰汚泥ポンプ流量計読み", type: "numdash", unit: "㎥/h" },
+    { key: "余剰汚泥流量計__No.２余剰汚泥ポンプ流量計読み__㎥/ｈ", label: "No.2余剰汚泥ポンプ流量計読み", type: "numdash", unit: "㎥/h" },
+  ]},
+  { title: "放流流量計", fields: [
+    { key: "放流流量計__外観の確認",        label: "外観の確認",       type: "toggle", options: ["○","△","×"] },
+    { key: "放流流量計__指示状況の確認",    label: "指示状況の確認",   type: "toggle", options: ["○","△","×"] },
+    { key: "放流流量計__流量計の読み__㎥/ｈ", label: "流量計の読み",     type: "number", step: "0.1", unit: "㎥/h" },
+    // 流量計積算の読み(㎥) は水質→使用量タブの「放流流量」から GAS が自動転記
+  ]},
+  { title: "汚濁負荷量計", fields: [
+    { key: "汚濁負荷量計__外観の確認",     label: "外観の確認",     type: "toggle", options: ["○","△","×"] },
+    { key: "汚濁負荷量計__指示状況の確認", label: "指示状況の確認", type: "toggle", options: ["○","△","×"] },
+  ]},
+  { title: "（放流水ＵＶ）", fields: [
+    { key: "（放流水ＵＶ）__ＵＶ値__Abs",     label: "UV値",  type: "number", step: "0.001", unit: "Abs" },
+    { key: "（放流水ＵＶ）__ＣＯＤ値__㎎/ℓ", label: "COD値", type: "number", step: "0.01",  unit: "mg/ℓ" },
+  ]},
+];
+// サブタブ3: 点検表 3/3（計装設備：水質計系・発電機, 12項目）
+const ELEC_SECTIONS_3 = [
+  { title: "全窒素・全燐計", fields: [
+    { key: "全窒素・全燐計__外観の確認",                 label: "外観の確認",     type: "toggle", options: ["○","△","×"] },
+    { key: "全窒素・全燐計__指示状況の確認",             label: "指示状況の確認", type: "toggle", options: ["○","△","×"] },
+    { key: "全窒素・全燐計__計器読み（全窒素）__㎎/ℓ",   label: "全窒素",         type: "number", step: "0.01", unit: "mg/ℓ" },
+    { key: "全窒素・全燐計__計器読み（全りん）__㎎/ℓ",   label: "全りん",         type: "number", step: "0.01", unit: "mg/ℓ" },
+  ]},
+  { title: "圧力式液位計", fields: [
+    { key: "圧力式液位計__外観の確認",           label: "外観の確認",     type: "toggle", options: ["○","△","×"] },
+    { key: "圧力式液位計__指示状況の確認",       label: "指示状況の確認", type: "toggle", options: ["○","△","×"] },
+    { key: "圧力式液位計__機器指示地の記録__ｍ", label: "機器指示値",     type: "number", step: "0.001", unit: "m" },
+  ]},
+  { title: "発電機設備", fields: [
+    { key: "発電機盤__外観の確認",     label: "発電機盤 外観", type: "toggle", options: ["○","△","×"] },
+    { key: "エンジン__外観の確認",     label: "エンジン 外観", type: "toggle", options: ["○","△","×"] },
+    { key: "燃料タンク__外観の確認",   label: "燃料タンク 外観", type: "toggle", options: ["○","△","×"] },
+    // 燃料タンク 残量(ℓ) は水質→使用量タブの「軽油（残量）」から GAS が自動転記
+  ]},
+  { title: "通報装置", fields: [
+    { key: "通報装置__通報状態の確認", label: "通報状態", type: "toggle", options: ["○","△","×"] },
+  ]},
+];
+// サブタブ統合（renderer 用）
+const ELEC_SUBTABS = [
+  { id: 1, title: "点検表 1/3", sections: ELEC_SECTIONS_1 },
+  { id: 2, title: "点検表 2/3", sections: ELEC_SECTIONS_2 },
+  { id: 3, title: "点検表 3/3", sections: ELEC_SECTIONS_3 },
+];
+const ELEC_SECTIONS = ELEC_SECTIONS_1.concat(ELEC_SECTIONS_2).concat(ELEC_SECTIONS_3);
+const ALL_ELEC_KEYS = ELEC_SECTIONS.flatMap(s => s.fields.map(f => f.key));
+
+// 機械設備の曜日（火曜なし）
+const MECH_DAYS = ["mon", "tue", "wed", "thu", "fri"];
+
+// ===== 筒賀: 日常機械設備（3サブタブ構成、仕様 §5.3、計155項目） =====
+// 注意: field.key は GAS 側 MECH{1,2,3}_ROW_W1 のキーと一致させる必要あり
+//       (筒賀_機械設備行マッピング.md / .js 由来。書式: "機器__識別子__項目")
+// サブタブ1: 点検表 1/3（処理系前段, 56項目）
+const MECH_SECTIONS_1 = [
+  { title: "ポンプ井", fields: [
+    { key: "ポンプ井__common1__内部状況確認", label: "内部状況確認", type: "toggle", options: ["○","―"] },
+  ]},
+  { title: "汚水ポンプ No.1", fields: [
+    { key: "汚水ポンプ__1__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "汚水ポンプ__1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "汚水ポンプ__1__異音、振動", label: "異音・振動", type: "toggle", options: ["○","―"] },
+  ]},
+  { title: "汚水ポンプ No.2", fields: [
+    { key: "汚水ポンプ__2__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "汚水ポンプ__2__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "汚水ポンプ__2__異音、振動", label: "異音・振動", type: "toggle", options: ["○","―"] },
+  ]},
+  { title: "汚水ポンプ 共通", fields: [
+    { key: "汚水ポンプ__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "汚水ポンプ__common1__機種選択",   label: "機種選択",   type: "toggle", options: ["自","交"] },
+  ]},
+  { title: "自動除塵機", fields: [
+    { key: "自動除塵機__油圧圧力",      label: "油圧圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "自動除塵機__異音、振動",    label: "異音・振動", type: "toggle", options: ["○","△","×","―"] },
+    { key: "自動除塵機__し渣量の確認",  label: "し渣量",     type: "toggle", options: ["無","有"] },
+    { key: "自動除塵機__運転動作",      label: "運転動作",   type: "toggle", options: ["○"] },
+  ]},
+  { title: "エアレーション装置 №1", fields: [
+    { key: "エアレーション装置__No1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "エアレーション装置__No1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "エアレーション装置__No1__モード確認", label: "モード確認", type: "toggle", options: ["DO","タイマー","自動"] },
+  ]},
+  { title: "エアレーション装置 №2", fields: [
+    { key: "エアレーション装置__No2__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "エアレーション装置__No2__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "エアレーション装置__No2__モード確認", label: "モード確認", type: "toggle", options: ["DO","タイマー","自動"] },
+  ]},
+  { title: "エアレーション装置 №3", fields: [
+    { key: "エアレーション装置__No3__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "エアレーション装置__No3__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "エアレーション装置__No3__モード確認", label: "モード確認", type: "toggle", options: ["DO","タイマー","自動"] },
+  ]},
+  { title: "エアレーション装置 №4", fields: [
+    { key: "エアレーション装置__No4__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "エアレーション装置__No4__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "エアレーション装置__No4__モード確認", label: "モード確認", type: "toggle", options: ["DO","タイマー","自動"] },
+  ]},
+  { title: "消泡装置", fields: [
+    { key: "消泡装置__common1__消泡ノズル", label: "消泡ノズル", type: "toggle", options: ["○"] },
+    { key: "消泡装置__common1__消泡状態",   label: "消泡状態",   type: "toggle", options: ["○"] },
+  ]},
+  { title: "流出可動堰 1", fields: [
+    { key: "流出可動堰__1__開度", label: "開度", type: "number", step: "1", unit: "㎜" },
+  ]},
+  { title: "流出可動堰 2", fields: [
+    { key: "流出可動堰__2__開度", label: "開度", type: "number", step: "1", unit: "㎜" },
+  ]},
+  { title: "流出ゲート 1", fields: [
+    { key: "流出ゲート__1__開度", label: "開度", type: "number", step: "1", unit: "㎜" },
+  ]},
+  { title: "流出ゲート 2", fields: [
+    { key: "流出ゲート__2__開度", label: "開度", type: "number", step: "1", unit: "㎜" },
+  ]},
+  { title: "連絡ゲート", fields: [
+    { key: "連絡ゲート__common1__開度", label: "開度", type: "number", step: "1", unit: "㎜" },
+  ]},
+  { title: "終沈汚泥掻寄機 1", fields: [
+    { key: "終沈汚泥掻寄機__1__電流値",       label: "電流値",     type: "number", step: "0.01", unit: "A" },
+    { key: "終沈汚泥掻寄機__1__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "終沈汚泥掻寄機 2", fields: [
+    { key: "終沈汚泥掻寄機__2__電流値",       label: "電流値",     type: "number", step: "0.01", unit: "A" },
+    { key: "終沈汚泥掻寄機__2__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "スカムスキマー 1", fields: [
+    { key: "スカムスキマー__1__動作状況",     label: "動作状況",     type: "toggle", options: ["○"] },
+    { key: "スカムスキマー__1__スカムの状況", label: "スカムの状況", type: "toggle", options: ["無","有"] },
+  ]},
+  { title: "スカムスキマー 2", fields: [
+    { key: "スカムスキマー__2__動作状況",     label: "動作状況",     type: "toggle", options: ["○"] },
+    { key: "スカムスキマー__2__スカムの状況", label: "スカムの状況", type: "toggle", options: ["無","有"] },
+  ]},
+  { title: "返送汚泥ポンプ №1", fields: [
+    { key: "返送汚泥ポンプ__No1__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "返送汚泥ポンプ__No1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "返送汚泥ポンプ__No1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "返送汚泥ポンプ №2", fields: [
+    { key: "返送汚泥ポンプ__No2__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "返送汚泥ポンプ__No2__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "返送汚泥ポンプ__No2__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "返送汚泥ポンプ 共通 (No1-2用)", fields: [
+    { key: "返送汚泥ポンプ__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "返送汚泥ポンプ__common1__常用機選択", label: "常用機選択", type: "toggle", options: ["№1","№2","交互"] },
+  ]},
+  { title: "返送汚泥ポンプ №3", fields: [
+    { key: "返送汚泥ポンプ__No3__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "返送汚泥ポンプ__No3__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "返送汚泥ポンプ__No3__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "返送汚泥ポンプ №4", fields: [
+    { key: "返送汚泥ポンプ__No4__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "返送汚泥ポンプ__No4__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "返送汚泥ポンプ__No4__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "返送汚泥ポンプ 共通 (No3-4用)", fields: [
+    { key: "返送汚泥ポンプ__common2__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "返送汚泥ポンプ__common2__常用機選択", label: "常用機選択", type: "toggle", options: ["№3","№4","交互"] },
+  ]},
+];
+
+// サブタブ2: 点検表 2/3（汚泥処理系, 50項目）
+const MECH_SECTIONS_2 = [
+  { title: "余剰汚泥ポンプ 1", fields: [
+    { key: "余剰汚泥ポンプ__1__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "余剰汚泥ポンプ__1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "余剰汚泥ポンプ__1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "余剰汚泥ポンプ__1__液漏れ",     label: "液漏れ",     type: "toggle", options: ["無","有"] },
+    { key: "余剰汚泥ポンプ__1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "余剰汚泥ポンプ 2", fields: [
+    { key: "余剰汚泥ポンプ__2__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "余剰汚泥ポンプ__2__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "余剰汚泥ポンプ__2__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "余剰汚泥ポンプ__2__液漏れ",     label: "液漏れ",     type: "toggle", options: ["無","有"] },
+    { key: "余剰汚泥ポンプ__2__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "終沈床排水ポンプ", fields: [
+    { key: "終沈床排水ポンプ__common1__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "終沈床排水ポンプ__common1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "終沈床排水ポンプ__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "終沈床排水ポンプ__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "返流水ポンプ №1", fields: [
+    { key: "返流水ポンプ__No1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "返流水ポンプ__No1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "返流水ポンプ №2", fields: [
+    { key: "返流水ポンプ__No2__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "返流水ポンプ__No2__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "返流水ポンプ 共通", fields: [
+    { key: "返流水ポンプ__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "返流水ポンプ__common1__機種選択",   label: "機種選択",   type: "toggle", options: ["№1","№2","交互"] },
+  ]},
+  { title: "濃縮汚泥引抜ポンプ 1", fields: [
+    { key: "濃縮汚泥引抜ポンプ__1__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "濃縮汚泥引抜ポンプ__1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "濃縮汚泥引抜ポンプ__1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "濃縮汚泥引抜ポンプ 2", fields: [
+    { key: "濃縮汚泥引抜ポンプ__2__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "濃縮汚泥引抜ポンプ__2__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "濃縮汚泥引抜ポンプ__2__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "濃縮汚泥引抜ポンプ 共通", fields: [
+    { key: "濃縮汚泥引抜ポンプ__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "濃縮汚泥引抜ポンプ__common1__機種選択",   label: "機種選択",   type: "toggle", options: ["1","2","交互"] },
+  ]},
+  { title: "濃縮汚泥引抜弁", fields: [
+    { key: "濃縮汚泥引抜弁__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "濃縮汚泥引抜弁__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "濃縮汚泥引抜弁__common1__動作状況",   label: "動作状況",   type: "toggle", options: ["○"] },
+    { key: "濃縮汚泥引抜弁__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "汚泥ポンプ室床排水ポンプ", fields: [
+    { key: "汚泥ポンプ室床排水ポンプ__common1__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
+    { key: "汚泥ポンプ室床排水ポンプ__common1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "汚泥ポンプ室床排水ポンプ__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "汚泥ポンプ室床排水ポンプ__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "濃縮汚泥掻寄機", fields: [
+    { key: "濃縮汚泥掻寄機__電流値",     label: "電流値",     type: "number", step: "0.01", unit: "A" },
+    { key: "濃縮汚泥掻寄機__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "スカムスキマー（汚泥側）", fields: [
+    { key: "スカムスキマー__動作状況", label: "動作状況", type: "toggle", options: ["○"] },
+  ]},
+  { title: "汚泥供給ポンプ 1", fields: [
+    { key: "汚泥供給ポンプ__1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "汚泥供給ポンプ__1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "汚泥供給ポンプ__1__液漏れ",     label: "液漏れ",     type: "toggle", options: ["無","有"] },
+  ]},
+  { title: "汚泥供給ポンプ 2", fields: [
+    { key: "汚泥供給ポンプ__2__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
+    { key: "汚泥供給ポンプ__2__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "汚泥供給ポンプ__2__液漏れ",     label: "液漏れ",     type: "toggle", options: ["無","有"] },
+  ]},
+  { title: "汚泥貯留槽攪拌機", fields: [
+    { key: "汚泥貯留槽攪拌機__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "汚泥貯留槽攪拌機__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "汚泥貯留槽攪拌機__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "空気圧縮機", fields: [
+    { key: "空気圧縮機__common1__異音、振動等",         label: "異音・振動",         type: "toggle", options: ["○"] },
+    { key: "空気圧縮機__common1__安全弁等の動作確認", label: "安全弁等の動作確認", type: "toggle", options: ["○"] },
+  ]},
+];
+
+// サブタブ3: 点検表 3/3（補機・換気系, 49項目）
+const MECH_SECTIONS_3 = [
+  { title: "井水揚水ポンプ", fields: [
+    { key: "井水揚水ポンプ__common1__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "自動給水装置 1", fields: [
+    { key: "自動給水装置__1__電流値",       label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "自動給水装置__1__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "自動給水装置 2", fields: [
+    { key: "自動給水装置__2__電流値",       label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "自動給水装置__2__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
+  ]},
+  { title: "自動給水装置 共通", fields: [
+    { key: "自動給水装置__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "井水貯留槽", fields: [
+    { key: "井水貯留槽__common1__水漏れ", label: "水漏れ", type: "toggle", options: ["無","有"] },
+  ]},
+  { title: "混和池ＢＧ", fields: [
+    { key: "混和池ＢＧ__common1__開閉", label: "開閉", type: "toggle", options: ["開","閉"] },
+  ]},
+  { title: "塩素接触装置", fields: [
+    { key: "塩素接触装置__common1__薬剤残量確認", label: "薬剤残量確認", type: "toggle", options: ["○"] },
+  ]},
+  { title: "臭気ガス吸引装置", fields: [
+    { key: "臭気ガス吸引装置__common1__ボルト・ナットの緩み", label: "ボルト・ナット", type: "toggle", options: ["○"] },
+    { key: "臭気ガス吸引装置__common1__モード確認",           label: "モード確認",     type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "吸着脱装置", fields: [
+    { key: "吸着脱装置__common1__マノメータ等の作動確認",   label: "マノメータ",       type: "toggle", options: ["○"] },
+    { key: "吸着脱装置__common1__ボルト・ナットの緩み",     label: "ボルト・ナット",   type: "toggle", options: ["○"] },
+  ]},
+  { title: "電気室給気ファン", fields: [
+    { key: "電気室給気ファン__common1__電流値",       label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "電気室給気ファン__common1__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "電気室給気ファン__common1__モード確認",   label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "電気室排気ファン", fields: [
+    { key: "電気室排気ファン__common1__電流値",       label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "電気室排気ファン__common1__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "電気室排気ファン__common1__モード確認",   label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "自家発室給気ファン", fields: [
+    { key: "自家発室給気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "自家発室給気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "汚泥ポンプ室排気ファン", fields: [
+    { key: "汚泥ポンプ室排気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "汚泥ポンプ室排気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "汚泥ポンプ室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "汚泥ポンプ室吸気ファン", fields: [
+    { key: "汚泥ポンプ室吸気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "汚泥ポンプ室吸気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "汚泥ポンプ室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "脱水作業室排気ファン", fields: [
+    { key: "脱水作業室排気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "脱水作業室排気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "脱水作業室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "脱水作業室吸気ファン", fields: [
+    { key: "脱水作業室吸気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "脱水作業室吸気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "脱水作業室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "脱臭機械室排気ファン", fields: [
+    { key: "脱臭機械室排気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "脱臭機械室排気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "脱臭機械室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "脱臭機械室吸気ファン", fields: [
+    { key: "脱臭機械室吸気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "脱臭機械室吸気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "脱臭機械室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "終沈ポンプ室排気ファン", fields: [
+    { key: "終沈ポンプ室排気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "終沈ポンプ室排気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "終沈ポンプ室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "終沈ポンプ室吸気ファン", fields: [
+    { key: "終沈ポンプ室吸気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
+    { key: "終沈ポンプ室吸気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
+    { key: "終沈ポンプ室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+  ]},
+  { title: "自動巻取型エアフィルタ", fields: [
+    { key: "自動巻取型エアフィルター__common1__巻取完了表示点灯確認", label: "巻取完了表示", type: "toggle", options: ["○"] },
+    { key: "自動巻取型エアフィルター__common1__差圧",                 label: "差圧",         type: "number", step: "1",   unit: "Pa" },
+    { key: "自動巻取型エアフィルター__common1__モード確認",           label: "モード確認",   type: "toggle", options: ["自動","手動"] },
+    { key: "自動巻取型エアフィルター__common1__設定",                 label: "設定",         type: "toggle", options: ["○"] },
+  ]},
+];
+
+// サブタブ統合（renderer 用）
+const MECH_SUBTABS = [
+  { id: 1, title: "点検表 1/3", sections: MECH_SECTIONS_1 },
+  { id: 2, title: "点検表 2/3", sections: MECH_SECTIONS_2 },
+  { id: 3, title: "点検表 3/3", sections: MECH_SECTIONS_3 },
+];
+const MECH_SECTIONS = MECH_SECTIONS_1.concat(MECH_SECTIONS_2).concat(MECH_SECTIONS_3);
+
+const ALL_MECH_KEYS = MECH_SECTIONS.flatMap(s => s.fields.map(f => f.key));
+
+// ===== グローバル状態 =====
+
+let weeklyData = {
+  startDate: "",
+  targetMonth: "",
+  // 日常水質下段（per-day, MEASURE_FIELDS）
+  weeks: {},
+  // 日常水質上段（per-week, USAGE_KEYS × USAGE_CELLS）
+  waterUsage: {},
+  // 主要機器運転時間
+  equipment: {},
+  // 日常電気設備
+  electrical: {},
+  // 日常機械設備
+  mechanical: {}
+};
+
+let currentWeek = 1;
+let currentDay = "mon";
+let currentSheet = "water"; // "water", "equip", "elec", "mech"
+let currentWaterSub = "usage"; // "usage" | "measure"
+let currentElecSub = 1; // 1 | 2 | 3
+let currentMechSub = 1; // 1 | 2 | 3
+let isOnline = false;
+
+// ===== ユーティリティ =====
+
+function emptyDay() {
+  const d = {};
+  MEASURE_FIELDS.forEach(k => { d[k] = (k === "inspector" || k === "bikou") ? "" : null; });
+  return d;
+}
+
+function emptyWeek() {
+  const w = {};
+  DAYS.forEach(d => { w[d] = emptyDay(); });
+  return w;
+}
+
+// 上段使用量（1週分）: 11項目 × 6セル
+function emptyUsageWeek() {
+  const w = {};
+  USAGE_KEYS.forEach(k => {
+    w[k] = {};
+    USAGE_CELLS.forEach(c => { w[k][c] = null; });
+  });
+  return w;
+}
+
+// 空の電気設備1日分データ
+function emptyElecDay() {
+  const d = {};
+  ALL_ELEC_KEYS.forEach(k => { d[k] = null; });
+  return d;
+}
+
+// 空の電気設備1週分データ
+function emptyElecWeek() {
+  const w = {};
+  EQUIP_DAYS.forEach(d => { w[d] = emptyElecDay(); });
+  return w;
+}
+
+// 空の機械設備1日分データ
+function emptyMechDay() {
+  const d = {};
+  ALL_MECH_KEYS.forEach(k => { d[k] = null; });
+  return d;
+}
+
+// 空の機械設備1週分データ（月水木金の4日）
+function emptyMechWeek() {
+  const w = {};
+  MECH_DAYS.forEach(d => { w[d] = emptyMechDay(); });
+  return w;
+}
+
+// ===== 上段使用量テーブル（11項目 × 6セル: mon-fri+nextMon） =====
+function renderWaterUsageTable() {
+  const tbody = document.getElementById("waterUsageBody");
+  if (!tbody) return;
+  const html = USAGE_KEYS.map(key => {
+    const meta = USAGE_LABELS[key] || { label: key, unit: "" };
+    const cells = USAGE_CELLS.map(c =>
+      '<td><input type="number" inputmode="decimal" step="0.01" data-usage="' + key + '" data-ucell="' + c + '"></td>'
+    ).join("");
+    return '<tr><td>' + meta.label + (meta.unit ? ' <span style="color:#888;font-size:10px">(' + meta.unit + ')</span>' : '') + '</td>' + cells + '</tr>';
+  }).join("");
+  tbody.innerHTML = html;
+}
+
+function loadUsageDataToForm() {
+  const week = weeklyData.waterUsage[currentWeek];
+  document.querySelectorAll('[data-usage]').forEach(el => {
+    const key = el.dataset.usage, c = el.dataset.ucell;
+    const v = (week && week[key]) ? week[key][c] : null;
+    el.value = (v === null || v === undefined || v === "") ? "" : v;
+  });
+}
+
+function saveUsageFormToData() {
+  const week = weeklyData.waterUsage[currentWeek];
+  if (!week) return;
+  document.querySelectorAll('[data-usage]').forEach(el => {
+    const key = el.dataset.usage, c = el.dataset.ucell;
+    if (!week[key]) week[key] = {};
+    if (el.value === "") { week[key][c] = null; }
+    else {
+      const num = Number(el.value);
+      week[key][c] = isNaN(num) ? el.value : num;
+    }
+  });
+}
+
+// 機器運転時間テーブルの行を動的生成
+function renderEquipTableRows() {
+  const tbody = document.getElementById("equipTableBody");
+  if (!tbody) return;
+  if (tbody.dataset.rendered === "1") return;
+  const days = ["mon", "tue", "wed", "thu", "fri"];
+  const html = EQUIP_KEYS.map((key, i) => {
+    const cells = days.map(d =>
+      '<td><input type="number" inputmode="decimal" step="0.1" data-equip="' + key + '" data-eday="' + d + '"></td>'
+    ).join("");
+    return '<tr><td>' + (EQUIP_LABELS[i] || key) + '</td>' + cells + '</tr>';
+  }).join("");
+  tbody.innerHTML = html;
+  tbody.dataset.rendered = "1";
+}
+
+// 空の機器1週分データ（21機器 × 5曜日 = 105セル）
+function emptyEquipWeek() {
+  const w = {};
+  EQUIP_KEYS.forEach(k => {
+    w[k] = {};
+    EQUIP_DAYS.forEach(d => { w[k][d] = null; });
+  });
+  return w;
+}
+
+function ensureWeeklyStructure() {
+  if (!weeklyData.weeks || typeof weeklyData.weeks !== "object") weeklyData.weeks = {};
+  if (!weeklyData.waterUsage || typeof weeklyData.waterUsage !== "object") weeklyData.waterUsage = {};
+  if (!weeklyData.equipment || typeof weeklyData.equipment !== "object") weeklyData.equipment = {};
+  if (!weeklyData.electrical || typeof weeklyData.electrical !== "object") weeklyData.electrical = {};
+  if (!weeklyData.mechanical || typeof weeklyData.mechanical !== "object") weeklyData.mechanical = {};
+  WEEKS.forEach(w => {
+    // 日常水質下段（per-day measurement）
+    if (!weeklyData.weeks[w]) weeklyData.weeks[w] = emptyWeek();
+    DAYS.forEach(d => {
+      if (!weeklyData.weeks[w][d]) weeklyData.weeks[w][d] = emptyDay();
+      MEASURE_FIELDS.forEach(k => {
+        if (!(k in weeklyData.weeks[w][d])) {
+          weeklyData.weeks[w][d][k] = (k === "inspector" || k === "bikou") ? "" : null;
+        }
+      });
+    });
+    // 日常水質上段（per-week usage）
+    if (!weeklyData.waterUsage[w]) weeklyData.waterUsage[w] = emptyUsageWeek();
+    USAGE_KEYS.forEach(k => {
+      if (!weeklyData.waterUsage[w][k]) weeklyData.waterUsage[w][k] = {};
+      USAGE_CELLS.forEach(c => {
+        if (!(c in weeklyData.waterUsage[w][k])) weeklyData.waterUsage[w][k][c] = null;
+      });
+    });
+    // 機器運転時間
+    if (!weeklyData.equipment[w]) weeklyData.equipment[w] = emptyEquipWeek();
+    EQUIP_KEYS.forEach(k => {
+      if (!weeklyData.equipment[w][k]) {
+        weeklyData.equipment[w][k] = {};
+        EQUIP_DAYS.forEach(d => { weeklyData.equipment[w][k][d] = null; });
+      }
+      EQUIP_DAYS.forEach(d => {
+        if (!(d in weeklyData.equipment[w][k])) weeklyData.equipment[w][k][d] = null;
+      });
+    });
+    // 電気設備
+    if (!weeklyData.electrical[w]) weeklyData.electrical[w] = emptyElecWeek();
+    EQUIP_DAYS.forEach(d => {
+      if (!weeklyData.electrical[w][d]) weeklyData.electrical[w][d] = emptyElecDay();
+      ALL_ELEC_KEYS.forEach(k => {
+        if (!(k in weeklyData.electrical[w][d])) weeklyData.electrical[w][d][k] = null;
+      });
+    });
+    // 機械設備
+    if (!weeklyData.mechanical[w]) weeklyData.mechanical[w] = emptyMechWeek();
+    MECH_DAYS.forEach(d => {
+      if (!weeklyData.mechanical[w][d]) weeklyData.mechanical[w][d] = emptyMechDay();
+      ALL_MECH_KEYS.forEach(k => {
+        if (!(k in weeklyData.mechanical[w][d])) weeklyData.mechanical[w][d][k] = null;
+      });
+    });
+  });
+}
+
+function storageKey() {
+  return "tutuga_weekly_" + (weeklyData.targetMonth || "default");
+}
+
+function currentYearMonth() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+
+function estimateStartDate(ym) {
+  if (!ym) return "";
+  const [y, m] = ym.split("-").map(Number);
+  const first = new Date(y, m - 1, 1); // その月の1日
+  const dow = first.getDay(); // 0=日, 1=月, ..., 6=土
+  // 1日が月〜金 → その週の月曜（前月に食い込む可能性あり）
+  // 1日が土 → 2日後の月曜から開始（土日は業務外）
+  // 1日が日 → 翌日の月曜から開始
+  let offset;
+  if (dow === 0) offset = 1;         // 日曜 → +1
+  else if (dow === 6) offset = 2;    // 土曜 → +2
+  else offset = 1 - dow;             // 月〜金 → その週の月曜
+  const monday = new Date(y, m - 1, 1 + offset);
+  const yy = monday.getFullYear();
+  const mm = String(monday.getMonth() + 1).padStart(2, "0");
+  const dd = String(monday.getDate()).padStart(2, "0");
+  return yy + "-" + mm + "-" + dd;
+}
+
+function computeDate(weekIdx, dayKey) {
+  if (!weeklyData.startDate) return "";
+  const base = new Date(weeklyData.startDate + "T00:00:00");
+  if (isNaN(base.getTime())) return "";
+  const dayOffsetMap = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, nextMon: 7 };
+  const offsetDays = (weekIdx - 1) * 7 + (dayOffsetMap[dayKey] || 0);
+  const d = new Date(base);
+  d.setDate(base.getDate() + offsetDays);
+  return (d.getMonth() + 1) + "/" + d.getDate();
+}
+
+function isDayFilled(weekIdx, dayKey) {
+  const day = weeklyData.weeks[weekIdx] && weeklyData.weeks[weekIdx][dayKey];
+  if (!day) return false;
+  return ALL_FIELDS.some(k => {
+    const v = day[k];
+    return v !== null && v !== undefined && v !== "";
+  });
+}
+
+// ===== 機能1: 入力パーセンテージ計算 =====
+function getWaterDayPercent(weekIdx, dayKey) {
+  const day = weeklyData.weeks[weekIdx] && weeklyData.weeks[weekIdx][dayKey];
+  if (!day) return 0;
+  const fields = ALL_FIELDS.filter(k => k !== "bikou" && k !== "inspector");
+  const filled = fields.filter(k => {
+    const v = day[k];
+    return v !== null && v !== undefined && v !== "";
+  }).length;
+  return Math.round(filled / fields.length * 100);
+}
+function getEquipDayPercent(weekIdx, dayKey) {
+  const week = weeklyData.equipment[weekIdx];
+  if (!week) return 0;
+  const filled = EQUIP_KEYS.filter(k => {
+    const v = week[k] && week[k][dayKey];
+    return v !== null && v !== undefined && v !== "";
+  }).length;
+  return Math.round(filled / EQUIP_KEYS.length * 100);
+}
+function getElecDayPercent(weekIdx, dayKey) {
+  const day = weeklyData.electrical[weekIdx] && weeklyData.electrical[weekIdx][dayKey];
+  if (!day) return 0;
+  const filled = ALL_ELEC_KEYS.filter(k => {
+    const v = day[k];
+    return v !== null && v !== undefined && v !== "";
+  }).length;
+  return Math.round(filled / ALL_ELEC_KEYS.length * 100);
+}
+function getMechDayPercent(weekIdx, dayKey) {
+  const day = weeklyData.mechanical[weekIdx] && weeklyData.mechanical[weekIdx][dayKey];
+  if (!day) return 0;
+  const filled = ALL_MECH_KEYS.filter(k => {
+    const v = day[k];
+    return v !== null && v !== undefined && v !== "";
+  }).length;
+  return Math.round(filled / ALL_MECH_KEYS.length * 100);
+}
+function getWeekPercent(sheetType, weekIdx) {
+  var total = 0, count = 0;
+  if (sheetType === "water") {
+    DAYS.forEach(d => { total += getWaterDayPercent(weekIdx, d); count++; });
+  } else if (sheetType === "equip") {
+    EQUIP_DAYS.forEach(d => { total += getEquipDayPercent(weekIdx, d); count++; });
+  } else if (sheetType === "elec") {
+    EQUIP_DAYS.forEach(d => { total += getElecDayPercent(weekIdx, d); count++; });
+  } else if (sheetType === "mech") {
+    MECH_DAYS.forEach(d => { total += getMechDayPercent(weekIdx, d); count++; });
+  }
+  return count > 0 ? Math.round(total / count) : 0;
+}
+
+// ===== 機能2: 前日探索（空日スキップ） =====
+function findPrevDayWithData(sheetType, weekIdx, dayIdx, daysArr) {
+  var w = weekIdx;
+  var i = dayIdx - 1;
+  while (true) {
+    if (i < 0) {
+      w--;
+      if (w < 1) return null;
+      i = daysArr.length - 1;
+    }
+    var d = daysArr[i];
+    var hasData = false;
+    if (sheetType === "water") hasData = getWaterDayPercent(w, d) > 0;
+    else if (sheetType === "equip") hasData = getEquipDayPercent(w, d) > 0;
+    else if (sheetType === "elec") hasData = getElecDayPercent(w, d) > 0;
+    else if (sheetType === "mech") hasData = getMechDayPercent(w, d) > 0;
+    if (hasData) return { week: w, day: d };
+    i--;
+  }
+}
+
+// ===== 未保存マーカー =====
+let isDirty = false;
+function markDirty() {
+  isDirty = true;
+  var btn = document.getElementById("btnSave");
+  if (btn) {
+    btn.classList.add("unsaved");
+    btn.textContent = "保存 *";
+  }
+}
+function markClean() {
+  isDirty = false;
+  var btn = document.getElementById("btnSave");
+  if (btn) {
+    btn.classList.remove("unsaved");
+    btn.textContent = "保存";
+  }
+}
+
+// ===== Excel出力用：実際の日付取得 =====
+function getActualDate(weekIdx, dayKey) {
+  if (!weeklyData.startDate) return null;
+  var base = new Date(weeklyData.startDate + "T00:00:00");
+  if (isNaN(base.getTime())) return null;
+  var dayOffsetMap = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, nextMon: 7 };
+  var offsetDays = (weekIdx - 1) * 7 + (dayOffsetMap[dayKey] || 0);
+  var d = new Date(base);
+  d.setDate(base.getDate() + offsetDays);
+  return d;
+}
+
+// ===== 機器運転時間フォーム <-> データ =====
+
+function saveEquipFormToData() {
+  const week = weeklyData.equipment[currentWeek];
+  document.querySelectorAll("[data-equip]").forEach(el => {
+    const key = el.dataset.equip;
+    const day = el.dataset.eday;
+    if (!week[key]) return;
+    if (el.value === "") {
+      week[key][day] = null;
+    } else {
+      const num = Number(el.value);
+      week[key][day] = isNaN(num) ? el.value : num;
+    }
+  });
+}
+
+function loadEquipDataToForm() {
+  const week = weeklyData.equipment[currentWeek];
+  document.querySelectorAll("[data-equip]").forEach(el => {
+    const key = el.dataset.equip;
+    const day = el.dataset.eday;
+    const v = week[key] ? week[key][day] : null;
+    el.value = (v === null || v === undefined) ? "" : v;
+  });
+}
+
+// 週タブ用の日付範囲文字列を返す（例: "4/28〜5/2"）
+// 列ヘッダーの日付を現在の週に合わせて更新
+function updateColDateHeaders(tableId) {
+  document.querySelectorAll("#" + tableId + " thead .col-date").forEach(span => {
+    const dk = span.dataset.hday;
+    const d = getActualDate(currentWeek, dk);
+    span.textContent = d ? (d.getMonth() + 1) + "/" + d.getDate() : "";
+  });
+}
+
+function updateEquipWeekTabs() {
+  document.querySelectorAll("#equipWeekTabs button").forEach(btn => {
+    const w = Number(btn.dataset.week);
+    btn.classList.toggle("active", w === currentWeek);
+    let pct = btn.querySelector(".pct");
+    if (!pct) { pct = document.createElement("span"); pct.className = "pct"; btn.appendChild(pct); }
+    const p = getWeekPercent("equip", w);
+    pct.textContent = p > 0 ? p + "%" : "";
+  });
+  updateColDateHeaders("equipTable");
+}
+
+// ===== 電気設備テーブル生成・トグルボタン =====
+
+function buildElecTable(subId) {
+  const sub = subId || currentElecSub;
+  const subDef = ELEC_SUBTABS.find(s => s.id === sub) || ELEC_SUBTABS[0];
+  const sections = subDef.sections;
+  const tbody = document.getElementById("elecBody");
+  tbody.innerHTML = "";
+  sections.forEach(sec => {
+    // セクション見出し行
+    const hdr = document.createElement("tr");
+    hdr.className = "section-row";
+    hdr.innerHTML = '<td colspan="6">' + sec.title + '</td>';
+    tbody.appendChild(hdr);
+    // フィールド行
+    sec.fields.forEach(f => {
+      const tr = document.createElement("tr");
+      let html = '<td>' + f.label + (f.unit ? ' <span style="color:#888;font-size:10px">(' + f.unit + ')</span>' : '') + '</td>';
+      EQUIP_DAYS.forEach(d => {
+        if (f.type === "number") {
+          html += '<td><input type="number" inputmode="decimal" step="' + f.step + '" data-elec="' + f.key + '" data-eday="' + d + '"></td>';
+        } else if (f.type === "numdash") {
+          // 数値 or "-" を受け付ける（input type=text + 数値判定で保存）
+          html += '<td><input type="text" inputmode="decimal" data-numdash="1" data-elec="' + f.key + '" data-eday="' + d + '" placeholder="数値 or -"></td>';
+        } else {
+          // toggle button
+          html += '<td><button type="button" class="toggle-btn" data-elec="' + f.key + '" data-eday="' + d + '" data-options=\'' + JSON.stringify(f.options) + '\'></button></td>';
+        }
+      });
+      tr.innerHTML = html;
+      tbody.appendChild(tr);
+    });
+  });
+  // トグルボタンイベント
+  tbody.querySelectorAll(".toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const opts = JSON.parse(btn.dataset.options);
+      const cur = btn.dataset.val || "";
+      const idx = opts.indexOf(cur);
+      const next = (idx < 0 || idx >= opts.length - 1) ? (cur === "" ? opts[0] : "") : opts[idx + 1];
+      // 最後の選択肢の次は空白に戻る
+      const newVal = (idx === opts.length - 1) ? "" : (idx < 0 ? opts[0] : opts[idx + 1]);
+      btn.dataset.val = newVal;
+      btn.textContent = newVal;
+      btn.classList.remove("copied");
+      // データに即時反映
+      const week = weeklyData.electrical[currentWeek];
+      if (week && week[btn.dataset.eday]) {
+        week[btn.dataset.eday][btn.dataset.elec] = newVal || null;
+      }
+    });
+  });
+  // 電気タブの Enter ハンドラ（動的生成テーブル内のinput）
+  tbody.querySelectorAll('input[data-elec]').forEach(el => {
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        advanceToNextField(el);
+      }
+    });
+  });
+}
+
+function saveElecFormToData() {
+  const week = weeklyData.electrical[currentWeek];
+  document.querySelectorAll("[data-elec]").forEach(el => {
+    const key = el.dataset.elec;
+    const day = el.dataset.eday;
+    if (!week || !week[day]) return;
+    if (el.tagName === "INPUT") {
+      if (el.value === "") {
+        week[day][key] = null;
+      } else if (el.type === "number" || el.dataset.numdash === "1") {
+        // numdash型: 数値ならNumber、"-"等の非数値なら文字列のまま
+        const num = Number(el.value);
+        week[day][key] = isNaN(num) ? el.value : num;
+      } else {
+        week[day][key] = el.value;
+      }
+    } else {
+      // toggle button
+      week[day][key] = el.dataset.val || null;
+    }
+  });
+}
+
+function loadElecDataToForm() {
+  const week = weeklyData.electrical[currentWeek];
+  const dashFields = ["tnReading", "tpReading", "presReading"];
+  document.querySelectorAll("[data-elec]").forEach(el => {
+    const key = el.dataset.elec;
+    const day = el.dataset.eday;
+    const v = (week && week[day]) ? week[day][key] : null;
+    if (el.tagName === "INPUT") {
+      if (v === null || v === undefined || v === "") {
+        if (el.type === "text" && dashFields.indexOf(key) >= 0) {
+          el.value = "-";
+        } else {
+          el.value = "";
+        }
+      } else {
+        el.value = v;
+      }
+    } else {
+      // toggle button
+      const val = (v === null || v === undefined) ? "" : String(v);
+      el.dataset.val = val;
+      el.textContent = val;
+    }
+  });
+}
+
+function updateElecWeekTabs() {
+  document.querySelectorAll("#elecWeekTabs button").forEach(btn => {
+    const w = Number(btn.dataset.week);
+    btn.classList.toggle("active", w === currentWeek);
+    let pct = btn.querySelector(".pct");
+    if (!pct) { pct = document.createElement("span"); pct.className = "pct"; btn.appendChild(pct); }
+    const p = getWeekPercent("elec", w);
+    pct.textContent = p > 0 ? p + "%" : "";
+  });
+  updateColDateHeaders("elecTable");
+}
+
+// ===== 機械設備テーブル生成 =====
+
+function buildMechTable(subId) {
+  const sub = subId || currentMechSub;
+  const subDef = MECH_SUBTABS.find(s => s.id === sub) || MECH_SUBTABS[0];
+  const sections = subDef.sections;
+  const tbody = document.getElementById("mechBody");
+  tbody.innerHTML = "";
+  sections.forEach(sec => {
+    const hdr = document.createElement("tr");
+    hdr.className = "section-row";
+    hdr.innerHTML = '<td colspan="6">' + sec.title + '</td>';
+    tbody.appendChild(hdr);
+    sec.fields.forEach(f => {
+      const tr = document.createElement("tr");
+      let html = '<td>' + f.label + (f.unit ? ' <span style="color:#888;font-size:10px">(' + f.unit + ')</span>' : '') + '</td>';
+      MECH_DAYS.forEach(d => {
+        if (f.type === "number") {
+          html += '<td><input type="number" inputmode="decimal" step="' + f.step + '" data-mech="' + f.key + '" data-mday="' + d + '"></td>';
+        } else {
+          html += '<td><button type="button" class="toggle-btn" data-mech="' + f.key + '" data-mday="' + d + '" data-options=\'' + JSON.stringify(f.options) + '\'></button></td>';
+        }
+      });
+      tr.innerHTML = html;
+      tbody.appendChild(tr);
+    });
+  });
+  // トグルボタンイベント
+  tbody.querySelectorAll(".toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const opts = JSON.parse(btn.dataset.options);
+      const cur = btn.dataset.val || "";
+      const idx = opts.indexOf(cur);
+      const newVal = (idx === opts.length - 1) ? "" : (idx < 0 ? opts[0] : opts[idx + 1]);
+      btn.dataset.val = newVal;
+      btn.textContent = newVal;
+      btn.classList.remove("copied");
+      const week = weeklyData.mechanical[currentWeek];
+      if (week && week[btn.dataset.mday]) {
+        week[btn.dataset.mday][btn.dataset.mech] = newVal || null;
+      }
+    });
+  });
+  // 機械タブの Enter ハンドラ（動的生成テーブル内のinput）
+  tbody.querySelectorAll('input[data-mech]').forEach(el => {
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        advanceToNextField(el);
+      }
+    });
+  });
+}
+
+function saveMechFormToData() {
+  const week = weeklyData.mechanical[currentWeek];
+  document.querySelectorAll("[data-mech]").forEach(el => {
+    const key = el.dataset.mech;
+    const day = el.dataset.mday;
+    if (!week || !week[day]) return;
+    if (el.tagName === "INPUT") {
+      if (el.value === "") {
+        week[day][key] = null;
+      } else if (el.type === "number") {
+        const num = Number(el.value);
+        week[day][key] = isNaN(num) ? el.value : num;
+      } else {
+        week[day][key] = el.value;
+      }
+    } else {
+      week[day][key] = el.dataset.val || null;
+    }
+  });
+}
+
+function loadMechDataToForm() {
+  const week = weeklyData.mechanical[currentWeek];
+  document.querySelectorAll("[data-mech]").forEach(el => {
+    const key = el.dataset.mech;
+    const day = el.dataset.mday;
+    const v = (week && week[day]) ? week[day][key] : null;
+    if (el.tagName === "INPUT") {
+      el.value = (v === null || v === undefined) ? "" : v;
+    } else {
+      const val = (v === null || v === undefined) ? "" : String(v);
+      el.dataset.val = val;
+      el.textContent = val;
+    }
+  });
+}
+
+function updateMechWeekTabs() {
+  document.querySelectorAll("#mechWeekTabs button").forEach(btn => {
+    const w = Number(btn.dataset.week);
+    btn.classList.toggle("active", w === currentWeek);
+    let pct = btn.querySelector(".pct");
+    if (!pct) { pct = document.createElement("span"); pct.className = "pct"; btn.appendChild(pct); }
+    const p = getWeekPercent("mech", w);
+    pct.textContent = p > 0 ? p + "%" : "";
+  });
+  updateColDateHeaders("mechTable");
+}
+
+// ===== パネル切替 =====
+
+function switchMainTab(sheet) {
+  // 切替前にデータ保存
+  if (currentSheet === "water") {
+    if (currentWaterSub === "usage") saveUsageFormToData();
+    else saveFormToData();
+  }
+  else if (currentSheet === "equip") saveEquipFormToData();
+  else if (currentSheet === "elec") saveElecFormToData();
+  else if (currentSheet === "mech") saveMechFormToData();
+
+  currentSheet = sheet;
+  // 前日コピーボタンは日常水質下段でのみ表示
+  document.getElementById("btnCopy").style.display = (sheet === "water" && currentWaterSub === "measure") ? "" : "none";
+  const waterPanel = document.getElementById("waterPanel");
+  const equipPanel = document.getElementById("equipPanel");
+  const elecPanel = document.getElementById("elecPanel");
+  const mechPanel = document.getElementById("mechPanel");
+  document.querySelectorAll("#mainTabs button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.sheet === sheet);
+  });
+  waterPanel.style.display = "none";
+  equipPanel.classList.remove("visible");
+  elecPanel.classList.remove("visible");
+  mechPanel.classList.remove("visible");
+  if (sheet === "water") {
+    waterPanel.style.display = "";
+    applyWaterSubVisibility();
+    updateWeekTabs();
+    if (currentWaterSub === "measure") updateDayTabs();
+    if (currentWaterSub === "usage") loadUsageDataToForm();
+    else loadDataToForm();
+  } else if (sheet === "equip") {
+    equipPanel.classList.add("visible");
+    updateEquipWeekTabs();
+    loadEquipDataToForm();
+  } else if (sheet === "elec") {
+    elecPanel.classList.add("visible");
+    buildElecTable(currentElecSub);
+    updateElecWeekTabs();
+    loadElecDataToForm();
+  } else if (sheet === "mech") {
+    mechPanel.classList.add("visible");
+    buildMechTable(currentMechSub);
+    updateMechWeekTabs();
+    loadMechDataToForm();
+  }
+  // タブ切替後にtabindex再設定
+  setTimeout(updateTabIndexes, 100);
+}
+
+// ===== 水質サブタブの表示制御 =====
+function applyWaterSubVisibility() {
+  const usageWrap = document.getElementById("waterUsageWrap");
+  const measureWrap = document.getElementById("waterMeasureWrap");
+  const dayTabs = document.getElementById("dayTabs");
+  if (!usageWrap || !measureWrap) return;
+  if (currentWaterSub === "usage") {
+    usageWrap.style.display = "";
+    measureWrap.style.display = "none";
+    if (dayTabs) dayTabs.style.display = "none";
+  } else {
+    usageWrap.style.display = "none";
+    measureWrap.style.display = "";
+    if (dayTabs) dayTabs.style.display = "";
+  }
+}
+
+function switchWaterSub(sub) {
+  // 切替前にデータ保存
+  if (currentWaterSub === "usage") saveUsageFormToData();
+  else saveFormToData();
+  currentWaterSub = sub;
+  document.querySelectorAll('#waterSubTabs button').forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.waterSub === sub);
+  });
+  document.getElementById("btnCopy").style.display = (sub === "measure") ? "" : "none";
+  applyWaterSubVisibility();
+  if (sub === "usage") loadUsageDataToForm();
+  else { updateDayTabs(); loadDataToForm(); }
+  setTimeout(updateTabIndexes, 100);
+}
+
+function switchElecSub(sub) {
+  saveElecFormToData();
+  currentElecSub = parseInt(sub);
+  document.querySelectorAll('#elecSubTabs button').forEach(btn => {
+    btn.classList.toggle("active", parseInt(btn.dataset.elecSub) === currentElecSub);
+  });
+  buildElecTable(currentElecSub);
+  loadElecDataToForm();
+  setTimeout(updateTabIndexes, 100);
+}
+
+function switchMechSub(sub) {
+  saveMechFormToData();
+  currentMechSub = parseInt(sub);
+  document.querySelectorAll('#mechSubTabs button').forEach(btn => {
+    btn.classList.toggle("active", parseInt(btn.dataset.mechSub) === currentMechSub);
+  });
+  buildMechTable(currentMechSub);
+  loadMechDataToForm();
+  setTimeout(updateTabIndexes, 100);
+}
+
+// ===== 接続状態表示 =====
+
+function setConnectionStatus(online) {
+  isOnline = online;
+  const dot = document.getElementById("connDot");
+  const label = document.getElementById("connLabel");
+  if (online) {
+    dot.className = "conn-dot online";
+    label.textContent = "サーバー接続済み";
+  } else {
+    dot.className = "conn-dot offline";
+    label.textContent = "オフライン（端末保存のみ）";
+  }
+}
+
+async function checkConnection() {
+  try {
+    const res = await fetch(GAS_URL + '?action=ping', { method: 'GET' });
+    if (res.ok) {
+      setConnectionStatus(true);
+    } else {
+      setConnectionStatus(false);
+    }
+  } catch (e) {
+    if (isNetworkError(e)) setConnectionStatus(false);
+  }
+}
+
+// ===== フォーム <-> データ =====
+
+function saveFormToData() {
+  const day = weeklyData.weeks[currentWeek][currentDay];
+  document.querySelectorAll("[data-field]").forEach(el => {
+    const key = el.dataset.field;
+    if (el.tagName === "BUTTON" && el.classList.contains("toggle-btn")) {
+      day[key] = el.dataset.val || null;
+    } else if (el.type === "number") {
+      if (el.value === "") {
+        day[key] = null;
+      } else {
+        const num = Number(el.value);
+        day[key] = isNaN(num) ? el.value : num;
+      }
+    } else {
+      day[key] = el.value;
+    }
+  });
+}
+
+function loadDataToForm() {
+  const day = weeklyData.weeks[currentWeek][currentDay];
+  document.querySelectorAll("[data-field]").forEach(el => {
+    const key = el.dataset.field;
+    const v = day[key];
+    el.value = (v === null || v === undefined) ? "" : v;
+  });
+  const inspEl = document.querySelector('[data-field="inspector"]');
+  if (inspEl && !inspEl.value) {
+    const last = localStorage.getItem("tutuga_last_inspector") || "";
+    if (last) {
+      inspEl.value = last;
+      day.inspector = last;
+    }
+  }
+}
+
+// ===== タブ更新 =====
+
+function updateWeekTabs() {
+  document.querySelectorAll("#weekTabs button").forEach(btn => {
+    const w = Number(btn.dataset.week);
+    btn.classList.toggle("active", w === currentWeek);
+    let pct = btn.querySelector(".pct");
+    if (!pct) { pct = document.createElement("span"); pct.className = "pct"; btn.appendChild(pct); }
+    const p = getWeekPercent("water", w);
+    pct.textContent = p > 0 ? p + "%" : "";
+  });
+}
+
+function updateDayTabs() {
+  document.querySelectorAll("#dayTabs button").forEach(btn => {
+    const d = btn.dataset.day;
+    btn.classList.toggle("active", d === currentDay);
+    const check = btn.querySelector(".check");
+    const dateSpan = btn.querySelector(".day-date");
+    if (check) check.textContent = isDayFilled(currentWeek, d) ? "✓" : "";
+    if (dateSpan) dateSpan.textContent = computeDate(currentWeek, d) || "";
+    let pct = btn.querySelector(".pct");
+    if (!pct) { pct = document.createElement("span"); pct.className = "pct"; btn.appendChild(pct); }
+    const p = getWaterDayPercent(currentWeek, d);
+    pct.textContent = p > 0 ? p + "%" : "";
+  });
+}
+
+// ===== localStorage保存・読込 =====
+
+// ===== localStorage 容量対策 =====
+// 13ヶ月以上前の月データを削除して容量を確保
+function pruneOldMonthData(currentMonth) {
+  try {
+    if (!currentMonth || !/^\d{4}-\d{2}$/.test(currentMonth)) return 0;
+    var keepMonths = 13;
+    var curYear = parseInt(currentMonth.split("-")[0]);
+    var curMon = parseInt(currentMonth.split("-")[1]);
+    var deleted = 0;
+    var keysToDelete = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (!k || k.indexOf("tutuga_weekly_") !== 0) continue;
+      var ym = k.replace("tutuga_weekly_", "");
+      var m = ym.match(/^(\d{4})-(\d{2})$/);
+      if (!m) continue;
+      var y = parseInt(m[1]), mm = parseInt(m[2]);
+      var diff = (curYear - y) * 12 + (curMon - mm);
+      if (diff >= keepMonths) keysToDelete.push(k);
+    }
+    keysToDelete.forEach(function(k) { localStorage.removeItem(k); deleted++; });
+    return deleted;
+  } catch (e) { return 0; }
+}
+
+function saveToStorage() {
+  function doSave() {
+    if (currentSheet === "water") {
+      // 上段使用量サブタブにいる場合は使用量の保存関数を呼ぶ
+      if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
+      else saveFormToData();
+    }
+    else if (currentSheet === "equip") saveEquipFormToData();
+    else if (currentSheet === "elec") saveElecFormToData();
+    else if (currentSheet === "mech") saveMechFormToData();
+    weeklyData.targetMonth = document.getElementById("targetMonth").value || weeklyData.targetMonth;
+    // startDate はinput値ではなく対象月から常に再計算（readonly のため）
+    weeklyData.startDate = estimateStartDate(weeklyData.targetMonth);
+    const r1 = safeSetItem(storageKey(), JSON.stringify(weeklyData));
+    if (!r1.ok && r1.quotaExhausted) {
+      showToast("ストレージ上限のため最古の月データを退避しましたが、まだ容量不足です。古いデータを手動削除してください。", "error");
+    }
+    const inspEl = document.querySelector('[data-field="inspector"]');
+    if (inspEl && inspEl.value) {
+      try { safeSetItem("tutuga_last_inspector", inspEl.value); } catch(e) {}
+    }
+    if (weeklyData.targetMonth) {
+      try { safeSetItem("tutuga_current_month", weeklyData.targetMonth); } catch(e) {}
+    }
+  }
+  function isQuotaError(e) {
+    return !!e && (
+      e.name === 'QuotaExceededError' ||
+      e.code === 22 || e.code === 1014 ||
+      /quota/i.test(String(e.message || ''))
+    );
+  }
+
+  try {
+    doSave();
+    return true;
+  } catch (e) {
+    if (!isQuotaError(e)) {
+      console.error('saveToStorage error:', e);
+      window.__lastSaveError = e;
+      return false;
+    }
+    // 段階1: 13ヶ月より古いデータを削除 + Undoスタッククリア
+    console.warn('localStorage quota exceeded - pruning old month data');
+    var pruned = pruneOldMonthData(weeklyData.targetMonth);
+    if (typeof undoStack !== "undefined" && undoStack.length) undoStack.length = 0;
+    try {
+      doSave();
+      console.log('Saved after pruning', pruned, 'old month keys');
+      return true;
+    } catch (e2) {
+      if (!isQuotaError(e2)) {
+        console.error('saveToStorage retry error:', e2);
+        window.__lastSaveError = e2;
+        return false;
+      }
+      // 段階2: 他月のキーを古い順に1つずつ削除
+      var allKeys = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('tutuga_weekly_') === 0 && k !== storageKey()) allKeys.push(k);
+      }
+      allKeys.sort(); // 古い年月順（YYYY-MM 形式なので単純ソートで OK）
+      for (var j = 0; j < allKeys.length; j++) {
+        localStorage.removeItem(allKeys[j]);
+        try {
+          doSave();
+          console.warn('Saved after removing old keys:', allKeys.slice(0, j + 1));
+          return true;
+        } catch (e3) { /* 続けて削除 */ }
+      }
+      console.error('saveToStorage final failure: quota still exceeded');
+      window.__lastSaveError = e2;
+      return false;
+    }
+  }
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(storageKey());
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      weeklyData = Object.assign({ startDate: "", targetMonth: "", weeks: {}, equipment: {}, electrical: {}, mechanical: {} }, parsed);
+    }
+  } catch (e) {}
+  ensureWeeklyStructure();
+}
+
+// ===== GASサーバー通信 =====
+
+// タイムアウト付きfetch
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs || 15000);
+  try {
+    const res = await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+    clearTimeout(timeoutId);
+    return res;
+  } catch (e) {
+    clearTimeout(timeoutId);
+    throw e;
+  }
+}
+
+// 現在のタブ＋週のデータだけをGASに送信
+async function saveCurrentToServer() {
+  let payload;
+  if (currentSheet === "water") {
+    if (currentWaterSub === "usage") {
+      payload = {
+        action: 'saveWaterUsage',
+        month: weeklyData.targetMonth,
+        weeks: { [currentWeek]: weeklyData.waterUsage[currentWeek] }
+      };
+    } else {
+      payload = {
+        action: 'saveWaterMeasure',
+        month: weeklyData.targetMonth,
+        week: currentWeek,
+        startDate: weeklyData.startDate,
+        days: weeklyData.weeks[currentWeek]
+      };
+    }
+  } else if (currentSheet === "equip") {
+    payload = {
+      action: 'saveEquipment',
+      month: weeklyData.targetMonth,
+      equipment: { [currentWeek]: weeklyData.equipment[currentWeek] }
+    };
+  } else if (currentSheet === "elec") {
+    payload = {
+      action: 'saveElectrical',
+      month: weeklyData.targetMonth,
+      week: currentWeek,
+      electrical: { [currentWeek]: weeklyData.electrical[currentWeek] }
+    };
+  } else if (currentSheet === "mech") {
+    payload = {
+      action: 'saveMechanical',
+      month: weeklyData.targetMonth,
+      week: currentWeek,
+      mechanical: { [currentWeek]: weeklyData.mechanical[currentWeek] }
+    };
+  }
+  console.log('送信データ:', JSON.stringify(payload).substring(0, 500));
+  let res;
+  try {
+    res = await fetchWithTimeout(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(withTokenBody(payload))
+    }, 15000);
+  } catch (fetchErr) {
+    throw new Error('通信失敗: ' + (fetchErr && fetchErr.message ? fetchErr.message : fetchErr));
+  }
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const text = await res.text();
+  let result;
+  try { result = JSON.parse(text); }
+  catch (pe) { throw new Error('JSONパース失敗: ' + text.substring(0, 150)); }
+  console.log('レスポンス:', JSON.stringify(result));
+  if (result && result.authRequired) { handleAuthFailure(); throw new Error('認証が切れました'); }
+  if (result && result.error) throw new Error('GASエラー: ' + result.error);
+  return result;
+}
+
+// 1シート全週を送信（全同期用）
+async function saveSheetToServer(sheetType) {
+  let payload;
+  if (sheetType === "water") {
+    // 水質は upper / lower の2エンドポイントを順次叩く
+    payload = { action: 'saveEverything', month: weeklyData.targetMonth, startDate: weeklyData.startDate,
+                waterUsage: weeklyData.waterUsage, waterMeasure: weeklyData.weeks };
+  } else if (sheetType === "equip") {
+    payload = { action: 'saveEquipment', month: weeklyData.targetMonth, equipment: weeklyData.equipment };
+  } else if (sheetType === "elec") {
+    payload = { action: 'saveElectrical', month: weeklyData.targetMonth, electrical: weeklyData.electrical };
+  } else if (sheetType === "mech") {
+    payload = { action: 'saveMechanical', month: weeklyData.targetMonth, mechanical: weeklyData.mechanical };
+  }
+  let res;
+  try {
+    res = await fetchWithTimeout(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(withTokenBody(payload))
+    }, 30000);
+  } catch (fetchErr) {
+    throw new Error('通信失敗: ' + (fetchErr && fetchErr.message ? fetchErr.message : fetchErr));
+  }
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const text = await res.text();
+  let result;
+  try { result = JSON.parse(text); }
+  catch (pe) { throw new Error('JSONパース失敗: ' + text.substring(0, 150)); }
+  if (result && result.authRequired) { handleAuthFailure(); throw new Error('認証が切れました'); }
+  if (result && result.error) throw new Error('GASエラー: ' + result.error);
+  return result;
+}
+
+// GASからデータを取得（全シート）
+async function loadFromServer(month) {
+  const url = withToken(GAS_URL + '?action=getAllData&month=' + encodeURIComponent(month));
+  const res = await fetchWithTimeout(url, { method: 'GET' }, 15000);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  if (data && data.authRequired) { handleAuthFailure(); throw new Error('認証が切れました'); }
+  return data;
+}
+
+// 機器運転時間: 日本語名→キー変換マップ
+const EQUIP_NAME_TO_KEY = {
+  "スクリーンユニット": "screenUnit",
+  "№１主ポンプ": "mainPump1", "№２主ポンプ": "mainPump2",
+  "№１汚泥ポンプ": "sludgePump1", "№２汚泥ポンプ": "sludgePump2",
+  "№１エアレーション装置": "aeration1", "№２エアレーション装置": "aeration2", "№３エアレーション装置": "aeration3",
+  "終沈汚泥かき寄せ機": "finalScraper",
+  "№１返流水ポンプ": "returnPump1", "№２返流水ポンプ": "returnPump2",
+  "濃縮汚泥ポンプ": "thickPump", "濃縮汚泥かき寄せ機": "thickScraper",
+  "汚泥攪拌機": "sludgeMixer"
+};
+
+// 曜日: 日本語→コード変換マップ
+const DAY_JP_TO_CODE = { "月": "mon", "火": "tue", "水": "wed", "木": "thu", "金": "fri" };
+
+// サーバーデータをマージ
+function mergeServerData(serverData) {
+  const summary = { water_days: 0, water_usage_weeks: 0, equipment_weeks: 0, electrical_days: 0, mechanical_days: 0, merged: false };
+  if (!serverData) return summary;
+
+  // 下段水質測定（per-day, JSON形式）— GAS getAllData の waterMeasure
+  if (serverData.waterMeasure && typeof serverData.waterMeasure === "object") {
+    Object.keys(serverData.waterMeasure).forEach(w => {
+      if (!weeklyData.weeks[w]) weeklyData.weeks[w] = emptyWeek();
+      const wData = serverData.waterMeasure[w];
+      if (wData && typeof wData === "object") {
+        Object.keys(wData).forEach(dayCode => {
+          if (weeklyData.weeks[w][dayCode] && typeof wData[dayCode] === "object") {
+            Object.assign(weeklyData.weeks[w][dayCode], wData[dayCode]);
+            summary.water_days++;
+          }
+        });
+      }
+    });
+    summary.merged = true;
+  }
+  // 上段使用量（per-week）— GAS getAllData の waterUsage
+  // サーバー側の null/空値はローカル値を上書きしない（前回保存バグの null 残骸対策）
+  if (serverData.waterUsage && typeof serverData.waterUsage === "object") {
+    Object.keys(serverData.waterUsage).forEach(w => {
+      if (!weeklyData.waterUsage[w]) weeklyData.waterUsage[w] = emptyUsageWeek();
+      const wData = serverData.waterUsage[w];
+      if (wData && typeof wData === "object") {
+        USAGE_KEYS.forEach(k => {
+          if (wData[k] && typeof wData[k] === "object") {
+            if (!weeklyData.waterUsage[w][k]) weeklyData.waterUsage[w][k] = {};
+            USAGE_CELLS.forEach(c => {
+              const sv = wData[k][c];
+              // サーバー値が null/undefined/"" の場合はローカル値を保持
+              if (sv !== null && sv !== undefined && sv !== "") {
+                weeklyData.waterUsage[w][k][c] = sv;
+              }
+            });
+          }
+        });
+        summary.water_usage_weeks++;
+      }
+    });
+    summary.merged = true;
+  }
+  // 旧 water (kake互換、現状未使用)
+  if (serverData.water && typeof serverData.water === "object") {
+    // 互換: kake時代の per-day 構造もあれば取り込む（極力使わない）
+    Object.keys(serverData.water).forEach(w => {
+      if (!weeklyData.weeks[w]) weeklyData.weeks[w] = emptyWeek();
+    });
+  }
+  // weeks直接形式（従来互換）
+  if (serverData.weeks && typeof serverData.weeks === "object" && Object.keys(serverData.weeks).length > 0) {
+    weeklyData.weeks = serverData.weeks;
+    summary.merged = true;
+  }
+
+  // equipment (機器運転時間)
+  if (serverData.equipment && typeof serverData.equipment === "object") {
+    Object.keys(serverData.equipment).forEach(w => {
+      if (!weeklyData.equipment[w]) weeklyData.equipment[w] = emptyEquipWeek();
+      const wData = serverData.equipment[w];
+      if (wData && typeof wData === "object") {
+        let weekMerged = false;
+        Object.keys(wData).forEach(nameOrKey => {
+          const key = EQUIP_NAME_TO_KEY[nameOrKey] || nameOrKey;
+          if (weeklyData.equipment[w][key]) {
+            const dayData = wData[nameOrKey];
+            if (dayData && typeof dayData === "object") {
+              Object.keys(dayData).forEach(d => {
+                const dayCode = DAY_JP_TO_CODE[d] || d;
+                if (dayCode in weeklyData.equipment[w][key]) {
+                  weeklyData.equipment[w][key][dayCode] = dayData[d];
+                  weekMerged = true;
+                }
+              });
+            }
+          }
+        });
+        if (weekMerged) summary.equipment_weeks++;
+      }
+    });
+    summary.merged = true;
+  }
+
+  // electrical (電気設備)
+  if (serverData.electrical && typeof serverData.electrical === "object") {
+    Object.keys(serverData.electrical).forEach(w => {
+      if (!weeklyData.electrical[w]) weeklyData.electrical[w] = emptyElecWeek();
+      const wData = serverData.electrical[w];
+      if (wData && typeof wData === "object") {
+        Object.keys(wData).forEach(d => {
+          const dayCode = DAY_JP_TO_CODE[d] || d;
+          if (weeklyData.electrical[w][dayCode] && typeof wData[d] === "object") {
+            Object.assign(weeklyData.electrical[w][dayCode], wData[d]);
+            summary.electrical_days++;
+          }
+        });
+      }
+    });
+    summary.merged = true;
+  }
+
+  // mechanical (機械設備)
+  if (serverData.mechanical && typeof serverData.mechanical === "object") {
+    Object.keys(serverData.mechanical).forEach(w => {
+      if (!weeklyData.mechanical[w]) weeklyData.mechanical[w] = emptyMechWeek();
+      const wData = serverData.mechanical[w];
+      if (wData && typeof wData === "object") {
+        Object.keys(wData).forEach(d => {
+          const dayCode = DAY_JP_TO_CODE[d] || d;
+          if (weeklyData.mechanical[w][dayCode] && typeof wData[d] === "object") {
+            Object.assign(weeklyData.mechanical[w][dayCode], wData[d]);
+            summary.mechanical_days++;
+          }
+        });
+      }
+    });
+    summary.merged = true;
+  }
+
+  // startDate はクライアント側で対象月から常に自動計算するため、サーバー値で上書きしない
+  weeklyData.startDate = estimateStartDate(weeklyData.targetMonth);
+  ensureWeeklyStructure();
+  safeSetItem(storageKey(), JSON.stringify(weeklyData));
+  return summary;
+}
+
+// バックグラウンドでサーバーから取得
+async function syncFromServer() {
+  const totalSummary = { water_days: 0, equipment_weeks: 0, electrical_days: 0, mechanical_days: 0, merged: false };
+  try {
+    const data = await loadFromServer(weeklyData.targetMonth);
+
+    // 前月・翌月もマージ（月またぎ対応）
+    const ym = (weeklyData.targetMonth || "").split("-");
+    if (ym.length === 2) {
+      const year = parseInt(ym[0], 10);
+      const month = parseInt(ym[1], 10);
+      const prevMonth = month === 1 ? (year - 1) + "-12" : year + "-" + String(month - 1).padStart(2, "0");
+      const nextMonth = month === 12 ? (year + 1) + "-01" : year + "-" + String(month + 1).padStart(2, "0");
+      try {
+        const prevData = await loadFromServer(prevMonth);
+        if (prevData) {
+          const s = mergeServerData(prevData);
+          totalSummary.water_days += s.water_days;
+          totalSummary.equipment_weeks += s.equipment_weeks;
+          totalSummary.electrical_days += s.electrical_days;
+          totalSummary.mechanical_days += s.mechanical_days;
+          if (s.merged) totalSummary.merged = true;
+        }
+      } catch (e) {}
+      try {
+        const nextData = await loadFromServer(nextMonth);
+        if (nextData) {
+          const s = mergeServerData(nextData);
+          totalSummary.water_days += s.water_days;
+          totalSummary.equipment_weeks += s.equipment_weeks;
+          totalSummary.electrical_days += s.electrical_days;
+          totalSummary.mechanical_days += s.mechanical_days;
+          if (s.merged) totalSummary.merged = true;
+        }
+      } catch (e) {}
+    }
+
+    if (data && (data.weeks || data.water || data.equipment || data.electrical || data.mechanical)) {
+      const s = mergeServerData(data);
+      totalSummary.water_days += s.water_days;
+      totalSummary.equipment_weeks += s.equipment_weeks;
+      totalSummary.electrical_days += s.electrical_days;
+      totalSummary.mechanical_days += s.mechanical_days;
+      totalSummary.merged = true;
+      // startDate を強制再計算（mergeServerData 内でも再計算するが二重保険）
+      weeklyData.startDate = estimateStartDate(weeklyData.targetMonth);
+      // UI更新
+      document.getElementById("startDate").value = weeklyData.startDate || "";
+      updateDayTabs();
+      updateWeekTabs();
+      updateEquipWeekTabs();
+      updateElecWeekTabs();
+      updateMechWeekTabs();
+      if (currentSheet === "water") {
+        if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") loadUsageDataToForm();
+        else loadDataToForm();
+      }
+      else if (currentSheet === "equip") loadEquipDataToForm();
+      else if (currentSheet === "elec") loadElecDataToForm();
+      else if (currentSheet === "mech") loadMechDataToForm();
+      setConnectionStatus(true);
+      return totalSummary;
+    }
+    setConnectionStatus(true);
+    return totalSummary;
+  } catch (e) {
+    if (isNetworkError(e)) setConnectionStatus(false);
+    throw e;
+  }
+}
+
+// ===== 強制更新（キャッシュクリア + リロード）=====
+async function forceRefresh() {
+  const btn = document.getElementById('btnForceRefresh');
+
+  if (typeof isDirty !== 'undefined' && isDirty) {
+    const okUnsaved = confirm(
+      '⚠️ 未保存のデータがあります ⚠️\n\n' +
+      'このまま更新すると、未保存の入力内容は失われます。\n\n' +
+      '・未保存分を保存してから更新する場合は「キャンセル」\n' +
+      '・未保存分を破棄して更新する場合は「OK」\n\n' +
+      '本当に更新しますか？'
+    );
+    if (!okUnsaved) return;
+  } else {
+    const ok = confirm(
+      'アプリを最新版に更新します。\n\n' +
+      '・画面が一度真っ白になります\n' +
+      '・通信が発生します(Wi-Fi環境推奨)\n' +
+      '・ローカル保存データ(入力済みデータ)は消えません\n\n' +
+      '続行しますか？'
+    );
+    if (!ok) return;
+  }
+
+  if (btn) {
+    btn.classList.add('refreshing');
+    btn.textContent = '更新中...';
+    btn.disabled = true;
+  }
+
+  try {
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map(name => caches.delete(name)));
+      console.log('[forceRefresh] キャッシュ削除:', cacheNames);
+    }
+
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(reg => reg.unregister()));
+      console.log('[forceRefresh] SW登録解除:', regs.length, '件');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('_refresh', Date.now());
+    window.location.replace(url.toString());
+  } catch(e) {
+    console.error('[forceRefresh] error:', e);
+    alert('更新に失敗しました: ' + (e.message || e) + '\n\nブラウザを閉じて再度開いてください。');
+    if (btn) {
+      btn.classList.remove('refreshing');
+      btn.textContent = '⟳ 更新';
+      btn.disabled = false;
+    }
+  }
+}
+
+// ===== タブ切替 =====
+
+function switchTo(week, day) {
+  saveFormToData();
+  currentWeek = week;
+  currentDay = day;
+  updateWeekTabs();
+  updateDayTabs();
+  loadDataToForm();
+}
+
+// ===== トースト通知 =====
+
+// シートキーを日本語名に変換
+function getSheetLabel(sheet) {
+  return sheet === 'water' ? '水質'
+       : sheet === 'equip' ? '機器運転時間'
+       : sheet === 'elec' ? '電気設備'
+       : sheet === 'mech' ? '機械設備'
+       : sheet;
+}
+
+let toastTimer = null;
+function showToast(msg, type) {
+  // type: undefined=success(green), "error"=red, "warn"=yellow
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  let cls = "toast show";
+  if (type === "error") cls += " error";
+  else if (type === "warn") cls += " warn";
+  t.className = cls;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    t.className = "toast";
+  }, 3000);
+}
+
+// ===== イベントハンドラ =====
+
+function bindEvents() {
+  // メインタブ（シート切替）
+  document.querySelectorAll("#mainTabs button").forEach(btn => {
+    btn.addEventListener("click", () => { switchMainTab(btn.dataset.sheet); });
+  });
+
+  // 水質サブタブ
+  document.querySelectorAll("#waterSubTabs button").forEach(btn => {
+    btn.addEventListener("click", () => { switchWaterSub(btn.dataset.waterSub); });
+  });
+  // 電気サブタブ
+  document.querySelectorAll("#elecSubTabs button").forEach(btn => {
+    btn.addEventListener("click", () => { switchElecSub(btn.dataset.elecSub); });
+  });
+  // 機械サブタブ
+  document.querySelectorAll("#mechSubTabs button").forEach(btn => {
+    btn.addEventListener("click", () => { switchMechSub(btn.dataset.mechSub); });
+  });
+
+  // 上段使用量テーブルを動的生成
+  renderWaterUsageTable();
+  applyWaterSubVisibility();
+
+  // テーブルを動的生成（初期サブタブ 1）
+  buildElecTable(currentElecSub);
+  buildMechTable(currentMechSub);
+
+  // 上段使用量入力の dirty マーキング
+  document.querySelectorAll("#waterUsageTable [data-usage]").forEach(el => {
+    el.addEventListener("input", markDirty);
+    el.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); advanceToNextField(el); }
+    });
+  });
+
+  // 水質タブの Enter ハンドラ
+  document.querySelectorAll('#waterPanel input[data-field]').forEach(el => {
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        advanceToNextField(el);
+      }
+    });
+  });
+
+  // 手動入力時にcopiedクラスを削除（機器運転時間）+ markDirty
+  document.querySelectorAll("#equipTable [data-equip]").forEach(el => {
+    el.addEventListener("input", () => { el.classList.remove("copied"); markDirty(); });
+  });
+
+  // 機器タブの Enter ハンドラ
+  document.querySelectorAll('#equipPanel input[data-equip]').forEach(el => {
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        advanceToNextField(el);
+      }
+    });
+  });
+  // 電気・機械はbuildElecTable/buildMechTable内のトグルボタンにも対応
+  document.querySelectorAll("#elecTable [data-elec]").forEach(el => {
+    if (el.tagName === "INPUT") el.addEventListener("input", () => { el.classList.remove("copied"); markDirty(); });
+  });
+  document.querySelectorAll("#mechTable [data-mech]").forEach(el => {
+    if (el.tagName === "INPUT") el.addEventListener("input", () => { el.classList.remove("copied"); markDirty(); });
+  });
+  // トグルボタンも markDirty を発火
+  document.querySelectorAll("#elecTable .toggle-btn, #mechTable .toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => { markDirty(); });
+  });
+
+  // 機械設備の週タブ
+  document.querySelectorAll("#mechWeekTabs button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      saveMechFormToData();
+      currentWeek = Number(btn.dataset.week);
+      updateMechWeekTabs();
+      updateWeekTabs();
+      updateEquipWeekTabs();
+      updateElecWeekTabs();
+      loadMechDataToForm();
+    });
+  });
+
+  // 電気設備の週タブ
+  document.querySelectorAll("#elecWeekTabs button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      saveElecFormToData();
+      currentWeek = Number(btn.dataset.week);
+      updateElecWeekTabs();
+      updateWeekTabs();
+      updateEquipWeekTabs();
+      updateMechWeekTabs();
+      loadElecDataToForm();
+    });
+  });
+
+  // 機器運転時間の週タブ
+  document.querySelectorAll("#equipWeekTabs button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      saveEquipFormToData();
+      currentWeek = Number(btn.dataset.week);
+      updateEquipWeekTabs();
+      updateWeekTabs();
+      updateElecWeekTabs();
+      updateMechWeekTabs();
+      loadEquipDataToForm();
+    });
+  });
+
+  // 週タブ（日常水質）
+  document.querySelectorAll("#weekTabs button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      switchTo(Number(btn.dataset.week), currentDay);
+      updateEquipWeekTabs();
+      updateElecWeekTabs();
+      updateMechWeekTabs();
+    });
+  });
+
+  // 日タブ
+  document.querySelectorAll("#dayTabs button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      switchTo(currentWeek, btn.dataset.day);
+    });
+  });
+
+  // 入力中にタブの✓を即時反映
+  document.querySelectorAll("[data-field]").forEach(el => {
+    el.addEventListener("input", () => {
+      const day = weeklyData.weeks[currentWeek][currentDay];
+      const key = el.dataset.field;
+      if (el.type === "number") {
+        day[key] = el.value === "" ? null : Number(el.value);
+      } else {
+        day[key] = el.value;
+      }
+      updateDayTabs();
+      updateWeekTabs();
+      markDirty();
+    });
+  });
+
+  // 対象月変更
+  document.getElementById("targetMonth").addEventListener("change", (e) => {
+    saveToStorage();
+    const newMonth = e.target.value;
+    const raw = localStorage.getItem("tutuga_weekly_" + newMonth);
+    if (raw) {
+      try { weeklyData = JSON.parse(raw); } catch (err) {
+        weeklyData = { targetMonth: newMonth, startDate: "", weeks: {}, equipment: {}, electrical: {}, mechanical: {} };
+      }
+    } else {
+      weeklyData = {
+        targetMonth: newMonth,
+        startDate: estimateStartDate(newMonth),
+        weeks: {},
+        equipment: {},
+        electrical: {},
+        mechanical: {}
+      };
+    }
+    weeklyData.targetMonth = newMonth;
+    // 常にestimateStartDateで上書き（readonlyのため）
+    weeklyData.startDate = estimateStartDate(newMonth);
+    ensureWeeklyStructure();
+    document.getElementById("startDate").value = weeklyData.startDate || "";
+    safeSetItem("tutuga_current_month", newMonth);
+    currentWeek = 1;
+    currentDay = "mon";
+    updateWeekTabs();
+    updateDayTabs();
+    loadDataToForm();
+    showToast("対象月を " + newMonth + " に変更しました");
+    // バックグラウンドでサーバーからも取得
+    syncFromServer().catch(() => {});
+  });
+
+  // startDate は readonly（自動計算）のため change イベントは不要
+
+  // 前日コピー（全タブ対応・空日スキップ）
+  document.getElementById("btnCopy").addEventListener("click", () => {
+    if (currentSheet === "water") {
+      saveFormToData();
+      const order = ["mon", "tue", "wed", "thu", "fri"];
+      const idx = order.indexOf(currentDay);
+      const found = findPrevDayWithData("water", currentWeek, idx, order);
+      if (!found) {
+        showToast("コピー元のデータがありません", "error");
+        return;
+      }
+      const srcLabel = (found.week !== currentWeek ? "第" + found.week + "週" : "") + (DAY_LABELS[found.day] || found.day);
+      const src = weeklyData.weeks[found.week][found.day];
+      const dst = weeklyData.weeks[currentWeek][currentDay];
+      COPY_FIELDS.forEach(k => { dst[k] = src[k]; });
+      loadDataToForm();
+      updateDayTabs();
+      markDirty();
+      showToast(srcLabel + "から" + (DAY_LABELS[currentDay] || currentDay) + "にコピーしました");
+      return;
+    }
+
+    // テーブル系（機器/電気/機械）: 各曜日について空日スキップで前日コピー
+    const daysArr = (currentSheet === "mech") ? MECH_DAYS : EQUIP_DAYS;
+    if (currentSheet === "equip") saveEquipFormToData();
+    else if (currentSheet === "elec") saveElecFormToData();
+    else if (currentSheet === "mech") saveMechFormToData();
+
+    let anyCopied = false;
+    daysArr.forEach((tgtDay, tgtIdx) => {
+      const found = findPrevDayWithData(currentSheet, currentWeek, tgtIdx, daysArr);
+      if (!found) return;
+      if (currentSheet === "equip") {
+        EQUIP_KEYS.forEach(k => {
+          weeklyData.equipment[currentWeek][k][tgtDay] = weeklyData.equipment[found.week][k][found.day];
+        });
+      } else if (currentSheet === "elec") {
+        const srcData = weeklyData.electrical[found.week][found.day];
+        const dstData = weeklyData.electrical[currentWeek][tgtDay];
+        ALL_ELEC_KEYS.forEach(k => { dstData[k] = srcData[k]; });
+      } else if (currentSheet === "mech") {
+        const srcData = weeklyData.mechanical[found.week][found.day];
+        const dstData = weeklyData.mechanical[currentWeek][tgtDay];
+        ALL_MECH_KEYS.forEach(k => { dstData[k] = srcData[k]; });
+      }
+      anyCopied = true;
+    });
+    if (!anyCopied) { showToast("コピー元のデータがありません", "error"); return; }
+    if (currentSheet === "equip") loadEquipDataToForm();
+    else if (currentSheet === "elec") loadElecDataToForm();
+    else if (currentSheet === "mech") loadMechDataToForm();
+    updateEquipWeekTabs(); updateElecWeekTabs(); updateMechWeekTabs();
+    markDirty();
+    showToast("各曜日に前日データを反映しました（空日はスキップ）");
+  });
+
+  // 列コピー共通関数（テーブル形式タブ用: ← ボタンから呼ばれる・空日スキップ）
+  function copyColumn(tableType, targetDay) {
+    const daysArr = (tableType === "mech") ? MECH_DAYS : EQUIP_DAYS;
+    const idx = daysArr.indexOf(targetDay);
+    if (idx < 0) return;
+    const found = findPrevDayWithData(tableType, currentWeek, idx, daysArr);
+    if (!found) {
+      showToast("コピー元のデータがありません", "error");
+      return;
+    }
+    const srcLabel = (found.week !== currentWeek ? "第" + found.week + "週" : "") + (DAY_LABELS[found.day] || found.day);
+
+    if (tableType === "equip") {
+      saveEquipFormToData();
+      EQUIP_KEYS.forEach(k => {
+        weeklyData.equipment[currentWeek][k][targetDay] = weeklyData.equipment[found.week][k][found.day];
+      });
+      loadEquipDataToForm();
+      document.querySelectorAll('#equipTable [data-eday="' + targetDay + '"]').forEach(el => {
+        el.classList.add("copied");
+      });
+    } else if (tableType === "elec") {
+      saveElecFormToData();
+      const srcData = weeklyData.electrical[found.week][found.day];
+      const dstData = weeklyData.electrical[currentWeek][targetDay];
+      ALL_ELEC_KEYS.forEach(k => { dstData[k] = srcData[k]; });
+      loadElecDataToForm();
+      document.querySelectorAll('#elecTable [data-eday="' + targetDay + '"]').forEach(el => {
+        el.classList.add("copied");
+      });
+    } else if (tableType === "mech") {
+      saveMechFormToData();
+      const srcData = weeklyData.mechanical[found.week][found.day];
+      const dstData = weeklyData.mechanical[currentWeek][targetDay];
+      ALL_MECH_KEYS.forEach(k => { dstData[k] = srcData[k]; });
+      loadMechDataToForm();
+      document.querySelectorAll('#mechTable [data-mday="' + targetDay + '"]').forEach(el => {
+        el.classList.add("copied");
+      });
+    }
+    markDirty();
+    showToast(srcLabel + "→" + (DAY_LABELS[targetDay] || targetDay) + " コピー完了");
+  }
+
+  // 列コピーボタン（←）のイベント
+  document.querySelectorAll(".col-copy-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      copyColumn(btn.dataset.copyTable, btn.dataset.copyDay);
+    });
+  });
+
+  // 全クリア（現在の日のみ）
+  // 列クリア共通関数
+  function clearColumn(tableType, targetDay) {
+    const dayLabel = DAY_LABELS[targetDay] || targetDay;
+    if (!confirm("第" + currentWeek + "週 " + dayLabel + " のデータをクリアしますか？")) return;
+    if (tableType === "equip") {
+      EQUIP_KEYS.forEach(k => { weeklyData.equipment[currentWeek][k][targetDay] = null; });
+      loadEquipDataToForm();
+    } else if (tableType === "elec") {
+      weeklyData.electrical[currentWeek][targetDay] = emptyElecDay();
+      loadElecDataToForm();
+    } else if (tableType === "mech") {
+      weeklyData.mechanical[currentWeek][targetDay] = emptyMechDay();
+      loadMechDataToForm();
+    }
+    showToast("第" + currentWeek + "週 " + dayLabel + " をクリアしました");
+    hideClearButtons();
+  }
+
+  // ×ボタンの表示/非表示
+  let clearBtnTimer = null;
+  function showClearButtons() {
+    document.querySelectorAll(".col-clear-btn").forEach(btn => btn.classList.add("visible"));
+    if (clearBtnTimer) clearTimeout(clearBtnTimer);
+    clearBtnTimer = setTimeout(hideClearButtons, 3000);
+  }
+  function hideClearButtons() {
+    document.querySelectorAll(".col-clear-btn").forEach(btn => btn.classList.remove("visible"));
+    if (clearBtnTimer) { clearTimeout(clearBtnTimer); clearBtnTimer = null; }
+  }
+
+  // 列クリアボタン（×）のイベント
+  document.querySelectorAll(".col-clear-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearColumn(btn.dataset.clearTable, btn.dataset.clearDay);
+    });
+  });
+
+  // 全クリアボタン
+  document.getElementById("btnClear").addEventListener("click", () => {
+    if (currentSheet === "water") {
+      const label = "第" + currentWeek + "週 " + DAY_LABELS[currentDay] + " の日常水質";
+      if (!confirm(label + " データをクリアしますか？")) return;
+      weeklyData.weeks[currentWeek][currentDay] = emptyDay();
+      loadDataToForm();
+      updateDayTabs();
+      showToast(label + " をクリアしました");
+    } else {
+      // テーブル形式タブ: ×ボタンをトグル表示
+      const anyVisible = document.querySelector(".col-clear-btn.visible");
+      if (anyVisible) { hideClearButtons(); } else { showClearButtons(); }
+    }
+  });
+
+  // 保存ボタン
+  document.getElementById("btnSave").addEventListener("click", async () => {
+    const btnSave = document.getElementById("btnSave");
+
+    // a. まずlocalStorageに全データ保存
+    const ok = saveToStorage();
+    if (!ok) {
+      const err = window.__lastSaveError;
+      const msg = err ? (err.name + ": " + (err.message || String(err))) : "不明なエラー";
+      showToast("保存に失敗しました — " + msg, "error");
+      return;
+    }
+
+    // b. 現在のタブ＋週だけGASに送信
+    btnSave.textContent = "送信中...";
+    btnSave.disabled = true;
+
+    const sheetLabel = getSheetLabel(currentSheet);
+    let scope;
+    if (currentSheet === 'water') {
+      if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") {
+        scope = '第' + currentWeek + '週【使用量】';
+      } else {
+        scope = '第' + currentWeek + '週' + currentDay + '曜日【' + sheetLabel + '】';
+      }
+    } else {
+      scope = '第' + currentWeek + '週【' + sheetLabel + '】';
+    }
+
+    try {
+      await saveCurrentToServer();
+      setConnectionStatus(true);
+      markClean();
+      showToast(scope + "を保存しました（サーバーへ送信完了）");
+    } catch (e) {
+      if (isNetworkError(e)) setConnectionStatus(false);
+      const msg = e && e.message ? e.message : String(e);
+      console.error('saveCurrentToServer error:', e);
+      showToast("端末に" + scope + "を保存しました。サーバー送信失敗：" + msg + "（後で同期してください）", "warn");
+    } finally {
+      btnSave.textContent = "保存";
+      btnSave.disabled = false;
+    }
+    // 保存後にundoスタックをクリア
+    undoStack = [];
+    updateUndoBtn();
+  });
+
+  // 全同期ボタン（サーバーからダウンロードのみ）
+  document.getElementById("btnSyncHeader").addEventListener("click", async () => {
+    const btnSync = document.getElementById("btnSyncHeader");
+
+    // 未保存データがある場合は警告
+    if (typeof isDirty !== 'undefined' && isDirty) {
+      const ok = confirm(
+        '未保存のデータがあります。\n\n' +
+        '同期するとサーバーのデータで上書きされ、未保存分は失われる可能性があります。\n\n' +
+        '続行しますか？\n\n' +
+        '（中止 → 先に「保存」ボタンを押してから「同期」してください）'
+      );
+      if (!ok) return;
+    }
+
+    btnSync.disabled = true;
+    btnSync.textContent = "取得中...";
+
+    try {
+      const summary = await syncFromServer();
+      if (summary && summary.merged) {
+        // 現在表示中のシートを再描画
+        if (currentSheet === "water") loadDataToForm();
+        else if (currentSheet === "equip") loadEquipDataToForm();
+        else if (currentSheet === "elec") loadElecDataToForm();
+        else if (currentSheet === "mech") loadMechDataToForm();
+        saveToStorage();
+        markClean();
+
+        // 詳細トースト生成
+        const parts = [];
+        if (summary.water_days > 0) parts.push('水質' + summary.water_days + '日分');
+        if (summary.equipment_weeks > 0) parts.push('機器' + summary.equipment_weeks + '週分');
+        if (summary.electrical_days > 0) parts.push('電気' + summary.electrical_days + '日分');
+        if (summary.mechanical_days > 0) parts.push('機械' + summary.mechanical_days + '日分');
+        const detail = parts.length > 0 ? '（' + parts.join('、') + 'を更新）' : '';
+        showToast('サーバーから最新データを取得しました' + detail);
+      } else {
+        showToast("サーバーにデータがありません", "warn");
+      }
+    } catch (e) {
+      if (isNetworkError(e)) setConnectionStatus(false);
+      showToast("同期エラー: " + (e.message || e), "error");
+    }
+
+    btnSync.textContent = "同期";
+    btnSync.disabled = false;
+  });
+
+  // Excel出力ボタン（クライアント側 ExcelJS で高速生成）
+  document.getElementById("btnExcelHeader").addEventListener("click", async () => {
+    const btnExcel = document.getElementById("btnExcelHeader");
+    if (!weeklyData.targetMonth) {
+      showToast("対象月が未設定です", "error");
+      return;
+    }
+    btnExcel.textContent = "生成中...";
+    btnExcel.disabled = true;
+    try {
+      await exportExcel();
+    } catch (e) {
+      console.error(e);
+      showToast("Excel生成に失敗しました: " + e.message, "error");
+    } finally {
+      btnExcel.textContent = "📄 Excel出力";
+      btnExcel.disabled = false;
+    }
+  });
+}
+
+
+// ===========================================================================
+// 筒賀マッピング定数（Phase A: GAS → JS 移植）
+// ===========================================================================
+// =============================================================================
+// 筒賀マッピング定数（GAS から JS に移植）— Phase A
+// =============================================================================
+
+// 基本定数
+const T_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri'];
+const T_DAY_NAMES = { mon:'月', tue:'火', wed:'水', thu:'木', fri:'金' };
+const T_DAY_REVERSE = { '月':'mon', '火':'tue', '水':'wed', '木':'thu', '金':'fri' };
+const T_DAY_OFFSETS = { mon:0, tue:1, wed:2, thu:3, fri:4 };
+
+// シートインデックス（テンプレ順）
+const T_SHEET_IDX = {
+  daily_water: 0,
+  operation_monthly: 1,
+  water_report: 2,
+  daily_mech: 3,
+  daily_elec: 4,
+  equipment_hours: 5
+};
+
+// ===== 日常水質 =====
+const T_WATER_BLOCK_ROW = { 1: 1, 2: 53, 3: 105, 4: 157, 5: 209 };
+const T_WATER_INSPECTOR_ROW_OFFSET = 14;  // r15
+const T_WATER_BIKOU_ROW_OFFSET = 43;       // r44
+const T_USAGE_ROW_OFFSET = {
+  powerAllDay: 3, powerMeasure: 4, powerReactive: 5, demand: 6,
+  water: 7, diesel: 8,
+  returnSludge1: 9, returnSludge2: 10, discharge: 11
+};
+const T_USAGE_DAY_COL = { mon: 9, tue: 10, wed: 11, thu: 12, fri: 13, nextMon: 14 };
+const T_USAGE_CELLS = ['mon','tue','wed','thu','fri','nextMon'];
+const T_MEASURE_ROW_OFFSET = {
+  tempIn: 15, tempD1: 16, tempD2: 17, tempOut: 18,
+  appearIn: 19, appearD1: 20, appearD2: 21, appearOut: 22,
+  transIn: 23, transOut: 24,
+  odorIn: 25, odorD1: 26, odorD2: 27, odorOut: 28,
+  phIn: 29, phD1: 30, phD2: 31, phOut: 32,
+  sv1_30: 33, sv1_24h: 34, sv2_30: 35, sv2_24h: 36,
+  mlss1: 37, mlss2: 38,
+  sludge1: 39, sludge2: 40,
+  chlorine: 41, chlorineDose: 42
+};
+const T_MEASURE_DAY_COL = { mon: 10, tue: 11, wed: 12, thu: 13, fri: 14 };
+
+// ===== 水質管理報告 =====
+const T_REPORT_FRONT_COL = {
+  tempIn: 3, tempD1: 4, tempD2: 5,
+  tempFinal1: 6, tempFinal2: 7, tempOut: 8,
+  transIn: 15, transFinal1: 16, transFinal2: 17, transOut: 18
+};
+const T_REPORT_BACK_COL = {
+  doNo1: 9, doNo2: 10,
+  phIn: 11, phD1: 12, phD2: 13,
+  phFinal1: 14, phFinal2: 15, phOut: 16,
+  chlorine: 17,
+  sv1_30: 18, sv2_30: 19
+};
+function tReportRowFront(date) { return 7 + date.getDate(); }
+function tReportRowBack(date)  { return 48 + date.getDate(); }
+
+// ===== 主要機器運転時間 =====
+const T_EQUIP_NAMES = [
+  'mainPump1Hr','mainPump2Hr',
+  'aeration1Hr','aeration2Hr','aeration3Hr','aeration4Hr',
+  'finalScraper1Hr','finalScraper2Hr',
+  'returnPump1Hr','returnPump2Hr','returnPump3Hr','returnPump4Hr',
+  'excessPump1Hr','excessPump2Hr',
+  'finalDrainPumpHr',
+  'thickPump1Hr','thickPump2Hr',
+  'returnWaterPump1Hr','returnWaterPump2Hr',
+  'sludgeRoomDrainPumpHr',
+  'deodorFanHr','generatorHr'
+];
+const T_EQUIP_WEEK_START = { 1: 8, 2: 46, 3: 84, 4: 122, 5: 160 };
+const T_EQUIP_WEEK_DATE_ROW = { 1: 5, 2: 43, 3: 81, 4: 119, 5: 157 };
+const T_EQUIP_WEEK_DATE_COL = 1;  // A列
+const T_EQUIP_HOUR_DAY_COL = { mon: 4, tue: 5, wed: 6, thu: 7, fri: 8 };
+
+// ===== 日常電気設備 =====
+const T_ELEC_DAY_COL = { mon: 7, tue: 8, wed: 9, thu: 10, fri: 11 };
+const T_WEEK_OFFSETS_ELEC = {
+  sub1: [0, 103, 203, 303, 403],
+  sub2: [0, 101, 201, 301, 401],
+  sub3: [0, 100, 200, 300, 400]
+};
+const T_ELEC1_ROW_W1 = {
+  "引込・受電__電圧__KV": 3,
+  "引込・受電__電圧__モード": 4,
+  "引込・受電__力率__ψ": 5,
+  "引込・受電__電流__A": 6,
+  "引込・受電__電流__モード": 7,
+  "引込・受電__普通電力量(×10kw)__読み": 8,
+  "引込・受電__普通電力量(×10kw)__使用量": 9,
+  "引込・受電__引込・受電設定__手動/自動": 10,
+  "引込・受電__引込・受電設定__切/入": 11,
+  "変圧器__主変圧器温度__℃": 12,
+  "変圧器__異音、脱臭の有無__有・無": 13,
+  "低圧分岐__動力(210V)電圧__V": 14,
+  "低圧分岐__動力(210V)電圧__モード": 15,
+  "低圧分岐__動力(210V)電流__A": 16,
+  "低圧分岐__動力(210V)電流__モード": 17,
+  "低圧分岐__照明(210-105V)電流__A": 18,
+  "低圧分岐__照明(210-105V)電流__モード": 19,
+  "低圧分岐__低圧分岐設備__買電/自家発": 20,
+  "低圧分岐__沈砂池ポンプ設備__読み": 21,
+  "低圧分岐__沈砂池ポンプ設備__使用量": 22,
+  "低圧分岐__水処理設備(1)__読み": 23,
+  "低圧分岐__水処理設備(1)__使用量": 24,
+  "低圧分岐__水処理設備(2)__読み": 25,
+  "低圧分岐__水処理設備(2)__使用量": 26,
+  "低圧分岐__汚泥処理設備電力量__読み": 27,
+  "低圧分岐__汚泥処理設備電力量__使用量": 28,
+  "低圧分岐__No.1コンデンサー__切/入": 29,
+  "低圧分岐__No.2コンデンサー__切/入": 30,
+  "低圧分岐__No.3コンデンサー__切/入": 31
+};
+const T_ELEC2_ROW_W1 = {
+  "Nｏ．１オキシデーションディッチＤＯ計__外観の確認": 40,
+  "Nｏ．１オキシデーションディッチＤＯ計__指示状況の確認": 41,
+  "Nｏ．１オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ": 42,
+  "Nｏ．２オキシデーションディッチＤＯ計__外観の確認": 43,
+  "Nｏ．２オキシデーションディッチＤＯ計__指示状況の確認": 44,
+  "Nｏ．２オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ": 45,
+  "Nｏ．１返送汚泥流量計__外観の確認": 46,
+  "Nｏ．１返送汚泥流量計__指示状況の確認": 47,
+  "Nｏ．１返送汚泥流量計__流量計の読み__㎥/ｈ": 48,
+  "Nｏ．１返送汚泥流量計__流量計積算計読み__㎥": 49,
+  "Nｏ．２返送汚泥流量計__外観の確認": 50,
+  "Nｏ．２返送汚泥流量計__指示状況の確認": 51,
+  "Nｏ．２返送汚泥流量計__流量計の読み__㎥/ｈ": 52,
+  "Nｏ．２返送汚泥流量計__流量計積算計読み__㎥": 53,
+  "余剰汚泥流量計__外観の確認": 54,
+  "余剰汚泥流量計__指示状況の確認": 55,
+  "余剰汚泥流量計__No.１余剰汚泥ポンプ流量計読み__㎥/ｈ": 56,
+  "余剰汚泥流量計__No.２余剰汚泥ポンプ流量計読み__㎥/ｈ": 57,
+  "放流流量計__外観の確認": 58,
+  "放流流量計__指示状況の確認": 59,
+  "放流流量計__流量計の読み__㎥/ｈ": 60,
+  "放流流量計__流量計積算の読み__㎥": 61,
+  "汚濁負荷量計__外観の確認": 62,
+  "汚濁負荷量計__指示状況の確認": 63,
+  "（放流水ＵＶ）__ＵＶ値__Abs": 64,
+  "（放流水ＵＶ）__ＣＯＤ値__㎎/ℓ": 65
+};
+const T_ELEC3_ROW_W1 = {
+  "全窒素・全燐計__外観の確認": 72,
+  "全窒素・全燐計__指示状況の確認": 73,
+  "全窒素・全燐計__計器読み（全窒素）__㎎/ℓ": 74,
+  "全窒素・全燐計__計器読み（全りん）__㎎/ℓ": 75,
+  "圧力式液位計__外観の確認": 76,
+  "圧力式液位計__指示状況の確認": 77,
+  "圧力式液位計__機器指示地の記録__ｍ": 78,
+  "発電機盤__外観の確認": 79,
+  "エンジン__外観の確認": 80,
+  "燃料タンク__外観の確認": 81,
+  "燃料タンク__残量の値__ℓ": 82,
+  "通報装置__通報状態の確認": 83
+};
+
+// ===== 自動転記キー =====
+const T_ELEC_DO_KEY_NO1 = "Nｏ．１オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ";
+const T_ELEC_DO_KEY_NO2 = "Nｏ．２オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ";
+const T_ELEC_RETURN_SLUDGE_KEY_NO1 = "Nｏ．１返送汚泥流量計__流量計積算計読み__㎥";
+const T_ELEC_RETURN_SLUDGE_KEY_NO2 = "Nｏ．２返送汚泥流量計__流量計積算計読み__㎥";
+const T_ELEC_DISCHARGE_KEY = "放流流量計__流量計積算の読み__㎥";
+const T_ELEC_FUEL_TANK_KEY = "燃料タンク__残量の値__ℓ";
+
+// ===== 日常機械設備 =====
+const T_MECH_DAY_COL = { mon: 5, tue: 6, wed: 7, thu: 8, fri: 9 };
+const T_WEEK_OFFSETS_MECH = [0, 177, 354, 531, 707];
+
+const T_MECH1_ROW_W1 = {
+  "ポンプ井__common1__内部状況確認": 4,
+  "汚水ポンプ__1__電流値": 5,
+  "汚水ポンプ__1__吐出圧力": 6,
+  "汚水ポンプ__1__異音、振動": 7,
+  "汚水ポンプ__2__電流値": 8,
+  "汚水ポンプ__2__吐出圧力": 9,
+  "汚水ポンプ__2__異音、振動": 10,
+  "汚水ポンプ__common1__モード確認": 11,
+  "汚水ポンプ__common1__機種選択": 12,
+  "自動除塵機__油圧圧力": 13,
+  "自動除塵機__異音、振動": 14,
+  "自動除塵機__し渣量の確認": 15,
+  "自動除塵機__運転動作": 16,
+  "エアレーション装置__No1__電流値": 17,
+  "エアレーション装置__No1__異音、振動": 18,
+  "エアレーション装置__No1__モード確認": 19,
+  "エアレーション装置__No2__電流値": 20,
+  "エアレーション装置__No2__異音、振動": 21,
+  "エアレーション装置__No2__モード確認": 22,
+  "エアレーション装置__No3__電流値": 23,
+  "エアレーション装置__No3__異音、振動": 24,
+  "エアレーション装置__No3__モード確認": 25,
+  "エアレーション装置__No4__電流値": 26,
+  "エアレーション装置__No4__異音、振動": 27,
+  "エアレーション装置__No4__モード確認": 28,
+  "消泡装置__common1__消泡ノズル": 29,
+  "消泡装置__common1__消泡状態": 30,
+  "流出可動堰__1__開度": 31,
+  "流出可動堰__2__開度": 32,
+  "流出ゲート__1__開度": 33,
+  "流出ゲート__2__開度": 34,
+  "連絡ゲート__common1__開度": 35,
+  "終沈汚泥掻寄機__1__電流値": 36,
+  "終沈汚泥掻寄機__1__異音、振動等": 37,
+  "終沈汚泥掻寄機__2__電流値": 38,
+  "終沈汚泥掻寄機__2__異音、振動等": 39,
+  "スカムスキマー__1__動作状況": 40,
+  "スカムスキマー__1__スカムの状況": 41,
+  "スカムスキマー__2__動作状況": 42,
+  "スカムスキマー__2__スカムの状況": 43,
+  "返送汚泥ポンプ__No1__電流値": 44,
+  "返送汚泥ポンプ__No1__吐出圧力": 45,
+  "返送汚泥ポンプ__No1__異音、振動": 46,
+  "返送汚泥ポンプ__No2__電流値": 47,
+  "返送汚泥ポンプ__No2__吐出圧力": 48,
+  "返送汚泥ポンプ__No2__異音、振動": 49,
+  "返送汚泥ポンプ__common1__モード確認": 50,
+  "返送汚泥ポンプ__common1__常用機選択": 51,
+  "返送汚泥ポンプ__No3__電流値": 52,
+  "返送汚泥ポンプ__No3__吐出圧力": 53,
+  "返送汚泥ポンプ__No3__異音、振動": 54,
+  "返送汚泥ポンプ__No4__電流値": 55,
+  "返送汚泥ポンプ__No4__吐出圧力": 56,
+  "返送汚泥ポンプ__No4__異音、振動": 57,
+  "返送汚泥ポンプ__common2__モード確認": 58,
+  "返送汚泥ポンプ__common2__常用機選択": 59
+};
+
+const T_MECH2_ROW_W1 = {
+  "余剰汚泥ポンプ__1__電流値": 64,
+  "余剰汚泥ポンプ__1__吐出圧力": 65,
+  "余剰汚泥ポンプ__1__異音、振動": 66,
+  "余剰汚泥ポンプ__1__液漏れ": 67,
+  "余剰汚泥ポンプ__1__モード確認": 68,
+  "余剰汚泥ポンプ__2__電流値": 69,
+  "余剰汚泥ポンプ__2__吐出圧力": 70,
+  "余剰汚泥ポンプ__2__異音、振動": 71,
+  "余剰汚泥ポンプ__2__液漏れ": 72,
+  "余剰汚泥ポンプ__2__モード確認": 73,
+  "終沈床排水ポンプ__common1__電流値": 74,
+  "終沈床排水ポンプ__common1__吐出圧力": 75,
+  "終沈床排水ポンプ__common1__異音、振動": 76,
+  "終沈床排水ポンプ__common1__モード確認": 77,
+  "返流水ポンプ__No1__吐出圧力": 78,
+  "返流水ポンプ__No1__異音、振動": 79,
+  "返流水ポンプ__No2__吐出圧力": 80,
+  "返流水ポンプ__No2__異音、振動": 81,
+  "返流水ポンプ__common1__モード確認": 82,
+  "返流水ポンプ__common1__機種選択": 83,
+  "濃縮汚泥引抜ポンプ__1__電流値": 84,
+  "濃縮汚泥引抜ポンプ__1__吐出圧力": 85,
+  "濃縮汚泥引抜ポンプ__1__異音、振動": 86,
+  "濃縮汚泥引抜ポンプ__2__電流値": 87,
+  "濃縮汚泥引抜ポンプ__2__吐出圧力": 88,
+  "濃縮汚泥引抜ポンプ__2__異音、振動": 89,
+  "濃縮汚泥引抜ポンプ__common1__モード確認": 90,
+  "濃縮汚泥引抜ポンプ__common1__機種選択": 91,
+  "濃縮汚泥引抜弁__common1__電流値": 92,
+  "濃縮汚泥引抜弁__common1__異音、振動": 93,
+  "濃縮汚泥引抜弁__common1__動作状況": 94,
+  "濃縮汚泥引抜弁__common1__モード確認": 95,
+  "汚泥ポンプ室床排水ポンプ__common1__電流値": 96,
+  "汚泥ポンプ室床排水ポンプ__common1__吐出圧力": 97,
+  "汚泥ポンプ室床排水ポンプ__common1__異音、振動": 98,
+  "汚泥ポンプ室床排水ポンプ__common1__モード確認": 99,
+  "濃縮汚泥掻寄機__電流値": 100,
+  "濃縮汚泥掻寄機__異音、振動": 101,
+  "スカムスキマー__動作状況": 102,
+  "汚泥供給ポンプ__1__吐出圧力": 103,
+  "汚泥供給ポンプ__1__異音、振動": 104,
+  "汚泥供給ポンプ__1__液漏れ": 105,
+  "汚泥供給ポンプ__2__吐出圧力": 106,
+  "汚泥供給ポンプ__2__異音、振動": 107,
+  "汚泥供給ポンプ__2__液漏れ": 108,
+  "汚泥貯留槽攪拌機__common1__電流値": 109,
+  "汚泥貯留槽攪拌機__common1__異音、振動": 110,
+  "汚泥貯留槽攪拌機__common1__モード確認": 111,
+  "空気圧縮機__common1__異音、振動等": 112,
+  "空気圧縮機__common1__安全弁等の動作確認": 113
+};
+
+const T_MECH3_ROW_W1 = {
+  "井水揚水ポンプ__common1__異音、振動等": 120,
+  "自動給水装置__1__電流値": 121,
+  "自動給水装置__1__異音、振動等": 122,
+  "自動給水装置__2__電流値": 123,
+  "自動給水装置__2__異音、振動等": 124,
+  "自動給水装置__common1__モード確認": 125,
+  "井水貯留槽__common1__水漏れ": 126,
+  "混和池ＢＧ__common1__開閉": 127,
+  "塩素接触装置__common1__薬剤残量確認": 128,
+  "臭気ガス吸引装置__common1__ボルト・ナットの緩み": 129,
+  "臭気ガス吸引装置__common1__モード確認": 130,
+  "吸着脱装置__common1__マノメータ等の作動確認": 131,
+  "吸着脱装置__common1__ボルト・ナットの緩み": 132,
+  "電気室給気ファン__common1__電流値": 133,
+  "電気室給気ファン__common1__異音、振動等": 134,
+  "電気室給気ファン__common1__モード確認": 135,
+  "電気室排気ファン__common1__電流値": 136,
+  "電気室排気ファン__common1__異音、振動等": 137,
+  "電気室排気ファン__common1__モード確認": 138,
+  "自家発室給気ファン__common1__異音、振動": 139,
+  "自家発室給気ファン__common1__モード確認": 140,
+  "汚泥ポンプ室排気ファン__common1__電流値": 141,
+  "汚泥ポンプ室排気ファン__common1__異音、振動": 142,
+  "汚泥ポンプ室排気ファン__common1__モード確認": 143,
+  "汚泥ポンプ室吸気ファン__common1__電流値": 144,
+  "汚泥ポンプ室吸気ファン__common1__異音、振動": 145,
+  "汚泥ポンプ室吸気ファン__common1__モード確認": 146,
+  "脱水作業室排気ファン__common1__電流値": 147,
+  "脱水作業室排気ファン__common1__異音、振動": 148,
+  "脱水作業室排気ファン__common1__モード確認": 149,
+  "脱水作業室吸気ファン__common1__電流値": 150,
+  "脱水作業室吸気ファン__common1__異音、振動": 151,
+  "脱水作業室吸気ファン__common1__モード確認": 152,
+  "脱臭機械室排気ファン__common1__電流値": 153,
+  "脱臭機械室排気ファン__common1__異音、振動": 154,
+  "脱臭機械室排気ファン__common1__モード確認": 155,
+  "脱臭機械室吸気ファン__common1__電流値": 156,
+  "脱臭機械室吸気ファン__common1__異音、振動": 157,
+  "脱臭機械室吸気ファン__common1__モード確認": 158,
+  "終沈ポンプ室排気ファン__common1__電流値": 159,
+  "終沈ポンプ室排気ファン__common1__異音、振動": 160,
+  "終沈ポンプ室排気ファン__common1__モード確認": 161,
+  "終沈ポンプ室吸気ファン__common1__電流値": 162,
+  "終沈ポンプ室吸気ファン__common1__異音、振動": 163,
+  "終沈ポンプ室吸気ファン__common1__モード確認": 164,
+  "自動巻取型エアフィルター__common1__巻取完了表示点灯確認": 165,
+  "自動巻取型エアフィルター__common1__差圧": 166,
+  "自動巻取型エアフィルター__common1__モード確認": 167,
+  "自動巻取型エアフィルター__common1__設定": 168
+};
+
+
+
+// ===== Excel 出力（GAS経由：SpreadsheetApp + Drive export）=====
+
+async function exportExcel() {
+  const btn = document.getElementById("btnExcel");
+  const orig = btn ? btn.textContent : "";
+  if (btn) { btn.textContent = "保存中..."; btn.disabled = true; }
+  try {
+    // 1. 現在タブのフォームデータをlocalStorageに反映
+    if (currentSheet === "water") {
+      if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
+      else saveFormToData();
+    }
+    else if (currentSheet === "equip") saveEquipFormToData();
+    else if (currentSheet === "elec") saveElecFormToData();
+    else if (currentSheet === "mech") saveMechFormToData();
+
+    // 2. 対象月の取得
+    const ym = weeklyData.targetMonth || document.getElementById("targetMonth").value;
+    if (!ym) {
+      showToast("対象年月を設定してください", "error");
+      return;
+    }
+
+    // 3. 現在タブをサーバー（GAS）に同期 — GASがスプレッドシートから読むため
+    if (btn) btn.textContent = "サーバーへ同期中...";
+    try {
+      await saveCurrentToServer();
+    } catch (syncErr) {
+      console.warn("同期失敗（処理は続行）:", syncErr && syncErr.message);
+    }
+
+    // 4. GASにExcel生成を依頼（doGet で exportExcel）
+    if (btn) btn.textContent = "Excel生成中(15秒程度)...";
+    const TEMPLATE_SS_ID = '1lcdNltnqxjIYAK1dxZKLZ3D8ubNx6fjGYtsz-5ClqZg';
+    const url = withToken(GAS_URL + "?action=exportExcel&month=" + encodeURIComponent(ym) + "&templateId=" + encodeURIComponent(TEMPLATE_SS_ID));
+    const res = await fetchWithTimeout(url, { method: "GET" }, 90000);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (data && data.error) throw new Error(data.error);
+    if (!data || !data.fileBase64) {
+      throw new Error("Excelデータの取得に失敗（GAS応答: " + JSON.stringify(data).substring(0, 200) + "）");
+    }
+
+    // 5. base64 → Blob → ダウンロード
+    const bytes = Uint8Array.from(atob(data.fileBase64), c => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const dlUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = dlUrl;
+    a.download = data.fileName || ("筒賀水質管理センター記録表_" + ym + ".xlsx");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(dlUrl);
+
+    console.log("[Excel出力 v8/GAS] " + (data.fileName || "(unknown)") + " size=" + bytes.length);
+    showToast("Excelファイルをダウンロードしました");
+
+  } catch (e) {
+    console.error("Excel出力エラー:", e);
+    showToast("Excel出力に失敗: " + (e && e.message ? e.message : e), "error");
+  } finally {
+    if (btn) { btn.textContent = orig || "📄 Excel出力"; btn.disabled = false; }
+  }
+}
+function bindLoginEvents() {
+  if (window.__loginEventsBound) return;
+  window.__loginEventsBound = true;
+
+  const btnLogin = document.getElementById('btnLogin');
+  const idEl = document.getElementById('loginId');
+  const pwEl = document.getElementById('loginPassword');
+  const errEl = document.getElementById('loginError');
+
+  // Chromeの自動入力介入を防ぐため、初期は readonly にしておいて
+  // ユーザーがフォーカスした瞬間に readonly を外す
+  function unlockOnFocus(el) {
+    if (!el) return;
+    const handler = function() {
+      el.removeAttribute('readonly');
+      el.removeEventListener('focus', handler);
+      el.removeEventListener('click', handler);
+      el.removeEventListener('touchstart', handler);
+    };
+    el.addEventListener('focus', handler);
+    el.addEventListener('click', handler);
+    el.addEventListener('touchstart', handler, { passive: true });
+  }
+  unlockOnFocus(idEl);
+  unlockOnFocus(pwEl);
+
+  async function tryLogin() {
+    const uid = (idEl.value || '').trim();
+    const pw = pwEl.value || '';
+    if (!uid || !pw) {
+      errEl.textContent = 'IDとパスワードを入力してください';
+      errEl.classList.add('visible');
+      return;
+    }
+    btnLogin.disabled = true;
+    btnLogin.textContent = 'ログイン中...';
+    errEl.classList.remove('visible');
+    try {
+      await doLogin(uid, pw);
+      pwEl.value = '';
+      await continueInit();
+    } catch (e) {
+      errEl.textContent = e.message || 'ログインに失敗しました';
+      errEl.classList.add('visible');
+    } finally {
+      btnLogin.disabled = false;
+      btnLogin.textContent = 'ログイン';
+    }
+  }
+
+  if (btnLogin) btnLogin.addEventListener('click', tryLogin);
+  [idEl, pwEl].forEach(el => {
+    if (el) el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); tryLogin(); }
+    });
+  });
+
+  const btnLogout = document.getElementById('btnLogout');
+  if (btnLogout) btnLogout.addEventListener('click', async () => {
+    if (!confirm('ログアウトしますか？')) return;
+    await doLogout();
+  });
+
+  const btnForceRefresh = document.getElementById('btnForceRefresh');
+  if (btnForceRefresh) btnForceRefresh.addEventListener('click', forceRefresh);
+}
+
+// ===== 初期化 =====
+
+async function init() {
+  // 強制更新後のクエリパラメータを掃除
+  if (window.location.search.includes('_refresh=')) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('_refresh');
+    window.history.replaceState({}, '', url.toString());
+  }
+
+  // ---- 認証チェック ----
+  bindLoginEvents();
+  const authed = await verifyStoredToken();
+  if (!authed) {
+    showLoginScreen();
+    return; // ログイン完了後に continueInit() が呼ばれる
+  }
+  updateUserInfoUI();
+  return continueInit();
+}
+
+async function continueInit() {
+  hideLoginScreen();
+  updateUserInfoUI();
+  renderEquipTableRows();
+  // 対象月：前回保存 or 現在月
+  const savedMonth = localStorage.getItem("tutuga_current_month");
+  const ym = savedMonth || currentYearMonth();
+  weeklyData.targetMonth = ym;
+
+  // a. まずlocalStorageから即座に復元
+  loadFromStorage();
+
+  if (!weeklyData.targetMonth) weeklyData.targetMonth = ym;
+  // startDate は常に対象月から自動算出（readonly）
+  weeklyData.startDate = estimateStartDate(weeklyData.targetMonth);
+
+  document.getElementById("targetMonth").value = weeklyData.targetMonth;
+  document.getElementById("startDate").value = weeklyData.startDate;
+  safeSetItem("tutuga_current_month", weeklyData.targetMonth);
+
+  if (!window.__eventsBound) {
+    bindEvents();
+    window.__eventsBound = true;
+  }
+
+  // 初期表示
+  updateWeekTabs();
+  updateDayTabs();
+  // 水質シートのデフォルトサブタブ (currentWaterSub) に応じて適切なフォーム読込
+  if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") loadUsageDataToForm();
+  else loadDataToForm();
+
+  // b. バックグラウンドでGASからデータ取得（接続確認を兼ねる）
+  syncFromServer().catch(() => {});
+  // 祝日リストもバックグラウンド取得（キャッシュがあれば上書き・なければ取得）
+  fetchHolidaysFromServer();
+}
+
+// ===== スマホUX改善 =====
+
+// visibleなinput一覧を取得
+function getVisibleInputs() {
+  return Array.from(document.querySelectorAll('input[type="number"], input[type="text"]')).filter(function(el) {
+    return el.offsetParent !== null && el.offsetWidth > 0 && el.offsetHeight > 0;
+  });
+}
+
+// テーブル内の次のinputを列方向（縦）で探す
+function getNextTableInput(el) {
+  var table = el.closest("table.equip-table");
+  if (!table) return null;
+  var td = el.closest("td");
+  var tr = el.closest("tr");
+  if (!td || !tr) return null;
+  var colIdx = td.cellIndex;
+  var tbody = table.querySelector("tbody") || table;
+  var rows = Array.from(tbody.querySelectorAll("tr"));
+  var rowIdx = rows.indexOf(tr);
+
+  // 同じ列の次の行を探す
+  for (var r = rowIdx + 1; r < rows.length; r++) {
+    var cells = rows[r].querySelectorAll("td");
+    if (colIdx < cells.length) {
+      var inp = cells[colIdx].querySelector('input[type="number"], input[type="text"]');
+      if (inp && inp.offsetParent !== null) return inp;
+    }
+  }
+  // 次の列の最初の行を探す
+  for (var c = colIdx + 1; c < 10; c++) {
+    for (var r2 = 0; r2 < rows.length; r2++) {
+      var cells2 = rows[r2].querySelectorAll("td");
+      if (c < cells2.length) {
+        var inp2 = cells2[c].querySelector('input[type="number"], input[type="text"]');
+        if (inp2 && inp2.offsetParent !== null) return inp2;
+      }
+    }
+  }
+  return null; // テーブル内に次がない
+}
+
+// 次のinputを取得（テーブル内なら縦方向、それ以外はDOM順）
+function getNextInput(el) {
+  if (el.closest("table.equip-table")) {
+    var next = getNextTableInput(el);
+    if (next) return next;
+    return null;
+  }
+  // 日常水質など: DOM順で次のvisible input
+  var inputs = getVisibleInputs();
+  var idx = inputs.indexOf(el);
+  if (idx >= 0 && idx < inputs.length - 1) return inputs[idx + 1];
+  return null;
+}
+
+// tabindexを連番で設定（iOS ∧∨ボタン用）— テーブルは列方向順
+function updateTabIndexes() {
+  var tabIdx = 1;
+  // 日常水質のinput（DOM順）
+  document.querySelectorAll('.form-wrap input[type="number"], .form-wrap input[type="text"]').forEach(function(el) {
+    if (el.offsetParent !== null) el.setAttribute("tabindex", tabIdx++);
+  });
+  // テーブル系は列方向順でtabindex設定
+  ["equipTable", "elecTable", "mechTable"].forEach(function(tableId) {
+    var table = document.getElementById(tableId);
+    if (!table || table.offsetParent === null) return;
+    var tbody = table.querySelector("tbody") || table;
+    var rows = Array.from(tbody.querySelectorAll("tr"));
+    if (rows.length === 0) return;
+    var maxCols = 0;
+    rows.forEach(function(r) { var c = r.querySelectorAll("td").length; if (c > maxCols) maxCols = c; });
+    for (var c = 1; c < maxCols; c++) { // skip col 0 (label)
+      for (var r = 0; r < rows.length; r++) {
+        var cells = rows[r].querySelectorAll("td");
+        if (c < cells.length) {
+          var inp = cells[c].querySelector('input[type="number"], input[type="text"]');
+          if (inp && inp.offsetParent !== null) inp.setAttribute("tabindex", tabIdx++);
+        }
+      }
+    }
+  });
+}
+
+// 指定要素を画面の上から1/3位置にスムーズスクロール
+function scrollToTopThird(el) {
+  if (!el) return;
+  var rect = el.getBoundingClientRect();
+  var viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  var targetY = viewportHeight / 3;
+  var scrollBy = rect.top - targetY;
+  window.scrollBy({ top: scrollBy, left: 0, behavior: 'smooth' });
+}
+
+// 次のフィールドを選ぶ（縦方向）
+// 現在のシートに応じてフィールドリストを生成
+function getAdvanceableFields() {
+  if (currentSheet === "water") {
+    return Array.from(document.querySelectorAll('#waterPanel input[data-field], #waterPanel button[data-field].toggle-btn'));
+  } else if (currentSheet === "equip") {
+    const result = [];
+    const days = ["mon", "tue", "wed", "thu", "fri"];
+    days.forEach(d => {
+      document.querySelectorAll('#equipPanel input[data-equip][data-eday="' + d + '"]').forEach(el => result.push(el));
+    });
+    return result;
+  } else if (currentSheet === "elec") {
+    const result = [];
+    const days = ["mon", "tue", "wed", "thu", "fri"];
+    days.forEach(d => {
+      document.querySelectorAll('#elecPanel input[data-elec][data-eday="' + d + '"], #elecPanel button[data-elec][data-eday="' + d + '"].toggle-btn').forEach(el => result.push(el));
+    });
+    return result;
+  } else if (currentSheet === "mech") {
+    const result = [];
+    const days = ["mon", "tue", "wed", "thu", "fri"];
+    days.forEach(d => {
+      document.querySelectorAll('#mechPanel input[data-mech][data-mday="' + d + '"], #mechPanel button[data-mech][data-mday="' + d + '"].toggle-btn').forEach(el => result.push(el));
+    });
+    return result;
+  }
+  return [];
+}
+
+// 次のフィールドに進む
+function advanceToNextField(currentEl) {
+  const fields = getAdvanceableFields();
+  const idx = fields.indexOf(currentEl);
+  if (idx < 0) return;
+
+  const next = fields[idx + 1];
+  if (next) {
+    next.focus();
+    setTimeout(() => scrollToTopThird(next), 50);
+    if (next.tagName === 'INPUT' && (next.type === 'number' || next.type === 'text')) {
+      try { next.select(); } catch(e) {}
+    }
+  } else {
+    currentEl.blur();
+  }
+}
+
+// inputタップ時に全選択＋スクロール＋記録
+var lastFocusedInput = null;
+
+document.addEventListener("focusin", function(e) {
+  var el = e.target;
+  if (el.tagName === "INPUT" && (el.type === "number" || el.type === "text")) {
+    lastFocusedInput = el;
+    setTimeout(function() { el.select(); }, 50);
+    setTimeout(function() {
+      scrollToTopThird(el);
+    }, 150);
+  }
+});
+
+// iOS自動次移動: blur後300msで別inputにフォーカスが移っていなければ次へ
+document.addEventListener("focusout", function(e) {
+  if (e.target.tagName !== "INPUT") return;
+  if (e.target.type !== "number" && e.target.type !== "text") return;
+  var blurredInput = e.target;
+  setTimeout(function() {
+    var active = document.activeElement;
+    // 別のinputに既にフォーカスが移っている → 何もしない
+    if (active && active.tagName === "INPUT" && (active.type === "number" || active.type === "text")) {
+      return;
+    }
+    // ボタンやselectをタップした場合も移動しない
+    if (active && (active.tagName === "BUTTON" || active.tagName === "SELECT")) {
+      return;
+    }
+    // 次のinputにフォーカス（テーブルなら縦方向）
+    var next = getNextInput(blurredInput);
+    if (next) {
+      next.focus();
+      try { next.select(); } catch(_){}
+      setTimeout(function() { scrollToTopThird(next); }, 50);
+    }
+  }, 50);
+});
+
+// PCのEnterキーで次のinputに移動（テーブルなら縦方向）
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Enter" && e.target.tagName === "INPUT") {
+    e.preventDefault();
+    var next = getNextInput(e.target);
+    if (next) {
+      next.focus();
+      try { next.select(); } catch(_){}
+      setTimeout(function() { scrollToTopThird(next); }, 50);
+    } else {
+      e.target.blur();
+    }
+  }
+});
+
+// ===== 元に戻す（Undo）機能 =====
+
+var undoStack = [];
+var UNDO_MAX = 50;
+
+function pushUndo(entry) {
+  undoStack.push(entry);
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+  document.getElementById("btnUndo").disabled = false;
+}
+
+function updateUndoBtn() {
+  document.getElementById("btnUndo").disabled = (undoStack.length === 0);
+}
+
+// 日常水質のinputにundo記録を追加
+function attachUndoToWaterInputs() {
+  document.querySelectorAll("[data-field]").forEach(function(el) {
+    if (el._undoAttached) return;
+    el._undoAttached = true;
+    var prevVal = el.value;
+    el.addEventListener("focus", function() { prevVal = el.value; });
+    el.addEventListener("change", function() {
+      if (el.value !== prevVal) {
+        pushUndo({ sheet: "water", week: currentWeek, day: currentDay, field: el.dataset.field, oldValue: prevVal, newValue: el.value });
+        prevVal = el.value;
+      }
+    });
+  });
+}
+
+// テーブル系inputにundo記録を追加（equip/elec/mech）
+function attachUndoToTableInputs() {
+  // 機器運転時間
+  document.querySelectorAll("[data-equip]").forEach(function(el) {
+    if (el._undoAttached) return;
+    el._undoAttached = true;
+    var prevVal = el.value;
+    el.addEventListener("focus", function() { prevVal = el.value; });
+    el.addEventListener("change", function() {
+      if (el.value !== prevVal) {
+        pushUndo({ sheet: "equip", week: currentWeek, equipKey: el.dataset.equip, day: el.dataset.eday, oldValue: prevVal, newValue: el.value });
+        prevVal = el.value;
+      }
+    });
+  });
+  // 電気設備（input）
+  document.querySelectorAll("#elecTable input[data-elec]").forEach(function(el) {
+    if (el._undoAttached) return;
+    el._undoAttached = true;
+    var prevVal = el.value;
+    el.addEventListener("focus", function() { prevVal = el.value; });
+    el.addEventListener("change", function() {
+      if (el.value !== prevVal) {
+        pushUndo({ sheet: "elec", week: currentWeek, day: el.dataset.eday, field: el.dataset.elec, oldValue: prevVal, newValue: el.value });
+        prevVal = el.value;
+      }
+    });
+  });
+  // 機械設備（input）
+  document.querySelectorAll("#mechTable input[data-mech]").forEach(function(el) {
+    if (el._undoAttached) return;
+    el._undoAttached = true;
+    var prevVal = el.value;
+    el.addEventListener("focus", function() { prevVal = el.value; });
+    el.addEventListener("change", function() {
+      if (el.value !== prevVal) {
+        pushUndo({ sheet: "mech", week: currentWeek, day: el.dataset.mday, field: el.dataset.mech, oldValue: prevVal, newValue: el.value });
+        prevVal = el.value;
+      }
+    });
+  });
+}
+
+// Undoボタン
+document.getElementById("btnUndo").addEventListener("click", function() {
+  if (undoStack.length === 0) return;
+  var entry = undoStack.pop();
+  var val = entry.oldValue === "" ? null : (isNaN(Number(entry.oldValue)) ? entry.oldValue : Number(entry.oldValue));
+
+  if (entry.sheet === "water") {
+    weeklyData.weeks[entry.week][entry.day][entry.field] = val;
+    if (currentSheet === "water" && currentWeek == entry.week && currentDay === entry.day) {
+      loadDataToForm();
+    }
+  } else if (entry.sheet === "equip") {
+    weeklyData.equipment[entry.week][entry.equipKey][entry.day] = val;
+    if (currentSheet === "equip" && currentWeek == entry.week) {
+      loadEquipDataToForm();
+    }
+  } else if (entry.sheet === "elec") {
+    weeklyData.electrical[entry.week][entry.day][entry.field] = val;
+    if (currentSheet === "elec" && currentWeek == entry.week) {
+      loadElecDataToForm();
+    }
+  } else if (entry.sheet === "mech") {
+    weeklyData.mechanical[entry.week][entry.day][entry.field] = val;
+    if (currentSheet === "mech" && currentWeek == entry.week) {
+      loadMechDataToForm();
+    }
+  }
+  updateUndoBtn();
+  showToast("1つ戻しました");
+});
+
+init();
+
+// 初期化後にtabindex設定とundo attach
+updateTabIndexes();
+attachUndoToWaterInputs();
+attachUndoToTableInputs();
+</script>
+
+<!-- Excel テンプレート（Base64） -->
+<!-- template.js は GAS版に移行したため削除済み -->
+
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+</script>
+</body>
+</html>

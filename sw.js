@@ -1,9 +1,12 @@
 // 筒賀水質管理センター 週報 Service Worker
-const CACHE_NAME = 'tutuga-v4';
+// v1: 筒賀アプリ 初期キャッシュ
+const CACHE_NAME = 'tutuga-v1';
+const APP_VERSION = '20260421-1';
 const ASSETS = [
   './',
-  './index.html',
-  './template.js',
+  './index.html?v=' + APP_VERSION,
+  './template.js?v=' + APP_VERSION,
+  './year_template.js?v=' + APP_VERSION,
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
@@ -31,8 +34,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   // 同一オリジンの静的ファイルは「ネットワークファースト」
-  // - オンラインなら常に最新を取得（これで変更が即座に反映される）
-  // - オフラインの時だけキャッシュを使う
   if (req.method === 'GET' && new URL(req.url).origin === self.location.origin) {
     event.respondWith(
       fetch(req).then((res) => {

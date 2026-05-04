@@ -703,6 +703,57 @@ function getPreviousMonthLastFridayValues(year, monthNum) {
   return { no1: null, no2: null };
 }
 
+// 前月の電気設備データから、5項目の使用量計算用「読み」値を最終日付順に取得
+// 戻り値: { [readKey]: lastReadingValue, ... }
+function getPreviousMonthLastElecReadings(year, monthNum) {
+  var prevDate = new Date(year, monthNum - 2, 1, 12, 0, 0);
+  var py = prevDate.getFullYear();
+  var pm = ('0' + (prevDate.getMonth() + 1)).slice(-2);
+  var prevMonth = py + '-' + pm;
+  var prevMonthIdx = prevDate.getMonth();
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('日常電気設備');
+  if (!sheet || sheet.getLastRow() <= 1) return {};
+
+  var prevWeekMondays = computeWeekMondays(py, prevDate.getMonth() + 1);
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
+
+  var entries = [];
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    if (!matchMonth(row[0], prevMonth)) continue;
+    var w = parseInt(row[1]);
+    var dayKey = DAY_REVERSE[row[2]];
+    if (!dayKey) continue;
+    var date = dateOfWeekDay(prevWeekMondays, w, dayKey);
+    if (!date || date.getMonth() !== prevMonthIdx) continue;
+    var json = {};
+    try { json = JSON.parse(row[3] || '{}'); } catch(e) { continue; }
+    entries.push({ date: date, json: json });
+  }
+  entries.sort(function(a, b){ return b.date.getTime() - a.date.getTime(); });
+
+  var KEYS = [
+    "引込・受電__普通電力量(×10kw)__読み",
+    "低圧分岐__沈砂池ポンプ設備__読み",
+    "低圧分岐__水処理設備(1)__読み",
+    "低圧分岐__水処理設備(2)__読み",
+    "低圧分岐__汚泥処理設備電力量__読み"
+  ];
+  var result = {};
+  for (var k = 0; k < KEYS.length; k++) {
+    for (var j = 0; j < entries.length; j++) {
+      var v = entries[j].json[KEYS[k]];
+      if (v != null && v !== '' && !isNaN(parseFloat(v))) {
+        result[KEYS[k]] = parseFloat(v);
+        break;
+      }
+    }
+  }
+  return result;
+}
+
 
 // ===================================================================
 // ===== 認証システム =====
@@ -1246,7 +1297,11 @@ function exportExcel(month, templateId) {
       var monDay = weekMondays[w];
 
       // 第1週の月曜日付を I3 に書く（全週分の参照元）
-      if (w === 1 && monDay) waterSheet.getRange(3, 9).setValue(monDay);
+      if (w === 1 && monDay) {
+        waterSheet.getRange(3, 9).setValue(monDay);
+        // 月年タイトルを M1 に書き込み（例: "令和8年5月"）
+        waterSheet.getRange('M1').setValue('令和' + (year - 2018) + '年' + monthNum + '月');
+      }
 
       // 上段使用量（per-week）
       var usage = waterUsage[w];
@@ -1322,14 +1377,21 @@ function exportExcel(month, templateId) {
       }
     }
 
-    // ======= [3] 運転管理月報 J6/L6（前月最終金曜の返送汚泥） =======
-    try {
-      var prev = getPreviousMonthLastFridayValues(year, monthNum);
-      if (opSheet && prev) {
-        if (prev.no1 !== null && prev.no1 !== undefined) opSheet.getRange('J6').setValue(prev.no1);
-        if (prev.no2 !== null && prev.no2 !== undefined) opSheet.getRange('L6').setValue(prev.no2);
-      }
-    } catch(prevErr) { Logger.log('prev-month fetch skipped: ' + prevErr.message); }
+    // ======= [3] 運転管理月報 =======
+    if (opSheet) {
+      // 月初日付を A6 に書き込み → A7以降の日付列とB列(曜日)が数式チェーンで自動更新
+      opSheet.getRange('A6').setValue(new Date(year, monthNum - 1, 1, 12, 0, 0));
+      // 月年タイトルを J1 に書き込み（例: "令和8年　5月分"）
+      opSheet.getRange('J1').setValue('令和' + (year - 2018) + '年　' + monthNum + '月分');
+      // 前月最終金曜の返送汚泥（既存）
+      try {
+        var prev = getPreviousMonthLastFridayValues(year, monthNum);
+        if (prev) {
+          if (prev.no1 !== null && prev.no1 !== undefined) opSheet.getRange('J6').setValue(prev.no1);
+          if (prev.no2 !== null && prev.no2 !== undefined) opSheet.getRange('L6').setValue(prev.no2);
+        }
+      } catch(prevErr) { Logger.log('prev-month fetch skipped: ' + prevErr.message); }
+    }
 
     // ======= [4] 主要機器運転時間 =======
     if (eqSheet) {
@@ -1345,7 +1407,10 @@ function exportExcel(month, templateId) {
           var ed = weekEq[EQUIP_NAMES[i]]; if (!ed) continue;
           var trgRow = rowBase + i;
           for (var d = 0; d < DAYS.length; d++) {
-            var day = DAYS[d], v = ed[day];
+            var day = DAYS[d];
+            var date = dateOfWeekDay(weekMondays, w, day);
+            if (!date || date.getMonth() !== monthNum - 1) continue; // 当月外スキップ
+            var v = ed[day];
             if (v != null && v !== '') eqSheet.getRange(trgRow, EQUIP_HOUR_DAY_COL[day]).setValue(v);
           }
         }
@@ -1367,7 +1432,10 @@ function exportExcel(month, templateId) {
         var weekEl = electrical[w] || {};
         var weekUs = waterUsage[w]  || {};
         for (var di = 0; di < DAYS.length; di++) {
-          var day = DAYS[di], col = ELEC_DAY_COL[day];
+          var day = DAYS[di];
+          var date = dateOfWeekDay(weekMondays, w, day);
+          if (!date || date.getMonth() !== monthNum - 1) continue; // 当月外スキップ
+          var col = ELEC_DAY_COL[day];
           var dd = weekEl[day] || {};
           for (var pi = 0; pi < ELEC_PAGES.length; pi++) {
             var page = ELEC_PAGES[pi];
@@ -1388,6 +1456,41 @@ function exportExcel(month, templateId) {
           }
         }
       }
+
+      // === 第1週初日の使用量を前月最終読みから計算（5項目） ===
+      try {
+        var prevElecReadings = getPreviousMonthLastElecReadings(year, monthNum);
+        var ELEC_USAGE_PAIRS = [
+          { readKey: "引込・受電__普通電力量(×10kw)__読み",       usageRow: 9  },
+          { readKey: "低圧分岐__沈砂池ポンプ設備__読み",           usageRow: 22 },
+          { readKey: "低圧分岐__水処理設備(1)__読み",              usageRow: 24 },
+          { readKey: "低圧分岐__水処理設備(2)__読み",              usageRow: 26 },
+          { readKey: "低圧分岐__汚泥処理設備電力量__読み",         usageRow: 28 }
+        ];
+        var week1El = electrical[1] || {};
+        var sub1Off = WEEK_OFFSETS_ELEC.sub1[0];
+        for (var u = 0; u < ELEC_USAGE_PAIRS.length; u++) {
+          var pair = ELEC_USAGE_PAIRS[u];
+          var prevVal = prevElecReadings[pair.readKey];
+          if (prevVal == null) continue;
+          // 第1週で最初に当月かつ「読み」が記録されている日を探す
+          for (var di2 = 0; di2 < DAYS.length; di2++) {
+            var d2 = DAYS[di2];
+            var dt = dateOfWeekDay(weekMondays, 1, d2);
+            if (!dt || dt.getMonth() !== monthNum - 1) continue;
+            var dd2 = week1El[d2];
+            if (!dd2) continue;
+            var currVal = dd2[pair.readKey];
+            if (currVal == null || currVal === '') continue;
+            var currNum = parseFloat(currVal);
+            if (isNaN(currNum)) continue;
+            elecSheet.getRange(pair.usageRow + sub1Off, ELEC_DAY_COL[d2]).setValue(currNum - prevVal);
+            break;
+          }
+        }
+      } catch (uErr) {
+        Logger.log('elec usage calc skipped: ' + uErr.message);
+      }
     }
 
     // ======= [6] 日常機械設備（点検表 1/3, 2/3, 3/3） =======
@@ -1399,7 +1502,10 @@ function exportExcel(month, templateId) {
         var weekMe = mechanical[w] || {};
         var weekOff = WEEK_OFFSETS_MECH[w - 1];
         for (var di = 0; di < DAYS.length; di++) {
-          var day = DAYS[di], col = MECH_DAY_COL[day];
+          var day = DAYS[di];
+          var date = dateOfWeekDay(weekMondays, w, day);
+          if (!date || date.getMonth() !== monthNum - 1) continue; // 当月外スキップ
+          var col = MECH_DAY_COL[day];
           var dd = weekMe[day] || {};
           for (var mi = 0; mi < MECH_PAGE_MAPS.length; mi++) {
             var m = MECH_PAGE_MAPS[mi];
@@ -1418,14 +1524,14 @@ function exportExcel(month, templateId) {
     var rsp = UrlFetchApp.fetch(eu, {headers:{'Authorization':'Bearer ' + tk}});
     var bl = rsp.getBlob();
     bl.setName(nf + '.xlsx');
-    var ef = DriveApp.createFile(bl);
+    // テンプレコピーは不要なので削除（Driveに残さない）
     DriveApp.getFileById(nid).setTrashed(true);
+    // base64でクライアントに直接返す（Drive経由のダウンロード不要）
     return jsonResponse({
       status:'ok',
       message: ml + 'のExcelファイルを生成しました',
-      fileId: ef.getId(),
-      fileUrl: ef.getUrl(),
-      downloadUrl: 'https://drive.google.com/uc?export=download&id=' + ef.getId()
+      fileName: nf + '.xlsx',
+      fileBase64: Utilities.base64Encode(bl.getBytes())
     });
   } catch(err) {
     return jsonResponse({error:'Excel生成エラー: ' + err.message});
