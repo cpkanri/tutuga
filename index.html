@@ -4280,9 +4280,6 @@ async function exportExcel() {
   if (typeof ExcelJS === "undefined") {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js");
   }
-  if (typeof JSZip === "undefined") {
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
-  }
   // 現在タブを保存（水質タブは上段/下段サブタブも判定）
   if (currentSheet === "water") {
     if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
@@ -4400,49 +4397,30 @@ async function exportExcel() {
     }
   } catch (e) { console.error("Daily dates fill:", e); }
 
-  const out = await wb.xlsx.writeBuffer();
-
-  // ===== ファイル修復メッセージ対策 v4（リスクある変更を撤回）=====
-  // Excelがdimension="A1"を厳格解釈してA6以降のデータを削除する事象が発生したため、
-  // dimension変更とP列以降の空セル削除を取りやめ、無害な変更のみ残す。
-  let finalBuf = null;
-  let methodUsed = "";
-
+  // ===== 修復メッセージ根本対策（吉和パターン移植）=====
+  // テンプレに残ったfrozen pane/selection/tabColorがExcel修復処理を誘発するためクリア
   try {
-    if (typeof JSZip === "undefined") throw new Error("JSZip 未読込");
-    const zip = await JSZip.loadAsync(out);
-    const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
-    let totalFix = 0;
-    for (const sheetFile of sheetFiles) {
-      let xml = await zip.file(sheetFile).async("string");
-      let fixCount = 0;
-      // (1) 数式セルに <v></v> を補完
-      xml = xml.replace(/(<f[^>]*>[^<]*<\/f>)(?!\s*<v[\s>])/g, function(_, f) { fixCount++; return f + '<v></v>'; });
-      xml = xml.replace(/(<f[^>]*\/>)(?!\s*<v[\s>])/g, function(_, f) { fixCount++; return f + '<v></v>'; });
-      // (2) pageSetup 簡略化（uint32 max DPI 等を除去）
-      xml = xml.replace(/<pageSetup[^>]*\/?>/g, '<pageSetup orientation="landscape" paperSize="9"/>');
-      // (3)(4) x14ac:dyDescent / row spans 削除
-      xml = xml.replace(/\s+x14ac:dyDescent="[^"]*"/g, '');
-      xml = xml.replace(/(<row[^>]*?)\s+spans="[^"]*"/g, '$1');
-      // (5) worksheet xmlns 整理
-      xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:mc="[^"]*"/, '$1');
-      xml = xml.replace(/(<worksheet[^>]*?)\s+mc:Ignorable="[^"]*"/, '$1');
-      xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:x14ac="[^"]*"/, '$1');
-      // (6) cols max="16384" を 22 に縮小（保険）
-      xml = xml.replace(/(<col\b[^>]*?)\s+max="16384"/g, '$1 max="22"');
-      // ★ dimension変更とP列以降空セル削除は害が大きいため撤回
-      zip.file(sheetFile, xml);
-      totalFix += fixCount;
-    }
-    finalBuf = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
-    methodUsed = "B:JSZip後処理(安全版)";
-    console.log("[修復対策] 完了 <v>補完=" + totalFix + " size=" + finalBuf.byteLength);
-  } catch (eB) {
-    console.warn("[修復対策] 後処理失敗、ExcelJS出力をそのまま使用:", eB);
-    finalBuf = out;
-    methodUsed = "C:無加工";
-  }
-  console.log("[修復対策] 採用方策: " + methodUsed);
+    wb.eachSheet(ws => {
+      if (ws.views && ws.views.length > 0) {
+        ws.views = ws.views.map(v => {
+          const newView = Object.assign({}, v);
+          delete newView.state;
+          delete newView.xSplit;
+          delete newView.ySplit;
+          delete newView.topLeftCell;
+          delete newView.activeCell;
+          return newView;
+        });
+      }
+      if (ws.properties) ws.properties.tabColor = undefined;
+    });
+  } catch (e) { console.warn("views/tabColor クリア失敗:", e); }
+
+  const out = await wb.xlsx.writeBuffer();
+  // 吉和パターンに合わせて post-processing は実施しない
+  // （views/tabColor クリアでExcelの修復メッセージは消える）
+  const finalBuf = out;
+  console.log("[Excel出力] size=" + (finalBuf.byteLength || finalBuf.length));
 
   const blob = new Blob([finalBuf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
