@@ -4283,13 +4283,6 @@ async function exportExcel() {
   if (typeof JSZip === "undefined") {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
   }
-  // 修復メッセージ対策(方策A) 用: xlsx-js-style（SheetJS のスタイル保持版フォーク）
-  // 失敗しても方策Bで動くため、catch でスキップ
-  try {
-    if (typeof XLSX === "undefined") {
-      await loadScript("https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js");
-    }
-  } catch (e) { console.warn("xlsx-js-style 読込失敗(方策Bにフォールバック):", e); }
   // 現在タブを保存（水質タブは上段/下段サブタブも判定）
   if (currentSheet === "water") {
     if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
@@ -4409,84 +4402,52 @@ async function exportExcel() {
 
   const out = await wb.xlsx.writeBuffer();
 
-  // ===== ファイル修復メッセージ対策 v2（方策A + 方策B 統合）=====
-  // 方策A: SheetJS(xlsx-js-style) で読み直し→書き直しで XML を正規化（推奨ルート）
-  // 方策B: A が使えないとき ExcelJS出力に JSZip で post-processing
-  //   - 既存対策: <v>補完, pageSetup簡略, x14ac:dyDescent/spans削除, worksheet xmlns整理
-  //   - 新規対策: dimension短縮, cols max="16384"→"22", P列以降の空スタイルセル削除
+  // ===== ファイル修復メッセージ対策 v3（方策B 主経路）=====
+  // 方策A(SheetJS round-trip) は cols の style 属性を落として罫線を消すため使用しない。
+  // ExcelJS出力を JSZip で正規化（既存対策＋新規対策）。
+  // 既存: <v>補完, pageSetup簡略, x14ac:dyDescent/spans削除, worksheet xmlns整理
+  // 新規: dimension短縮, cols max="16384"→"22", P列以降の空スタイルセル削除
   let finalBuf = null;
   let methodUsed = "";
 
-  // --- 方策A ---
   try {
-    if (typeof XLSX === "undefined") throw new Error("xlsx-js-style 未読込");
-    const wb2 = XLSX.read(out, {
-      type: "array",
-      cellFormula: true,
-      cellStyles: true,
-      cellNF: true,
-      cellDates: false,
-      sheetStubs: false
-    });
-    const out2 = XLSX.write(wb2, {
-      bookType: "xlsx",
-      type: "array",
-      cellStyles: true,
-      compression: true
-    });
-    // ArrayBuffer 化（SheetJSは Uint8Array を返す場合がある）
-    finalBuf = (out2 instanceof ArrayBuffer) ? out2
-      : (out2 && out2.buffer instanceof ArrayBuffer)
-        ? out2.buffer.slice(out2.byteOffset || 0, (out2.byteOffset || 0) + out2.byteLength)
-        : new Uint8Array(out2).buffer;
-    methodUsed = "A:SheetJS再保存";
-    console.log("[修復対策] 方策A完了 size=" + finalBuf.byteLength);
-  } catch (eA) {
-    console.warn("[修復対策] 方策A失敗→方策Bへ:", eA && eA.message);
-    finalBuf = null;
-  }
-
-  // --- 方策B（A失敗時のみ）---
-  if (!finalBuf) {
-    try {
-      if (typeof JSZip === "undefined") throw new Error("JSZip 未読込");
-      const zip = await JSZip.loadAsync(out);
-      const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
-      let totalFix = 0, cleaned = 0;
-      for (const sheetFile of sheetFiles) {
-        let xml = await zip.file(sheetFile).async("string");
-        let fixCount = 0;
-        // (1) 数式セルに <v></v> を補完
-        xml = xml.replace(/(<f[^>]*>[^<]*<\/f>)(?!\s*<v[\s>])/g, function(_, f) { fixCount++; return f + '<v></v>'; });
-        xml = xml.replace(/(<f[^>]*\/>)(?!\s*<v[\s>])/g, function(_, f) { fixCount++; return f + '<v></v>'; });
-        // (2) pageSetup 簡略化
-        xml = xml.replace(/<pageSetup[^>]*\/?>/g, '<pageSetup orientation="landscape" paperSize="9"/>');
-        // (3)(4) x14ac:dyDescent / spans 削除
-        xml = xml.replace(/\s+x14ac:dyDescent="[^"]*"/g, '');
-        xml = xml.replace(/(<row[^>]*?)\s+spans="[^"]*"/g, '$1');
-        // (5) worksheet xmlns 整理
-        xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:mc="[^"]*"/, '$1');
-        xml = xml.replace(/(<worksheet[^>]*?)\s+mc:Ignorable="[^"]*"/, '$1');
-        xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:x14ac="[^"]*"/, '$1');
-        // (6) 新規: dimension を Excel 自動計算に委ねる
-        xml = xml.replace(/<dimension\s+ref="[A-Z]+\d+(?::[A-Z]+\d+)?"\s*\/>/, '<dimension ref="A1"/>');
-        // (7) 新規: cols max="16384" を 22 に縮小
-        xml = xml.replace(/(<col\b[^>]*?)\s+max="16384"/g, '$1 max="22"');
-        // (8) 新規: P列以降（テンプレ A1:O286 範囲外）の空スタイルセル削除
-        const before = xml.length;
-        xml = xml.replace(/<c\s+r="(?:P|Q|R|S|T|U|V|W|X|Y|Z|A[A-Z])\d+"\s+s="\d+"\s*\/>/g, '');
-        if (xml.length < before) cleaned++;
-        zip.file(sheetFile, xml);
-        totalFix += fixCount;
-      }
-      finalBuf = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
-      methodUsed = "B:JSZip後処理";
-      console.log("[修復対策] 方策B完了 <v>補完=" + totalFix + " 空セル削除シート数=" + cleaned + " size=" + finalBuf.byteLength);
-    } catch (eB) {
-      console.warn("[修復対策] 方策Bも失敗、ExcelJS出力をそのまま使用:", eB);
-      finalBuf = out;
-      methodUsed = "C:無加工";
+    if (typeof JSZip === "undefined") throw new Error("JSZip 未読込");
+    const zip = await JSZip.loadAsync(out);
+    const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
+    let totalFix = 0, cleaned = 0;
+    for (const sheetFile of sheetFiles) {
+      let xml = await zip.file(sheetFile).async("string");
+      let fixCount = 0;
+      // (1) 数式セルに <v></v> を補完
+      xml = xml.replace(/(<f[^>]*>[^<]*<\/f>)(?!\s*<v[\s>])/g, function(_, f) { fixCount++; return f + '<v></v>'; });
+      xml = xml.replace(/(<f[^>]*\/>)(?!\s*<v[\s>])/g, function(_, f) { fixCount++; return f + '<v></v>'; });
+      // (2) pageSetup 簡略化（uint32 max DPI 等を除去）
+      xml = xml.replace(/<pageSetup[^>]*\/?>/g, '<pageSetup orientation="landscape" paperSize="9"/>');
+      // (3)(4) x14ac:dyDescent / row spans 削除
+      xml = xml.replace(/\s+x14ac:dyDescent="[^"]*"/g, '');
+      xml = xml.replace(/(<row[^>]*?)\s+spans="[^"]*"/g, '$1');
+      // (5) worksheet xmlns 整理
+      xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:mc="[^"]*"/, '$1');
+      xml = xml.replace(/(<worksheet[^>]*?)\s+mc:Ignorable="[^"]*"/, '$1');
+      xml = xml.replace(/(<worksheet[^>]*?)\s+xmlns:x14ac="[^"]*"/, '$1');
+      // (6) dimension を Excel 自動計算に委ねる
+      xml = xml.replace(/<dimension\s+ref="[A-Z]+\d+(?::[A-Z]+\d+)?"\s*\/>/, '<dimension ref="A1"/>');
+      // (7) cols max="16384" を 22 に縮小（保険、テンプレで対応済みだが念のため）
+      xml = xml.replace(/(<col\b[^>]*?)\s+max="16384"/g, '$1 max="22"');
+      // (8) P列以降（テンプレ範囲外）の空スタイルセル削除
+      const before = xml.length;
+      xml = xml.replace(/<c\s+r="(?:P|Q|R|S|T|U|V|W|X|Y|Z|A[A-Z])\d+"\s+s="\d+"\s*\/>/g, '');
+      if (xml.length < before) cleaned++;
+      zip.file(sheetFile, xml);
+      totalFix += fixCount;
     }
+    finalBuf = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
+    methodUsed = "B:JSZip後処理";
+    console.log("[修復対策] 完了 <v>補完=" + totalFix + " 空セル削除シート数=" + cleaned + " size=" + finalBuf.byteLength);
+  } catch (eB) {
+    console.warn("[修復対策] 後処理失敗、ExcelJS出力をそのまま使用:", eB);
+    finalBuf = out;
+    methodUsed = "C:無加工";
   }
   console.log("[修復対策] 採用方策: " + methodUsed);
 
