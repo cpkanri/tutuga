@@ -4386,14 +4386,6 @@ async function exportExcel() {
     }
   } catch (e) { console.error("Daily dates fill:", e); }
 
-  // 全ての数式セルを Excel が開いた時に再計算させる設定
-  // sheet2.xml (運転管理月報) の数式チェーンが ExcelJS の出力XMLで <v> 値タグなしの状態になり
-  // Excel が開く際に修復メッセージを出すケースがあるため、calcProperties を明示する
-  try {
-    if (!wb.calcProperties) wb.calcProperties = {};
-    wb.calcProperties.fullCalcOnLoad = true;
-  } catch(e) { console.warn("calcProperties設定失敗:", e); }
-
   const out = await wb.xlsx.writeBuffer();
   const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
