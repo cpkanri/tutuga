@@ -4280,6 +4280,9 @@ async function exportExcel() {
   if (typeof ExcelJS === "undefined") {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js");
   }
+  if (typeof JSZip === "undefined") {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
+  }
   // 現在タブを保存（水質タブは上段/下段サブタブも判定）
   if (currentSheet === "water") {
     if (typeof currentWaterSub !== "undefined" && currentWaterSub === "usage") saveUsageFormToData();
@@ -4398,7 +4401,45 @@ async function exportExcel() {
   } catch (e) { console.error("Daily dates fill:", e); }
 
   const out = await wb.xlsx.writeBuffer();
-  const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+  // ===== ファイル修復メッセージ対策 =====
+  // ExcelJS は数式セルから <v> 値タグを削除して出力するため、Excel が
+  // 「ファイル修復済み」メッセージを出す。出力後の xlsx (=ZIP) を一旦解凍し、
+  // 各シートの数式セル直後に空の <v></v> を補完してから再 ZIP 化する
+  let finalBuf = out;
+  try {
+    if (typeof JSZip !== "undefined") {
+      const zip = await JSZip.loadAsync(out);
+      const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
+      let totalFix = 0;
+      for (const sheetFile of sheetFiles) {
+        let xml = await zip.file(sheetFile).async("string");
+        // パターン1: <f>...</f></c> や <f>...</f><something_other_than_v>
+        // 数式直後に <v> がない場合のみ <v></v> を補う
+        let fixCount = 0;
+        xml = xml.replace(/(<f[^>]*>[^<]*<\/f>)(?!\s*<v[\s>])/g, function(_, f) {
+          fixCount++;
+          return f + '<v></v>';
+        });
+        // パターン2: 自己終了タグ <f .../> の場合
+        xml = xml.replace(/(<f[^>]*\/>)(?!\s*<v[\s>])/g, function(_, f) {
+          fixCount++;
+          return f + '<v></v>';
+        });
+        if (fixCount > 0) {
+          zip.file(sheetFile, xml);
+          totalFix += fixCount;
+        }
+      }
+      console.log("[修復メッセージ対策] <v>タグ補完:", totalFix, "セル");
+      finalBuf = await zip.generateAsync({ type: "arraybuffer" });
+    }
+  } catch (e) {
+    console.warn("修復メッセージ対策スキップ:", e);
+    finalBuf = out;
+  }
+
+  const blob = new Blob([finalBuf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
