@@ -2189,7 +2189,8 @@ const ALL_MECH_KEYS = TUTUGA_MECH_SECTIONS_ALL.flatMap(s => s.fields.map(f => f.
 // usage 9 / measure 28 / equip 22 / elec 29+26+12 / mech 56+50+49
 // =====================================================
 const TUTUGA_USAGE_SHEET_KEYS = USAGE_KEYS.filter(k => k !== "excessSludge1" && k !== "excessSludge2"); // 9
-const TUTUGA_USAGE_FORM_EXTRAS = ["excessSludge1", "excessSludge2"]; // 2 form-only (転記 to elec sub2)
+// Phase 8 修正02 Step1: excessSludge1/2 は水質側で入力せず、電気 sub2 の余剰汚泥流量計フィールドで直接入力する
+const TUTUGA_USAGE_FORM_EXTRAS = [];
 const TUTUGA_MEASURE_SHEET_KEYS = MEASURE_FIELDS.filter(k => !["tempFinal1","tempFinal2","transFinal1","transFinal2","phFinal1","phFinal2","inspector","bikou"].includes(k)); // 28
 
 const TUTUGA_FIELDS = {
@@ -2233,9 +2234,10 @@ const ELEC_DAY_COL     = { mon: 7, tue: 8, wed: 9, thu: 10, fri: 11 };          
 const MECH_DAY_COL     = { mon: 5, tue: 6, wed: 7, thu: 8, fri: 9 };                   // E-I
 
 // ===== 「-」入力許可フィールド（流量計など、メーター不読・欠測時に「-」表記） =====
-// 筒賀: 使用量タブの流量計系フィールド (returnSludge1/2, excessSludge1/2, discharge)
+// 筒賀: 使用量タブの流量計系フィールド (returnSludge1/2, discharge)
+// Phase 8 修正02 Step1: excessSludge1/2 は水質側から削除されたため対象外
 const DASH_SUPPORT_FIELDS = new Set([
-  "returnSludge1", "returnSludge2", "excessSludge1", "excessSludge2", "discharge"
+  "returnSludge1", "returnSludge2", "discharge"
 ]);
 
 // =====================================================
