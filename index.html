@@ -4186,7 +4186,8 @@ function buildEquipFormHtml(kind, sub, weekIdx, dayIdx) {
   const sections = (kind === "mech") ? getMechSectionsForSub(sub) : getElecSectionsForSub(sub);
   const dataAttr = (kind === "mech") ? "data-mfield" : "data-efield";
   const dayKey = DAY_NUM_TO_STR[dayIdx] || "mon";
-  const date = getDateForDayKey(weekIdx, dayIdx);
+  // dayIdx は currentDay 由来の数値 (1-5)。getDateForDay は数値版、getDateForDayKey は文字列版なので使い分け必須。
+  const date = getDateForDay(weekIdx, dayIdx);
   const enabled = !!date;
   const disabledAttr = enabled ? "" : " disabled";
 
