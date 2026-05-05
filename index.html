@@ -1087,7 +1087,6 @@ body.login-active { overflow: hidden; }
     <!-- B-6: 履歴・月報Excelをここに移動 -->
     <button type="button" class="sync-btn btn-history-header" id="btnHistory" title="保存履歴を表示">📋 履歴</button>
     <button type="button" class="sync-btn btn-excel-header" id="btnExcel" title="月報Excelを出力">📥 月報Excel</button>
-    <button type="button" class="sync-btn btn-excel-header" id="btnYearExcel" style="display:none;" title="年報Excelを出力">📊 年報Excel</button>
   </div>
 </header>
 
@@ -1214,7 +1213,6 @@ body.login-active { overflow: hidden; }
 <div class="toast" id="toast"></div>
 
 <script src="./template.js?v=20260421-1"></script>
-<script src="./year_template.js?v=20260421-1"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(()=>{});
@@ -1326,7 +1324,7 @@ if (typeof window !== 'undefined') {
 // ===== ストレージ管理 =====
 // 柴木・上殿で発生した QuotaExceededError 予防のため、使用量可視化・エラーハンドリング・
 // 月別データ管理・バックアップ・自動削除を提供する。
-// Base64テンプレート (EXCEL_TEMPLATE_B64/EXCEL_YEAR_TEMPLATE_B64) はグローバル変数保持のみで localStorage には入らない。
+// Base64テンプレート (EXCEL_TEMPLATE_B64) はグローバル変数保持のみで localStorage には入らない。
 const STORAGE_PREFIX = "tutuga_";
 const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024; // 想定上限 5MB（Androidブラウザ標準）
 const STORAGE_WARN_PCT = 60;
@@ -4368,7 +4366,6 @@ function renderAll() {
   const btnCopy = document.getElementById("btnCopy");
   const btnClear = document.getElementById("btnClear");
   const btnExcel = document.getElementById("btnExcel");
-  const btnYearExcel = document.getElementById("btnYearExcel");
   document.querySelectorAll("#mainTabs button").forEach(b => {
     b.classList.toggle("active", b.dataset.main === currentMain);
   });
@@ -4383,7 +4380,6 @@ function renderAll() {
     weeklyPanel.style.display = "";
     if (btnCopy) btnCopy.style.display = "";
     if (btnExcel) btnExcel.style.display = "";
-    if (btnYearExcel) btnYearExcel.style.display = "none";
     renderWeekTabs();
     renderSecTabs();
     renderDayTabs();
@@ -4393,20 +4389,17 @@ function renderAll() {
     annualPanel.style.display = "";
     if (btnCopy) btnCopy.style.display = "none";
     if (btnExcel) btnExcel.style.display = "none";
-    if (btnYearExcel) btnYearExcel.style.display = "";
     renderAnnualSubTabs();
     renderAnnualBody();
   } else if (currentMain === "mech") {
     mechPanel.style.display = "";
     if (btnCopy) btnCopy.style.display = "none";
     if (btnExcel) btnExcel.style.display = "";
-    if (btnYearExcel) btnYearExcel.style.display = "none";
     renderMechPanel();
   } else if (currentMain === "elec") {
     elecPanel.style.display = "";
     if (btnCopy) btnCopy.style.display = "none";
     if (btnExcel) btnExcel.style.display = "";
-    if (btnYearExcel) btnYearExcel.style.display = "none";
     renderElecPanel();
   }
 }
@@ -6805,131 +6798,6 @@ function buildMonthDateMap(yyyy, mm) {
   return map;
 }
 
-// ===== 年報Excel出力 =====
-async function exportYearExcel() {
-  const btn = document.getElementById("btnYearExcel");
-  const origText = btn.textContent;
-  btn.textContent = "生成中...";
-  btn.disabled = true;
-  try {
-    saveCurrentFormToData();
-
-    // 対象年度をユーザー確認
-    const defaultFy = annualFiscalYear || fiscalYearFromMonth(tutugaData.targetMonth || currentYearMonth());
-    const fyInput = prompt("対象年度（西暦4桁、例: 2025 = 2025年4月〜2026年3月）:", defaultFy);
-    if (!fyInput) { return; }
-    const fy = String(fyInput).trim();
-    if (!/^\d{4}$/.test(fy)) { showToast("年度は4桁の数字で入力してください", "error"); return; }
-
-    if (typeof ExcelJS === "undefined") {
-      btn.textContent = "ライブラリ読込中...";
-      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js");
-    }
-    btn.textContent = "テンプレート処理中...";
-
-    if (typeof EXCEL_YEAR_TEMPLATE_B64 === "undefined") {
-      throw new Error("年報テンプレートが読み込まれていません");
-    }
-    const templateBytes = Uint8Array.from(atob(EXCEL_YEAR_TEMPLATE_B64), c => c.charCodeAt(0));
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(templateBytes.buffer);
-
-    // 4月1日の初期値バリデーション
-    if (!isAerationApril1Complete(fy)) {
-      const missing = getAerationApril1Missing(fy);
-      const proceed = confirm(`${fy}年4月1日の初期運転時間が未入力です。\n未入力の台: ${missing.join(", ")}\n\nこのまま出力を続行しますか？（未入力の台は前年度末からの継続値、または 0 として扱われます）`);
-      if (!proceed) { return; }
-    }
-
-    // エアレーション年報（シート1）: 12ヶ月分の月次合計（前回値継続方式）
-    const wsA = wb.getWorksheet("エアレーション運転時間年報") || wb.worksheets[0];
-    const monthsOrder = ["04","05","06","07","08","09","10","11","12","01","02","03"];
-    // メモリに全対象月をロードしておく（calculateMonthlyAerationTotal が localStorage fallback するが、
-    //   メモリにも置いておくと前月からの繰越参照が高速）
-    monthsOrder.forEach(mm => {
-      const y = (Number(mm) >= 4) ? fy : String(Number(fy) + 1);
-      const ym = y + "-" + mm;
-      if (!annualData.aeration[ym]) {
-        try {
-          const raw = localStorage.getItem("tutuga_aeration_" + ym);
-          if (raw) annualData.aeration[ym] = JSON.parse(raw);
-        } catch(e){}
-        if (!annualData.aeration[ym]) ensureAerationForMonth(ym);
-      }
-    });
-    monthsOrder.forEach((mm, idx) => {
-      const row = 6 + idx;
-      const y = (Number(mm) >= 4) ? fy : String(Number(fy) + 1);
-      const ym = y + "-" + mm;
-      YOSHIWA_ANNUAL.aeration.fields.forEach((f, colIdx) => {
-        const total = calculateMonthlyAerationTotal(ym, f.id);
-        // B,C,D,E 列 = 4台
-        setCell(wsA, row, 2 + colIdx, Math.round(total * 10) / 10);
-      });
-    });
-
-    // 返送汚泥MLSS年報（シート2）: 12ヶ月分の月平均（アプリ側で集計）
-    const wsM = wb.getWorksheet("返送汚泥MLSS年報") || wb.worksheets[1];
-    monthsOrder.forEach((mm, idx) => {
-      const row = 6 + idx;
-      const y = (Number(mm) >= 4) ? fy : String(Number(fy) + 1);
-      const ym = y + "-" + mm;
-      const monthData = (function(){
-        try {
-          const raw = localStorage.getItem("tutuga_mlss_return_" + ym);
-          if (raw) return JSON.parse(raw);
-        } catch(e){}
-        return annualData.mlssReturn[ym] || null;
-      })();
-      if (!monthData || !monthData.weeks) return;
-      let sum1 = 0, n1 = 0, sum2 = 0, n2 = 0;
-      for (let w = 1; w <= 5; w++) {
-        const ww = monthData.weeks[w];
-        if (!ww) continue;
-        for (let d = 1; d <= 5; d++) {
-          const rec = ww[d];
-          if (!rec) continue;
-          const v1 = rec.mlss_return_1;
-          if (v1 !== null && v1 !== undefined && v1 !== "") {
-            const n = Number(v1);
-            if (!isNaN(n)) { sum1 += n; n1++; }
-          }
-          const v2 = rec.mlss_return_2;
-          if (v2 !== null && v2 !== undefined && v2 !== "") {
-            const n = Number(v2);
-            if (!isNaN(n)) { sum2 += n; n2++; }
-          }
-        }
-      }
-      if (n1 > 0) setCell(wsM, row, 2, Math.round(sum1 / n1));
-      if (n2 > 0) setCell(wsM, row, 3, Math.round(sum2 / n2));
-    });
-
-    // 年度ラベル (B3 = 令和xx年度)
-    const reiwa = Number(fy) - 2018;
-    if (wsA) { const c = wsA.getCell(3, 2); c.value = "令和" + reiwa + "年度"; }
-    if (wsM) { const c = wsM.getCell(3, 2); c.value = "令和" + reiwa + "年度"; }
-
-    const buf = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "筒賀水質管理センター_年報_" + fy + "年度.xlsx";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast("年報Excelをダウンロードしました");
-  } catch(e) {
-    console.error("年報Excel出力エラー:", e);
-    showToast("年報Excel出力に失敗: " + (e.message || e), "error");
-  } finally {
-    btn.textContent = origText;
-    btn.disabled = false;
-  }
-}
-
 // ===== イベントハンドラ =====
 function bindEvents() {
   document.getElementById("targetMonth").addEventListener("change", async (e) => {
@@ -7120,7 +6988,6 @@ function bindEvents() {
     btnHistory.addEventListener("click", () => showSaveHistoryDialog());
   }
   document.getElementById("btnExcel").addEventListener("click", exportExcel);
-  document.getElementById("btnYearExcel").addEventListener("click", exportYearExcel);
 
   // ページ離脱警告
   window.addEventListener("beforeunload", (e) => {

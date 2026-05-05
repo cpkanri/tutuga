@@ -6,7 +6,6 @@ const ASSETS = [
   './',
   './index.html?v=' + APP_VERSION,
   './template.js?v=' + APP_VERSION,
-  './year_template.js?v=' + APP_VERSION,
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
