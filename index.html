@@ -2822,126 +2822,249 @@ function findLastInspector() {
   return "";
 }
 
-// ===== GAS 同期機能 =====
-// Phase 5a: 水質週報 (weeks) と 機械・電気設備 (mech/elec) を GAS 経由で Spreadsheet と同期
+// ===== GAS 同期機能 (Phase 5b) =====
+// 5 シート構成 (Code.gs Phase 3) に対応:
+//   日常水質_上段   per-week  → action: saveWaterUsage
+//   日常水質_下段   per-day   → action: saveWaterMeasure
+//   機器運転時間   per-week  → action: saveEquipment
+//   日常電気設備   per-day   → action: saveElectrical
+//   日常機械設備   per-day   → action: saveMechanical
+// 取得は getAllData (1 回で全シート分まとめて取得)。
 
-// サーバーへデータ送信（アップロード）
-async function uploadToServer() {
-  const month = tutugaData.targetMonth;
-  if (!month) throw new Error('対象年月が未設定です');
+// 曜日: localStorage では 1〜5 (1=月..5=金) / GAS payload では mon/tue/wed/thu/fri
+const TUTUGA_DAY_NUM_TO_KEY = { 1: "mon", 2: "tue", 3: "wed", 4: "thu", 5: "fri" };
+const TUTUGA_DAY_KEY_TO_NUM = { mon: 1, tue: 2, wed: 3, thu: 4, fri: 5 };
 
-  const results = { saved: 0 };
-
-  // 1. 水質週報データ（月内の全週）
-  // Phase 5a: 年報は除去済み。
-  // Phase 5b で saveAll の payload を新スキーマ (water/equip/elec/mech) に書き換える予定。
-  if (tutugaData.weeks && Object.keys(tutugaData.weeks).length > 0) {
-    const res = await fetchWithTimeout(GAS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(withTokenBody({
-        action: 'saveAll',
-        month: month,
-        startDate: tutugaData.startDate || '',
-        weeks: tutugaData.weeks
-      }))
-    }, 20000);
-    const data = await res.json();
-    if (data.error) throw new Error('水質週報: ' + data.error);
-    results.saved += (data.saved || 0);
-  }
-
-  return results;
+// 値が空 (null/undefined/'') かどうか。0 や false は有効値。
+function _tutugaIsEmptyValue(v) {
+  return v === null || v === undefined || v === '';
 }
 
-// 全タブ全データを一括でサーバーに送信（保存ボタンの新動作）
-// 各タブは Promise.allSettled で並列に POST して合計時間を短縮
+// 共通: 一度の POST を送って JSON を返す。401 / authRequired を一括処理。
+async function _tutugaPost(body, timeoutMs) {
+  const res = await fetchWithTimeout(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(withTokenBody(body))
+  }, timeoutMs || 30000);
+  const data = await res.json();
+  if (data && data.authRequired) {
+    handleAuthFailure();
+    throw new Error('認証が切れました');
+  }
+  if (data && data.error) {
+    throw new Error(data.error);
+  }
+  return data;
+}
+
+// tutugaData.weeks[w][d=1..5][key]  (per-day cells) を、
+// Code.gs saveWaterUsage が期待する per-week per-fieldKey per-dayKey 形式へ変換。
+//   { [week]: { [fieldKey]: { mon, tue, wed, thu, fri, nextMon } } }
+// nextMon は週 w+1 の月曜セル (tutugaData.weeks[w+1][1]) から拾う。
+function _tutugaBuildWaterUsagePayload() {
+  const usageKeys = (TUTUGA_FIELDS && TUTUGA_FIELDS.water)
+    ? TUTUGA_FIELDS.water.usage.concat(TUTUGA_FIELDS.water.usageFormExtras)
+    : [];
+  const out = {};
+  for (let w = 1; w <= 5; w++) {
+    const week = tutugaData.weeks && tutugaData.weeks[w];
+    if (!week) continue;
+    const weekOut = {};
+    let hasAny = false;
+    usageKeys.forEach(function(key) {
+      const dayObj = {};
+      let keyHas = false;
+      for (let d = 1; d <= 5; d++) {
+        const dk = TUTUGA_DAY_NUM_TO_KEY[d];
+        const cell = week[d];
+        const v = cell ? cell[key] : null;
+        if (!_tutugaIsEmptyValue(v)) {
+          dayObj[dk] = v;
+          keyHas = true;
+        }
+      }
+      // nextMon: 翌週月曜セル (Phase 5b では入力 UI なし → 同セルの値を流用)
+      const nextWeek = tutugaData.weeks && tutugaData.weeks[w + 1];
+      const nextMonCell = nextWeek ? nextWeek[1] : null;
+      const nextMonV = nextMonCell ? nextMonCell[key] : null;
+      if (!_tutugaIsEmptyValue(nextMonV)) {
+        dayObj.nextMon = nextMonV;
+        keyHas = true;
+      }
+      if (keyHas) {
+        weekOut[key] = dayObj;
+        hasAny = true;
+      }
+    });
+    if (hasAny) out[w] = weekOut;
+  }
+  return out;
+}
+
+// tutugaData.weeks[w][d=1..5][key] (per-day cells) → waterMeasure payload:
+//   { [week]: { mon: { fieldKey: value, ... }, tue: {...}, ... } }
+// 上段 (usage) と下段 (measure) は同じ cell に格納されているため、measure キーのみフィルタ。
+function _tutugaBuildWaterMeasurePayload() {
+  const measureKeys = (TUTUGA_FIELDS && TUTUGA_FIELDS.water)
+    ? TUTUGA_FIELDS.water.measureFormFull.slice()
+    : [];
+  const out = {};
+  for (let w = 1; w <= 5; w++) {
+    const week = tutugaData.weeks && tutugaData.weeks[w];
+    if (!week) continue;
+    const weekOut = {};
+    let weekHas = false;
+    for (let d = 1; d <= 5; d++) {
+      const dk = TUTUGA_DAY_NUM_TO_KEY[d];
+      const cell = week[d];
+      if (!cell) continue;
+      const dayOut = {};
+      let dayHas = false;
+      measureKeys.forEach(function(key) {
+        const v = cell[key];
+        if (!_tutugaIsEmptyValue(v)) {
+          dayOut[key] = v;
+          dayHas = true;
+        }
+      });
+      if (dayHas) {
+        weekOut[dk] = dayOut;
+        weekHas = true;
+      }
+    }
+    if (weekHas) out[w] = weekOut;
+  }
+  return out;
+}
+
+// tutugaData.equip[w][equipKey][dayKey] → そのまま saveEquipment が期待する形式
+function _tutugaBuildEquipmentPayload() {
+  const out = {};
+  const eq = tutugaData.equip || {};
+  Object.keys(eq).forEach(function(wRaw) {
+    const w = parseInt(wRaw, 10);
+    if (!w) return;
+    const week = eq[wRaw];
+    if (!week) return;
+    const weekOut = {};
+    let weekHas = false;
+    Object.keys(week).forEach(function(key) {
+      const perDay = week[key];
+      if (!perDay || typeof perDay !== 'object') return;
+      const dayOut = {};
+      let keyHas = false;
+      Object.keys(perDay).forEach(function(dk) {
+        const v = perDay[dk];
+        if (!_tutugaIsEmptyValue(v)) {
+          dayOut[dk] = v;
+          keyHas = true;
+        }
+      });
+      if (keyHas) { weekOut[key] = dayOut; weekHas = true; }
+    });
+    if (weekHas) out[w] = weekOut;
+  });
+  return out;
+}
+
+// tutugaData.{mech|elec}[w].days[dk][key] / tutugaData.{mech|elec}[w][d=1..5][key] →
+//   { [week]: { mon: {fieldKey: value, ...}, tue: {...}, ... } }
+function _tutugaBuildPerDayPayload(src) {
+  const out = {};
+  if (!src) return out;
+  Object.keys(src).forEach(function(wRaw) {
+    const w = parseInt(wRaw, 10);
+    if (!w) return;
+    const week = src[wRaw];
+    if (!week) return;
+    const weekOut = {};
+    let weekHas = false;
+    // 新形式: week.days[dk][key]
+    if (week.days && typeof week.days === 'object') {
+      Object.keys(week.days).forEach(function(dk) {
+        if (!(dk in TUTUGA_DAY_KEY_TO_NUM)) return;
+        const dayObj = week.days[dk];
+        if (!dayObj || typeof dayObj !== 'object') return;
+        const dayOut = {};
+        let dayHas = false;
+        Object.keys(dayObj).forEach(function(key) {
+          const v = dayObj[key];
+          if (!_tutugaIsEmptyValue(v)) { dayOut[key] = v; dayHas = true; }
+        });
+        if (dayHas) { weekOut[dk] = dayOut; weekHas = true; }
+      });
+    }
+    // 旧形式: week[d=1..5][key]
+    for (let d = 1; d <= 5; d++) {
+      const dk = TUTUGA_DAY_NUM_TO_KEY[d];
+      const dayObj = week[d];
+      if (!dayObj || typeof dayObj !== 'object') continue;
+      if (weekOut[dk]) continue; // 新形式が優先
+      const dayOut = {};
+      let dayHas = false;
+      Object.keys(dayObj).forEach(function(key) {
+        const v = dayObj[key];
+        if (!_tutugaIsEmptyValue(v)) { dayOut[key] = v; dayHas = true; }
+      });
+      if (dayHas) { weekOut[dk] = dayOut; weekHas = true; }
+    }
+    if (weekHas) out[w] = weekOut;
+  });
+  return out;
+}
+
+function _tutugaBuildElectricalPayload()  { return _tutugaBuildPerDayPayload(tutugaData.elec); }
+function _tutugaBuildMechanicalPayload()  { return _tutugaBuildPerDayPayload(tutugaData.mech); }
+
+// 全タブ全週を一括で送信。Promise.allSettled で並列実行し、エラーは集約して返す。
 async function uploadAllTabs() {
   const month = tutugaData.targetMonth;
   if (!month) throw new Error('対象年月が未設定です');
 
   const results = { saved: 0, scopes: [] };
-  const tasks = [];  // [{ scope, body, timeout }]
+  const tasks = [];
 
-  // 1. 水質週報（全週まとめて、実値があればタスク化）
-  if (tutugaData.weeks && Object.keys(tutugaData.weeks).length > 0) {
-    let hasWaterData = false;
-    for (const w in tutugaData.weeks) {
-      const weekData = tutugaData.weeks[w];
-      if (!weekData) continue;
-      for (const d in weekData) {
-        const day = weekData[d];
-        if (day && typeof day === 'object') {
-          for (const k in day) {
-            if (day[k] !== null && day[k] !== undefined && day[k] !== '') {
-              hasWaterData = true; break;
-            }
-          }
-          if (hasWaterData) break;
-        }
-      }
-      if (hasWaterData) break;
-    }
-    if (hasWaterData) {
-      tasks.push({
-        scope: '水質週報',
-        timeout: 30000,
-        body: withTokenBody({
-          action: 'saveAll',
-          month: month,
-          startDate: tutugaData.startDate || '',
-          weeks: tutugaData.weeks
-        })
-      });
-    }
+  const waterUsage = _tutugaBuildWaterUsagePayload();
+  if (Object.keys(waterUsage).length > 0) {
+    tasks.push({ scope: '水質上段', body: { action: 'saveWaterUsage', month: month, weeks: waterUsage } });
   }
 
-  // 2. 機械設備（全週まとめて1回POST、GAS側で週ごとに別行へsetValue）
-  const mechData = tutugaData.mech || {};
-  if (hasAnyEquipData(mechData)) {
+  const waterMeasure = _tutugaBuildWaterMeasurePayload();
+  Object.keys(waterMeasure).forEach(function(w) {
     tasks.push({
-      scope: '機械設備',
-      timeout: 30000,
-      body: withTokenBody({ action: 'saveMech', month: month, mech: mechData })
+      scope: '水質下段 第' + w + '週',
+      body: { action: 'saveWaterMeasure', month: month, week: parseInt(w, 10), days: waterMeasure[w] }
     });
+  });
+
+  const equipment = _tutugaBuildEquipmentPayload();
+  if (Object.keys(equipment).length > 0) {
+    tasks.push({ scope: '機器運転時間', body: { action: 'saveEquipment', month: month, equipment: equipment } });
   }
 
-  // 3. 電気設備（同上）
-  const elecData = tutugaData.elec || {};
-  if (hasAnyEquipData(elecData)) {
-    tasks.push({
-      scope: '電気設備',
-      timeout: 30000,
-      body: withTokenBody({ action: 'saveElec', month: month, elec: elecData })
-    });
+  const electrical = _tutugaBuildElectricalPayload();
+  if (Object.keys(electrical).length > 0) {
+    tasks.push({ scope: '電気設備', body: { action: 'saveElectrical', month: month, electrical: electrical } });
   }
 
-  // Phase 5a: 年報タスクは除去済み
-  // Phase 5b で機器運転時間 (equip) のタスク追加予定
+  const mechanical = _tutugaBuildMechanicalPayload();
+  if (Object.keys(mechanical).length > 0) {
+    tasks.push({ scope: '機械設備', body: { action: 'saveMechanical', month: month, mechanical: mechanical } });
+  }
 
   if (tasks.length === 0) return results;
 
-  // 並列実行（書き込み先シートが別なので競合しない）
   const settled = await Promise.allSettled(
-    tasks.map(t => fetchWithTimeout(GAS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(t.body)
-    }, t.timeout).then(res => res.json()))
+    tasks.map(function(t) { return _tutugaPost(t.body, 45000); })
   );
 
-  // 結果集計：成功は results に積み、失敗は errors に集約
   const errors = [];
-  settled.forEach((r, i) => {
+  settled.forEach(function(r, i) {
     const scope = tasks[i].scope;
     if (r.status === 'fulfilled') {
-      const data = r.value;
-      if (data && data.error) {
-        errors.push(scope + ': ' + data.error);
-      } else {
-        results.saved += (data && data.saved) || 0;
-        results.scopes.push(scope);
-      }
+      results.saved += (r.value && (r.value.savedCount || r.value.savedWeeks || 0)) || 0;
+      results.scopes.push(scope);
     } else {
       const reason = r.reason;
       const msg = (reason && reason.message) || String(reason) || 'unknown';
@@ -2950,160 +3073,259 @@ async function uploadAllTabs() {
   });
 
   if (errors.length > 0) {
-    // 部分成功も含めてユーザーに分かるようメッセージを構築
     const successText = results.scopes.length > 0
       ? '保存成功(' + results.scopes.join('・') + ') / '
       : '';
     const err = new Error(successText + '失敗(' + errors.join(', ') + ')');
-    err.partialResults = results;  // 呼び出し側が成功分を参照したい場合用
+    err.partialResults = results;
     throw err;
   }
-
   return results;
 }
 
-// サーバーへデータ送信（現タブ・現週のみの軽量版）
-// 保存ボタンから呼ばれる。戻り値の scope でトースト表記に使う
+// 現タブ + 現週 (per-day タブは現日も) のみ送信。
 async function uploadCurrentOnly() {
   const month = tutugaData.targetMonth;
   if (!month) throw new Error('対象年月が未設定です');
 
   const results = { saved: 0, scope: '' };
+  const week = currentWeek;
+  const dayKey = TUTUGA_DAY_NUM_TO_KEY[currentDay];
 
   if (currentSheet === 'water') {
-    results.scope = '第' + currentWeek + '週';
-    const weekData = (tutugaData.weeks || {})[currentWeek];
-    if (weekData && Object.keys(weekData).length > 0) {
-      const res = await fetchWithTimeout(GAS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(withTokenBody({
-          action: 'saveWeek',
-          month: month,
-          week: String(currentWeek),
-          startDate: tutugaData.startDate || '',
-          days: weekData
-        }))
-      }, 15000);
-      const data = await res.json();
-      if (data.error) throw new Error('水質週報: ' + data.error);
-      results.saved += (data.saved || 0);
-    }
-  } else if (currentSheet === 'mech') {
-    // 機械設備（週単位で5回POST、セル50,000文字制限対策）
-    results.scope = '機械設備 第' + currentMechWeek + '週';
-    const mechData = tutugaData.mech || {};
-    // B-5 修正: ensureMechElecStructure 後は常にキー5個あるため、実値の有無で判定
-    if (hasAnyEquipData(mechData)) {
-      for (const w of Object.keys(mechData)) {
-        const weekData = mechData[w];
-        if (!weekData || !hasAnyEquipDayData(weekData)) continue;
-        const res = await fetchWithTimeout(GAS_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(withTokenBody({
-            action: 'saveMech',
-            month: month,
-            week: w,
-            mechWeek: weekData
-          }))
-        }, 15000);
-        const data = await res.json();
-        if (data.error) throw new Error('機械設備 第' + w + '週: ' + data.error);
-        results.saved += (data.saved || 0);
+    if (currentWaterSub === 'usage') {
+      // 上段使用量: per-week (Code.gs saveWaterUsage は weeks={[w]: {...}} を取る)
+      results.scope = '水質上段 第' + week + '週';
+      const usagePayload = _tutugaBuildWaterUsagePayload();
+      const single = {};
+      if (usagePayload[week]) single[week] = usagePayload[week];
+      if (Object.keys(single).length > 0) {
+        const data = await _tutugaPost(
+          { action: 'saveWaterUsage', month: month, weeks: single },
+          30000
+        );
+        results.saved += (data.savedWeeks || 0);
       }
     } else {
-      // 実値がない場合はサーバー送信をスキップ（既存サーバーデータの上書き保護）
-      console.log('[B-5] mech: 実値なし、サーバー送信スキップ');
+      // 下段水質測定: per-day
+      results.scope = '水質下段 第' + week + '週 ' + dayKey;
+      const measurePayload = _tutugaBuildWaterMeasurePayload();
+      const weekDays = (measurePayload[week] && measurePayload[week][dayKey])
+        ? { [dayKey]: measurePayload[week][dayKey] }
+        : null;
+      if (weekDays) {
+        const data = await _tutugaPost(
+          { action: 'saveWaterMeasure', month: month, week: week, days: weekDays },
+          30000
+        );
+        results.saved += (data.savedCount || 0);
+      }
+    }
+  } else if (currentSheet === 'equip') {
+    // 機器運転時間: per-week
+    results.scope = '機器運転時間 第' + week + '週';
+    const eqPayload = _tutugaBuildEquipmentPayload();
+    const single = {};
+    if (eqPayload[week]) single[week] = eqPayload[week];
+    if (Object.keys(single).length > 0) {
+      const data = await _tutugaPost(
+        { action: 'saveEquipment', month: month, equipment: single },
+        30000
+      );
+      results.saved += (data.savedCount || 0);
     }
   } else if (currentSheet === 'elec') {
-    // 電気設備（週単位で5回POST、セル50,000文字制限対策）
-    results.scope = '電気設備 第' + currentElecWeek + '週';
-    const elecData = tutugaData.elec || {};
-    if (hasAnyEquipData(elecData)) {
-      for (const w of Object.keys(elecData)) {
-        const weekData = elecData[w];
-        if (!weekData || !hasAnyEquipDayData(weekData)) continue;
-        const res = await fetchWithTimeout(GAS_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(withTokenBody({
-            action: 'saveElec',
-            month: month,
-            week: w,
-            elecWeek: weekData
-          }))
-        }, 15000);
-        const data = await res.json();
-        if (data.error) throw new Error('電気設備 第' + w + '週: ' + data.error);
-        results.saved += (data.saved || 0);
-      }
-    } else {
-      console.log('[B-5] elec: 実値なし、サーバー送信スキップ');
+    // 電気設備: per-day (現週・現日のみ)
+    results.scope = '電気設備 第' + week + '週 ' + dayKey;
+    const elecPayload = _tutugaBuildElectricalPayload();
+    const single = {};
+    if (elecPayload[week] && elecPayload[week][dayKey]) {
+      single[week] = { [dayKey]: elecPayload[week][dayKey] };
+    }
+    if (Object.keys(single).length > 0) {
+      const data = await _tutugaPost(
+        { action: 'saveElectrical', month: month, electrical: single },
+        30000
+      );
+      results.saved += (data.savedCount || 0);
+    }
+  } else if (currentSheet === 'mech') {
+    // 機械設備: per-day (現週・現日のみ)
+    results.scope = '機械設備 第' + week + '週 ' + dayKey;
+    const mechPayload = _tutugaBuildMechanicalPayload();
+    const single = {};
+    if (mechPayload[week] && mechPayload[week][dayKey]) {
+      single[week] = { [dayKey]: mechPayload[week][dayKey] };
+    }
+    if (Object.keys(single).length > 0) {
+      const data = await _tutugaPost(
+        { action: 'saveMechanical', month: month, mechanical: single },
+        30000
+      );
+      results.saved += (data.savedCount || 0);
     }
   }
-
   return results;
 }
 
-// サーバーからデータ取得（ダウンロード）
+// 既存の wrapper は uploadAllTabs に委譲 (Phase 5a の単一 POST 動作はもう取らない)
+async function uploadToServer() {
+  return uploadAllTabs();
+}
+
+// サーバから getAllData を取得。
 async function downloadFromServer(month) {
   const url = withToken(GAS_URL + '?action=getAllData&month=' + encodeURIComponent(month));
-  const res = await fetchWithTimeout(url, { method: 'GET' }, 20000);
+  const res = await fetchWithTimeout(url, { method: 'GET' }, 30000);
   const data = await res.json();
-  if (data.authRequired) {
+  if (data && data.authRequired) {
     handleAuthFailure();
     throw new Error('認証が切れました');
   }
-  if (data.error) throw new Error(data.error);
+  if (data && data.error) throw new Error(data.error);
   return data;
 }
 
-// サーバーデータをローカルにマージ。何が更新されたかを返す
+// Code.gs getAllData の応答 ({waterUsage, waterMeasure, equipment, electrical, mechanical, holidays})
+// を tutugaData にマージする。tutugaData の構造保持のため上書きではなく per-cell マージ。
 function mergeServerData(serverData) {
-  const summary = { water_days: 0, mech: false, elec: false };
-  if (!serverData) return summary;
+  const summary = {
+    waterUsage_weeks: 0,
+    waterMeasure_days: 0,
+    equipment_weeks: 0,
+    electrical_days: 0,
+    mechanical_days: 0,
+    holidays: 0
+  };
+  if (!serverData || typeof serverData !== 'object') return summary;
 
-  // 水質週報: server.water → tutugaData.weeks
-  if (serverData.water) {
-    // B-6 追加: 第5週のサーバーデータをログ
-    if (serverData.water[5] || serverData.water["5"]) {
-      const w5 = serverData.water[5] || serverData.water["5"];
-      console.log('[同期] サーバーから第5週受信:', {
-        keys: Object.keys(w5),
-        mon: (w5[1] || w5["1"]) ? Object.keys(w5[1] || w5["1"]).filter(k => (w5[1] || w5["1"])[k] !== null && (w5[1] || w5["1"])[k] !== "").map(k => k + '=' + JSON.stringify((w5[1] || w5["1"])[k])).join(', ') : '(月曜データなし)',
-        tue: (w5[2] || w5["2"]) ? '(火曜データあり)' : '(火曜なし)'
+  // 水質: usage と measure は同じ tutugaData.weeks[w][d] セルにマージ
+  if (!tutugaData.weeks || typeof tutugaData.weeks !== 'object') tutugaData.weeks = {};
+
+  // waterUsage[w][fieldKey][dayKey] → tutugaData.weeks[w][d][fieldKey]
+  if (serverData.waterUsage && typeof serverData.waterUsage === 'object') {
+    Object.keys(serverData.waterUsage).forEach(function(wRaw) {
+      const w = parseInt(wRaw, 10);
+      if (!w || w < 1 || w > 5) return;
+      const weekIn = serverData.waterUsage[wRaw];
+      if (!weekIn) return;
+      if (!tutugaData.weeks[w]) tutugaData.weeks[w] = {};
+      Object.keys(weekIn).forEach(function(fieldKey) {
+        const perDay = weekIn[fieldKey];
+        if (!perDay || typeof perDay !== 'object') return;
+        Object.keys(perDay).forEach(function(dk) {
+          const dNum = TUTUGA_DAY_KEY_TO_NUM[dk];
+          if (!dNum) return; // nextMon は別週月曜から推定するため、ここでは無視
+          if (!tutugaData.weeks[w][dNum] || typeof tutugaData.weeks[w][dNum] !== 'object') {
+            tutugaData.weeks[w][dNum] = {};
+          }
+          tutugaData.weeks[w][dNum][fieldKey] = perDay[dk];
+        });
       });
-    } else {
-      console.log('[同期] サーバーから第5週データが返ってこない');
-    }
-    Object.keys(serverData.water).forEach(function(week) {
-      const weekNum = parseInt(week);
-      if (isNaN(weekNum) || weekNum < 1 || weekNum > 5) return;
-      if (!tutugaData.weeks[weekNum]) tutugaData.weeks[weekNum] = {};
-      Object.keys(serverData.water[week]).forEach(function(day) {
-        const dayNum = parseInt(day);
-        if (isNaN(dayNum) || dayNum < 1 || dayNum > 5) return;
-        tutugaData.weeks[weekNum][dayNum] = serverData.water[week][day];
-        summary.water_days++;
+      summary.waterUsage_weeks++;
+    });
+  }
+
+  // waterMeasure[w][dayKey][fieldKey] → tutugaData.weeks[w][d][fieldKey]
+  if (serverData.waterMeasure && typeof serverData.waterMeasure === 'object') {
+    Object.keys(serverData.waterMeasure).forEach(function(wRaw) {
+      const w = parseInt(wRaw, 10);
+      if (!w || w < 1 || w > 5) return;
+      const weekIn = serverData.waterMeasure[wRaw];
+      if (!weekIn) return;
+      if (!tutugaData.weeks[w]) tutugaData.weeks[w] = {};
+      Object.keys(weekIn).forEach(function(dk) {
+        const dNum = TUTUGA_DAY_KEY_TO_NUM[dk];
+        if (!dNum) return;
+        const dayIn = weekIn[dk];
+        if (!dayIn || typeof dayIn !== 'object') return;
+        if (!tutugaData.weeks[w][dNum] || typeof tutugaData.weeks[w][dNum] !== 'object') {
+          tutugaData.weeks[w][dNum] = {};
+        }
+        Object.keys(dayIn).forEach(function(fieldKey) {
+          tutugaData.weeks[w][dNum][fieldKey] = dayIn[fieldKey];
+        });
+        summary.waterMeasure_days++;
       });
     });
   }
-  // startDate
-  if (serverData.startDate) {
-    tutugaData.startDate = serverData.startDate;
+
+  // equipment[w][equipKey][dayKey] → tutugaData.equip[w][equipKey][dayKey]
+  if (serverData.equipment && typeof serverData.equipment === 'object') {
+    if (!tutugaData.equip || typeof tutugaData.equip !== 'object') tutugaData.equip = {};
+    Object.keys(serverData.equipment).forEach(function(wRaw) {
+      const w = parseInt(wRaw, 10);
+      if (!w || w < 1 || w > 5) return;
+      const weekIn = serverData.equipment[wRaw];
+      if (!weekIn) return;
+      if (!tutugaData.equip[w] || typeof tutugaData.equip[w] !== 'object') tutugaData.equip[w] = {};
+      Object.keys(weekIn).forEach(function(equipKey) {
+        const perDay = weekIn[equipKey];
+        if (!perDay || typeof perDay !== 'object') return;
+        if (!tutugaData.equip[w][equipKey] || typeof tutugaData.equip[w][equipKey] !== 'object') {
+          tutugaData.equip[w][equipKey] = {};
+        }
+        Object.keys(perDay).forEach(function(dk) {
+          tutugaData.equip[w][equipKey][dk] = perDay[dk];
+        });
+      });
+      summary.equipment_weeks++;
+    });
   }
-  // Phase 5a: 年報マージは除去済み
-  // B-4 追加: 機械設備データ
-  if (serverData.mech && Object.keys(serverData.mech).length > 0) {
-    tutugaData.mech = serverData.mech;
-    summary.mech = true;
+
+  // electrical[w][dayKey][fieldKey] → tutugaData.elec[w].days[dayKey][fieldKey]
+  if (serverData.electrical && typeof serverData.electrical === 'object') {
+    if (!tutugaData.elec || typeof tutugaData.elec !== 'object') tutugaData.elec = {};
+    Object.keys(serverData.electrical).forEach(function(wRaw) {
+      const w = parseInt(wRaw, 10);
+      if (!w || w < 1 || w > 5) return;
+      const weekIn = serverData.electrical[wRaw];
+      if (!weekIn) return;
+      if (!tutugaData.elec[w] || typeof tutugaData.elec[w] !== 'object') tutugaData.elec[w] = {};
+      if (!tutugaData.elec[w].days || typeof tutugaData.elec[w].days !== 'object') tutugaData.elec[w].days = {};
+      Object.keys(weekIn).forEach(function(dk) {
+        if (!(dk in TUTUGA_DAY_KEY_TO_NUM)) return;
+        const dayIn = weekIn[dk];
+        if (!dayIn || typeof dayIn !== 'object') return;
+        if (!tutugaData.elec[w].days[dk] || typeof tutugaData.elec[w].days[dk] !== 'object') {
+          tutugaData.elec[w].days[dk] = {};
+        }
+        Object.keys(dayIn).forEach(function(fieldKey) {
+          tutugaData.elec[w].days[dk][fieldKey] = dayIn[fieldKey];
+        });
+        summary.electrical_days++;
+      });
+    });
   }
-  // B-4 追加: 電気設備データ
-  if (serverData.elec && Object.keys(serverData.elec).length > 0) {
-    tutugaData.elec = serverData.elec;
-    summary.elec = true;
+
+  // mechanical[w][dayKey][fieldKey] → tutugaData.mech[w].days[dayKey][fieldKey]
+  if (serverData.mechanical && typeof serverData.mechanical === 'object') {
+    if (!tutugaData.mech || typeof tutugaData.mech !== 'object') tutugaData.mech = {};
+    Object.keys(serverData.mechanical).forEach(function(wRaw) {
+      const w = parseInt(wRaw, 10);
+      if (!w || w < 1 || w > 5) return;
+      const weekIn = serverData.mechanical[wRaw];
+      if (!weekIn) return;
+      if (!tutugaData.mech[w] || typeof tutugaData.mech[w] !== 'object') tutugaData.mech[w] = {};
+      if (!tutugaData.mech[w].days || typeof tutugaData.mech[w].days !== 'object') tutugaData.mech[w].days = {};
+      Object.keys(weekIn).forEach(function(dk) {
+        if (!(dk in TUTUGA_DAY_KEY_TO_NUM)) return;
+        const dayIn = weekIn[dk];
+        if (!dayIn || typeof dayIn !== 'object') return;
+        if (!tutugaData.mech[w].days[dk] || typeof tutugaData.mech[w].days[dk] !== 'object') {
+          tutugaData.mech[w].days[dk] = {};
+        }
+        Object.keys(dayIn).forEach(function(fieldKey) {
+          tutugaData.mech[w].days[dk][fieldKey] = dayIn[fieldKey];
+        });
+        summary.mechanical_days++;
+      });
+    });
   }
+
+  // 祝日 (情報のみ; UI 用 COMPANY_HOLIDAYS は別管理)
+  if (Array.isArray(serverData.holidays)) summary.holidays = serverData.holidays.length;
+
   return summary;
 }
 
@@ -3159,9 +3381,11 @@ async function syncAll() {
 
     // 取得内容の詳細トースト
     const parts = [];
-    if (summary.water_days > 0) parts.push('水質' + summary.water_days + '日分');
-    if (summary.mech) parts.push('機械設備');
-    if (summary.elec) parts.push('電気設備');
+    if (summary.waterUsage_weeks > 0)   parts.push('水質上段' + summary.waterUsage_weeks + '週');
+    if (summary.waterMeasure_days > 0)  parts.push('水質下段' + summary.waterMeasure_days + '日');
+    if (summary.equipment_weeks > 0)    parts.push('機器運転時間' + summary.equipment_weeks + '週');
+    if (summary.electrical_days > 0)    parts.push('電気設備' + summary.electrical_days + '日');
+    if (summary.mechanical_days > 0)    parts.push('機械設備' + summary.mechanical_days + '日');
     const detail = parts.length > 0 ? '（' + parts.join('、') + 'を更新）' : '（更新なし）';
     showToast('サーバーから最新データを取得しました' + detail);
 
@@ -4815,47 +5039,6 @@ function getBlockRowCount(ws) {
   return maxRow + 2;  // 余裕2行
 }
 
-function fillMechSheet(wb) {
-  const SOURCE_NAME = "日常機械設備";
-  const src = wb.getWorksheet(SOURCE_NAME);
-  if (!src) return;
-
-  // データのある週のみ処理（空の週はブロック追加しない）
-  const activeWeeks = [];
-  for (let w = 1; w <= 5; w++) {
-    const wd = tutugaData.mech[w];
-    if (!wd || !wd.days) continue;
-    const ws = monthWeeks[w - 1];
-    if (!ws) continue;
-    // 月内の有効日があるか判定
-    const hasMonthDays = [1,2,3,4,5].some(d => ws[d]);
-    if (!hasMonthDays) continue;
-    // B-6 修正: 実値がある週のみブロック追加
-    if (!hasAnyEquipDayData(wd)) continue;
-    activeWeeks.push(w);
-  }
-
-  if (activeWeeks.length === 0) {
-    // データなし: 元シートはそのまま残す
-    return;
-  }
-
-  // B-6 修正: 週ごとに別シートではなく、1シート内に縦に積む方式
-  // 結合セル領域(例: A173:I186)を跨がないよう、結合最終行+2 をブロック単位とする
-  const ROWS_PER_BLOCK = getBlockRowCount(src);
-
-  // 第1週は元テンプレ位置 (1〜ROWS_PER_BLOCK 行目) に書き込み
-  fillMechWeekBlock(src, activeWeeks[0], 0);
-
-  // 第2週以降は、1ブロック分の行を末尾にコピーしてから書き込み
-  for (let i = 1; i < activeWeeks.length; i++) {
-    const w = activeWeeks[i];
-    const offset = ROWS_PER_BLOCK * i;
-    copyBlockRows(src, 1, ROWS_PER_BLOCK, offset);
-    fillMechWeekBlock(src, w, offset);
-  }
-}
-
 // B-6 追加: 同一シート内で行範囲を別の位置にコピー
 // srcStartRow〜srcEndRow を destStartRow=srcStartRow+offset の位置にコピー
 function copyBlockRows(ws, srcStartRow, srcEndRow, offset) {
@@ -4915,437 +5098,69 @@ function shiftFormulaRows(formula, offset, srcStartRow, srcEndRow) {
   });
 }
 
-// 1週分のデータを機械設備シートの指定行オフセットに書き込む (B-6 修正)
-// データのある活性日のみ左詰めで書き込み（曜日固定の列割り当てをやめる）
-function fillMechWeekBlock(ws, weekIdx, rowOffset) {
-  const week = tutugaData.mech[weekIdx];
-  if (!week || !week.days) return;
+// ===== Phase 5b: Excel 出力 (template.js renderer に委譲) =====
+// 入力データ (tutugaData) は localStorage 起点の per-day 形式。
+// buildAllDataForExport で template.js / Code.gs と共通の正規化形に変換し、
+// window.buildTutugaWorkbook(allData) で ExcelJS.Workbook を生成 → ダウンロード。
 
-  const DAY_LABELS = { mon: "月", tue: "火", wed: "水", thu: "木", fri: "金" };
-  const COL_START = 5;  // E列
-  const COL_END = 9;    // I列
+async function buildAllDataForExport(month) {
+  // localStorage 上の入力途中データも反映するため、現フォームを確定保存
+  try { saveCurrentFormToData(); } catch (e) {}
 
-  // 月内かつ実値がある活性日のみ抽出（順序保持）
-  const activeDays = getActiveDays(week, weekIdx);
-  const inMonthActiveDays = activeDays.filter(dk => {
-    if (!getDateForDayKey(weekIdx, dk)) return false;
-    const day = week.days[dk] || {};
-    for (const k in day) {
-      const v = day[k];
-      if (v !== null && v !== undefined && v !== "") return true;
-    }
-    return false;
-  });
+  const allData = {
+    month: month || tutugaData.targetMonth || '',
+    waterUsage:   _tutugaBuildWaterUsagePayload(),
+    waterMeasure: _tutugaBuildWaterMeasurePayload(),
+    equipment:    _tutugaBuildEquipmentPayload(),
+    electrical:   _tutugaBuildElectricalPayload(),
+    mechanical:   _tutugaBuildMechanicalPayload(),
+    holidays:     []
+  };
 
-  // タイトル行 + ヘッダー
-  // (Row 1 タイトルはテンプレ「機械設備日常点検表（１/３）」のまま、追記しない)
-  // Row 2 = 点検者欄 (空のまま)、Row 3 = 点検内容欄 → ここに日付を書く
-  try {
-    // E〜I をクリア (Row 2: 点検者欄, Row 3: 日付+曜日)
-    for (let c = COL_START; c <= COL_END; c++) {
-      ws.getCell(2 + rowOffset, c).value = null;
-      ws.getCell(3 + rowOffset, c).value = null;
-    }
-
-    // Row 3 (点検内容欄) に「{日}日({曜})」形式の日付ヘッダーを左詰めで書き込み
-    inMonthActiveDays.forEach((dk, i) => {
-      const col = COL_START + i;
-      const date = getDateForDayKey(weekIdx, dk);
-      if (date) {
-        setCell(ws, 3 + rowOffset, col, `${date.getDate()}日(${DAY_LABELS[dk]})`);
-      }
-    });
-  } catch (e) {}
-
-  // データ書き込み（左詰め）
-  // Phase 5a: 旧機械セクション(行付き)は削除済み。Phase 5b で TUTUGA 行マッピングに書換予定。
-  [].forEach(sec => {
-    sec.fields.forEach(f => {
-      // E〜I を全てクリア (前週コピー値消去)
-      for (let c = COL_START; c <= COL_END; c++) {
-        ws.getCell(f.row + rowOffset, c).value = null;
-      }
-      // 入力日のみ左から順に書き込み
-      inMonthActiveDays.forEach((dk, i) => {
-        const col = COL_START + i;
-        const val = week.days[dk][f.key];
-        if (val !== null && val !== undefined && val !== "") {
-          setCell(ws, f.row + rowOffset, col, val);
+  // ローカルで保持している COMPANY_HOLIDAYS から該当月を抜粋
+  if (typeof COMPANY_HOLIDAYS === 'object' && COMPANY_HOLIDAYS) {
+    const ym = allData.month;
+    if (ym && /^\d{4}-\d{2}$/.test(ym)) {
+      Object.keys(COMPANY_HOLIDAYS).forEach(function(d) {
+        if (d.indexOf(ym) === 0) {
+          allData.holidays.push({ date: d, name: COMPANY_HOLIDAYS[d] || '' });
         }
       });
-    });
-  });
-}
-
-// 1週分のデータを機械設備シートに書き込む (旧API、互換性維持)
-function fillMechWeekSheet(ws, weekIdx) {
-  fillMechWeekBlock(ws, weekIdx, 0);
-}
-
-// =====================================================
-// B-3 追加: 電気設備シートの埋め込み
-// =====================================================
-function fillElecSheet(wb) {
-  const SOURCE_NAME = "日常電気設備";
-  const src = wb.getWorksheet(SOURCE_NAME);
-  if (!src) return;
-
-  const activeWeeks = [];
-  for (let w = 1; w <= 5; w++) {
-    const wd = tutugaData.elec[w];
-    if (!wd || !wd.days) continue;
-    const ws = monthWeeks[w - 1];
-    if (!ws) continue;
-    const hasMonthDays = [1,2,3,4,5].some(d => ws[d]);
-    if (!hasMonthDays) continue;
-    // B-6 修正: 実値がある週のみブロック追加
-    if (!hasAnyEquipDayData(wd)) continue;
-    activeWeeks.push(w);
+    }
   }
 
-  if (activeWeeks.length === 0) return;
-
-  // B-6 修正: 1シート内に縦に積む方式（結合セル領域考慮）
-  const ROWS_PER_BLOCK = getBlockRowCount(src);
-
-  // 第1週の Q列用: 前月最終日データ
-  let prevDayDataForWeek = getPrevMonthLastElecData();
-
-  // 第1週: 元位置に書き込み (offset=0)
-  fillElecWeekBlock(src, activeWeeks[0], prevDayDataForWeek, 0);
-  prevDayDataForWeek = getLastActiveDayElecData(activeWeeks[0]);
-
-  // 第2週以降: ブロックコピー + 書き込み
-  for (let i = 1; i < activeWeeks.length; i++) {
-    const w = activeWeeks[i];
-    const offset = ROWS_PER_BLOCK * i;
-    copyBlockRows(src, 1, ROWS_PER_BLOCK, offset);
-    fillElecWeekBlock(src, w, prevDayDataForWeek, offset);
-    prevDayDataForWeek = getLastActiveDayElecData(w);
-  }
-}
-
-// 指定週の最終活性日（祝日振替後）の電気データを返す
-function getLastActiveDayElecData(weekIdx) {
-  const week = tutugaData.elec[weekIdx];
-  if (!week || !week.days) return null;
-  const activeDays = getActiveDays(week, weekIdx);
-  if (activeDays.length === 0) return null;
-  const lastDk = activeDays[activeDays.length - 1];
-  return week.days[lastDk] || null;
-}
-
-// 1週分のデータを電気設備シートの指定行オフセットに書き込む (B-6 修正)
-// データのある活性日のみ左詰めで書き込み（曜日固定の列割り当てをやめる）
-function fillElecWeekBlock(ws, weekIdx, prevDayData, rowOffset) {
-  const week = tutugaData.elec[weekIdx];
-  if (!week || !week.days) return;
-
-  const DAY_LABELS = { mon: "月", tue: "火", wed: "水", thu: "木", fri: "金" };
-  const COL_START = 7;   // G列
-  const COL_END = 11;    // K列
-  const PREV_COL = 17;   // Q列
-
-  // 月内かつ実値がある活性日のみ抽出（順序保持）
-  const activeDays = getActiveDays(week, weekIdx);
-  const inMonthActiveDays = activeDays.filter(dk => {
-    if (!getDateForDayKey(weekIdx, dk)) return false;
-    const day = week.days[dk] || {};
-    for (const k in day) {
-      const v = day[k];
-      if (v !== null && v !== undefined && v !== "") return true;
-    }
-    return false;
-  });
-
-  // タイトル + 日付 + 前週末ヘッダー
-  // (Row 1 タイトルはテンプレ「電気設備日常点検（１/３）」のまま、追記しない)
-  try {
-    // G〜K, Q をクリア
-    for (let c = COL_START; c <= COL_END; c++) {
-      ws.getCell(2 + rowOffset, c).value = null;
-    }
-    ws.getCell(2 + rowOffset, PREV_COL).value = null;
-
-    // 左詰めで「{日}日({曜})」形式の日付ヘッダーを書き込み
-    inMonthActiveDays.forEach((dk, i) => {
-      const col = COL_START + i;
-      const date = getDateForDayKey(weekIdx, dk);
-      if (date) {
-        setCell(ws, 2 + rowOffset, col, `${date.getDate()}日(${DAY_LABELS[dk]})`);
-      }
-    });
-    // Q列 ヘッダー
-    setCell(ws, 2 + rowOffset, PREV_COL, "前週末");
-  } catch (e) {}
-
-  // データ書き込み（左詰め）
-  // Phase 5a: 旧電気セクション(行付き)は削除済み。Phase 5b で TUTUGA 行マッピングに書換予定。
-  [].forEach(sec => {
-    sec.fields.forEach(f => {
-      // G〜K と Q をクリア
-      for (let c = COL_START; c <= COL_END; c++) {
-        ws.getCell(f.row + rowOffset, c).value = null;
-      }
-      ws.getCell(f.row + rowOffset, PREV_COL).value = null;
-
-      // 左詰めで書き込み
-      inMonthActiveDays.forEach((dk, i) => {
-        const col = COL_START + i;
-        const val = week.days[dk][f.key];
-        if (val !== null && val !== undefined && val !== "") {
-          setCell(ws, f.row + rowOffset, col, val);
-        }
-      });
-
-      // Q列: 前週末データ
-      if (prevDayData && prevDayData[f.key] !== undefined && prevDayData[f.key] !== null && prevDayData[f.key] !== "") {
-        setCell(ws, f.row + rowOffset, PREV_COL, prevDayData[f.key]);
-      }
-    });
-  });
-
-  // B-6 追加: テンプレ数式行を「使用列数N」に応じて再構築
-  // 各週のデータ列数が違っても正しく動作するように、毎週リビルド
-  rebuildElecFormulas(ws, rowOffset, inMonthActiveDays.length);
-}
-
-// 電気設備 数式行の再構築（左詰め N 列分）
-function rebuildElecFormulas(ws, rowOffset, N) {
-  const COL_START = 7;
-  const COL_END = 11;
-  const colLetter = c => String.fromCharCode(64 + c);
-
-  // 差分計算パターン: G_r=G_(dataRow)-Q_(dataRow), H_r=H_(dataRow)-G_(dataRow), ...
-  const DIFF_FORMULAS = [
-    { formulaRow: 9,  dataRow: 8  },
-    { formulaRow: 22, dataRow: 21 },
-    { formulaRow: 24, dataRow: 23 },
-    { formulaRow: 26, dataRow: 25 },
-    { formulaRow: 28, dataRow: 27 },
-  ];
-  DIFF_FORMULAS.forEach(def => {
-    const r = def.formulaRow + rowOffset;
-    const dr = def.dataRow + rowOffset;
-    // G〜K クリア
-    for (let c = COL_START; c <= COL_END; c++) {
-      ws.getCell(r, c).value = null;
-    }
-    // N列分の数式を構築（B-6: IFERROR でラップして「-」混入時の #VALUE! を回避）
-    for (let i = 0; i < N; i++) {
-      const col = COL_START + i;
-      const colL = colLetter(col);
-      const baseFormula = (i === 0)
-        ? `${colL}${dr}-Q${dr}`
-        : `${colL}${dr}-${colLetter(col - 1)}${dr}`;
-      ws.getCell(r, col).value = { formula: `IFERROR(${baseFormula},"")` };
-    }
-  });
-
-  // 同列参照パターン: G37=G2, G71=G36, G72=G2
-  const SAME_COL_FORMULAS = [
-    { formulaRow: 37, refRow: 2  },
-    { formulaRow: 71, refRow: 36 },
-    { formulaRow: 72, refRow: 2  },
-  ];
-  SAME_COL_FORMULAS.forEach(def => {
-    const r = def.formulaRow + rowOffset;
-    const refR = def.refRow + rowOffset;
-    for (let c = COL_START; c <= COL_END; c++) {
-      ws.getCell(r, c).value = null;
-    }
-    for (let i = 0; i < N; i++) {
-      const col = COL_START + i;
-      const colL = colLetter(col);
-      ws.getCell(r, col).value = { formula: `${colL}${refR}` };
-    }
-  });
-}
-
-// 旧API (互換性維持)
-function fillElecWeekSheet(ws, weekIdx, prevDayData) {
-  fillElecWeekBlock(ws, weekIdx, prevDayData, 0);
+  return allData;
 }
 
 async function exportExcel() {
   const btn = document.getElementById("btnExcel");
-  const origText = btn.textContent;
-  btn.textContent = "生成中...";
-  btn.disabled = true;
+  const origText = btn ? btn.textContent : "";
+  if (btn) { btn.textContent = "生成中..."; btn.disabled = true; }
 
   try {
-    saveCurrentFormToData();
-
     if (typeof ExcelJS === "undefined") {
-      btn.textContent = "ライブラリ読込中...";
+      if (btn) btn.textContent = "ライブラリ読込中...";
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js");
     }
-    btn.textContent = "テンプレート処理中...";
+    if (typeof window.buildTutugaWorkbook !== "function") {
+      throw new Error("template.js (buildTutugaWorkbook) が読み込まれていません");
+    }
 
-    const templateBytes = Uint8Array.from(atob(EXCEL_TEMPLATE_B64), c => c.charCodeAt(0));
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(templateBytes.buffer);
-
-    const ym = tutugaData.targetMonth || document.getElementById("targetMonth").value;
+    const ym = tutugaData.targetMonth || (document.getElementById("targetMonth") && document.getElementById("targetMonth").value);
     if (!ym) { showToast("対象年月を設定してください", "error"); return; }
-    const [yyyy, mm] = ym.split("-").map(Number);
 
-    // 水質週報へ書込
-    fillWaterWeeklySheet(wb);
-    // 水質管理報告、新 (月報)
-    fillQualityReportSheet(wb, yyyy, mm);
-    // 運転管理月報
-    fillOperationReportSheet(wb, yyyy, mm);
-    // B-3 追加: 機械設備（5週分シートコピー）
-    try { fillMechSheet(wb); } catch (e) { console.error("fillMechSheet:", e); }
-    // B-3 追加: 電気設備（5週分シートコピー）
-    try { fillElecSheet(wb); } catch (e) { console.error("fillElecSheet:", e); }
+    if (btn) btn.textContent = "データ集計中...";
+    const allData = await buildAllDataForExport(ym);
 
-    // シート順調整
-    try {
-      // B-3: 機械・電気は週ごとに複製されるため、動的に名前を取得
-      const mechSheets = [];
-      const elecSheets = [];
-      if (wb._worksheets) {
-        wb._worksheets.forEach(s => {
-          if (!s) return;
-          if (typeof s.name === "string") {
-            if (s.name.startsWith("日常機械設備")) mechSheets.push(s.name);
-            else if (s.name.startsWith("日常電気設備")) elecSheets.push(s.name);
-          }
-        });
-      }
-      // 第N週順にソート（数値で比較）
-      const weekNumOf = (name) => {
-        const m = name.match(/第(\d+)週/);
-        return m ? Number(m[1]) : 99;
-      };
-      mechSheets.sort((a, b) => weekNumOf(a) - weekNumOf(b));
-      elecSheets.sort((a, b) => weekNumOf(a) - weekNumOf(b));
-
-      const orderedNames = [
-        "鏡",
-        "故障一覧表",
-        "水質週報",
-        "水質管理報告、新",
-        "運転管理月報",
-        ...mechSheets,
-        ...elecSheets,
-        "月例機械設備",
-        "月例電気設備"
-      ];
-      orderedNames.forEach((n, idx) => {
-        const s = wb.getWorksheet(n);
-        if (s) s.orderNo = idx;
-      });
-      const newWorksheets = [undefined];
-      const usedSheets = [];
-      orderedNames.forEach(n => {
-        const s = wb.getWorksheet(n);
-        if (s) { newWorksheets.push(s); usedSheets.push(s); }
-      });
-      if (wb._worksheets) {
-        wb._worksheets.forEach((s, idx2) => {
-          if (s && usedSheets.indexOf(s) < 0) {
-            s.orderNo = orderedNames.length + idx2;
-            newWorksheets.push(s);
-          }
-        });
-      }
-      wb._worksheets = newWorksheets;
-    } catch (e) { console.warn("シート順調整失敗:", e); }
-
-    // B-6 追加: 全シートのウィンドウ枠固定とタブ色を解除
-    try {
-      wb.eachSheet(ws => {
-        // ウィンドウ枠固定の解除
-        if (ws.views && ws.views.length > 0) {
-          ws.views = ws.views.map(v => {
-            const newView = Object.assign({}, v);
-            delete newView.state;
-            delete newView.xSplit;
-            delete newView.ySplit;
-            delete newView.topLeftCell;
-            delete newView.activeCell;
-            return newView;
-          });
-        }
-        // タブ色の解除
-        if (ws.properties) ws.properties.tabColor = undefined;
-      });
-    } catch (e) { console.warn("views/tabColor クリア失敗:", e); }
-
-    // B-6 追加: シート名のリネーム (出力時のみ)
-    try {
-      const renameMap = {
-        "水質管理報告、新": "水質管理報告"
-      };
-      Object.keys(renameMap).forEach(oldName => {
-        const ws = wb.getWorksheet(oldName);
-        if (ws) ws.name = renameMap[oldName];
-      });
-    } catch (e) { console.warn("シート名リネーム失敗:", e); }
-
-    // B-6 追加: 電気設備テンプレに残った余分な K1=0 をクリア（各週ブロック分）
-    try {
-      const wsElec = wb.getWorksheet("日常電気設備");
-      if (wsElec) {
-        const ROWS_PER_BLOCK_ELEC = 106;
-        for (let week = 0; week < 5; week++) {
-          const r = 1 + week * ROWS_PER_BLOCK_ELEC;
-          // B〜Q列 (2〜17)、A列タイトルは残す
-          for (let c = 2; c <= 17; c++) {
-            const cell = wsElec.getCell(r, c);
-            // 数値の余分な値（0など）をクリア。タイトル等の文字列は残す
-            if (cell.value !== null && cell.value !== undefined && typeof cell.value !== "string") {
-              cell.value = null;
-            }
-          }
-        }
-
-        // B-6 追加: ピンポイントで長文セルに shrinkToFit を適用（はみ出し防止）
-        // F10「手動/自動」、F20「買電/自家発」: 単独セルなので shrinkToFit が機能する
-        // B12「変圧器」: 結合セルで shrinkToFit が効きにくいので、shrinkToFit + フォントサイズ縮小
-        const fitTargets = [
-          { row: 10, col: 6, shrink: true,  smallFont: false }, // F: 手動/自動
-          { row: 12, col: 2, shrink: true,  smallFont: true  }, // B: 変圧器（結合）
-          { row: 20, col: 6, shrink: true,  smallFont: false }, // F: 買電/自家発
-          { row: 57, col: 4, shrink: true,  smallFont: true  }, // D: No.1余剰汚泥ポンプ流量計読み（結合）
-          { row: 58, col: 4, shrink: true,  smallFont: true  }, // D: No.2余剰汚泥ポンプ流量計読み（結合）
-        ];
-        for (let week = 0; week < 5; week++) {
-          const offset = week * ROWS_PER_BLOCK_ELEC;
-          fitTargets.forEach(t => {
-            const cell = wsElec.getCell(t.row + offset, t.col);
-            if (t.shrink) {
-              const align = cell.alignment || {};
-              if (!align.wrapText) {
-                cell.alignment = Object.assign({}, align, { shrinkToFit: true });
-              }
-            }
-            if (t.smallFont) {
-              const font = cell.font || {};
-              cell.font = Object.assign({}, font, { size: 9 });
-            }
-          });
-
-          // B-6 追加: E41:E54 の右罫線を削除（F列との境界線を消す）
-          for (let r = 41 + offset; r <= 54 + offset; r++) {
-            const cell = wsElec.getCell(r, 5);  // E列
-            const border = Object.assign({}, cell.border || {});
-            delete border.right;
-            cell.border = border;
-          }
-        }
-      }
-    } catch (e) { console.warn("電気設備 ピンポイント調整失敗:", e); }
+    if (btn) btn.textContent = "テンプレート処理中...";
+    const wb = await window.buildTutugaWorkbook(allData);
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "筒賀水質管理センター_" + ym + ".xlsx";
+    a.download = "筒賀_" + ym + ".xlsx";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -5356,8 +5171,7 @@ async function exportExcel() {
     console.error("Excel出力エラー:", e);
     showToast("Excel出力に失敗: " + (e.message || e), "error");
   } finally {
-    btn.textContent = origText;
-    btn.disabled = false;
+    if (btn) { btn.textContent = origText; btn.disabled = false; }
   }
 }
 
@@ -5435,220 +5249,6 @@ function findNextWeekCheckAnchor(weekIdx, fieldId) {
     }
   }
   return { value: null, date: null };
-}
-
-// ===== 水質週報シート 書込 =====
-// Phase 5a: 旧 yoshiwa の上段/下段定義は削除済み。
-// Phase 5b で TUTUGA の WATER_BLOCK_ROW + USAGE_KEYS / MEASURE_FIELDS にマッピングし直す。
-// 当面はビルドが通るだけのスタブ（空配列＋未定義の weekBase）として残す。
-function fillWaterWeeklySheet(wb) {
-  const ws = wb.getWorksheet("水質週報");
-  if (!ws) return;
-  const upper = { fields: [] };
-  const lower = { fields: [] };
-
-  for (let w = 1; w <= 5; w++) {
-    const weekBase = (typeof WATER_BLOCK_ROW !== "undefined" && WATER_BLOCK_ROW[w]) ? WATER_BLOCK_ROW[w] : 1;
-    const weekSlots = monthWeeks[w - 1];
-    const weekData = tutugaData.weeks[w];
-
-    // ==================== 上段: 積算セクション (D-I 6列) ====================
-    // 各積算フィールドごとに:
-    //   1. D-H列 (月〜金): dayData を書き込み（祝日は allow_on_holiday に従う）
-    //   2. I列: Week N+1 の最初の点検日の値をコピー (Week 5 は空欄)
-    //   3. J列: cumulative なら差分計算値、average なら AVERAGE関数維持（アプリで数値書込）
-    upper.fields.forEach(f => {
-      if (f.skip_weekly || f.row_offset === undefined) return;
-      const row = weekBase + f.row_offset;
-
-      // ---- D-H列の書込 (月〜金) ----
-      // 日付ラベル (row_offset=2) は従来通り toExcelDate
-      if (f.id === "weekly_date") {
-        // 日付ヘッダーは D=月, E=火, F=水, G=木, H=金, I=翌週月
-        // B-6: 祝日でも日付ラベルは表示する（実データは入らない）
-        if (weekSlots) {
-          const tmStr = (tutugaData.targetMonth || "").split("-")[1];
-          const tm = parseInt(tmStr) || 0;
-          for (let d = 1; d <= 5; d++) {
-            const col = 3 + d; // d=1→D(4), d=2→E(5), ..., d=5→H(8)
-            const headerDate = getReportHeaderDate(weekSlots, d, tm);
-            if (headerDate) {
-              const cell = ws.getCell(row, col);
-              cell.value = toExcelDate(headerDate);
-            } else {
-              ws.getCell(row, col).value = null;
-            }
-          }
-          // I列: 翌週最初の点検日の日付
-          let iDate = null;
-          if (w < 5) {
-            const nextSlots = monthWeeks[w];
-            if (nextSlots) {
-              for (let d = 1; d <= 5; d++) {
-                if (nextSlots[d]) { iDate = nextSlots[d]; break; }
-              }
-            }
-          }
-          if (iDate) {
-            const cell = ws.getCell(row, 9);
-            cell.value = toExcelDate(iDate);
-            // 書式はテンプレート側のものを尊重
-          } else {
-            ws.getCell(row, 9).value = null;
-          }
-        }
-        return; // 日付ラベル処理終わり
-      }
-
-      // 天候 (row_offset=3) は D-H列のみ
-      if (f.id === "weather") {
-        if (weekSlots && weekData) {
-          for (let d = 1; d <= 5; d++) {
-            const col = 3 + d; // D-H
-            const dateObj = weekSlots[d];
-            const dayData = weekData[d];
-            if (dateObj && dayData) {
-              setCell(ws, row, col, dayData[f.id]);
-            } else {
-              ws.getCell(row, col).value = null;
-            }
-          }
-          ws.getCell(row, 9).value = null; // I列は天候なし
-        }
-        return;
-      }
-
-      // データフィールド (cumulative/average)
-      const values = [null, null, null, null, null, null]; // D,E,F,G,H,I
-      const dates  = [null, null, null, null, null, null];
-
-      // D-H (d=1..5) の値を収集
-      if (weekSlots && weekData) {
-        for (let d = 1; d <= 5; d++) {
-          const col = 3 + d; // D=4, E=5, F=6, G=7, H=8
-          const dateObj = weekSlots[d];
-          const dayData = weekData[d];
-          if (!dateObj) {
-            // 月外・休業日: allow_on_holiday=true なら dayData があれば書く
-            if (f.allow_on_holiday && dayData && dayData[f.id] !== undefined && dayData[f.id] !== null && dayData[f.id] !== "") {
-              const v = dayData[f.id];
-              setCell(ws, row, col, v);
-              values[d - 1] = v;
-              // 日付は weekSlots が null なので補完: 月第N週のd曜日を計算
-              // （簡易: allow_on_holidayなら値だけ書き、日数計算は別経路）
-            } else {
-              ws.getCell(row, col).value = null;
-            }
-            continue;
-          }
-          // 月内・平日
-          if (dayData && dayData[f.id] !== undefined && dayData[f.id] !== null && dayData[f.id] !== "") {
-            const v = dayData[f.id];
-            setCell(ws, row, col, v);
-            values[d - 1] = v;
-            dates[d - 1] = dateObj;
-          } else {
-            ws.getCell(row, col).value = null;
-          }
-        }
-      }
-
-      // I列: Week N+1 の最初の点検日の値
-      if (w < 5) {
-        const anchor = findNextWeekCheckAnchor(w - 1, f.id);
-        if (anchor.value !== null && anchor.date !== null) {
-          setCell(ws, row, 9, anchor.value);
-          values[5] = anchor.value;
-          dates[5] = anchor.date;
-        } else {
-          ws.getCell(row, 9).value = null;
-        }
-      } else {
-        ws.getCell(row, 9).value = null; // Week 5 は翌月なので I列空
-      }
-
-      // J列 (平均/計算結果)
-      if (f.cumulative) {
-        // 差分方式: アプリ側で計算して数値書込
-        const avg = calcDifferentialAverage(values, dates);
-        if (avg !== null && isFinite(avg)) {
-          const cell = ws.getCell(row, 10);
-          cell.value = Math.round(avg * 100) / 100; // 小数2桁に丸め
-        } else {
-          ws.getCell(row, 10).value = null;
-        }
-      }
-      // average 方式 (日放流流量): テンプレートの =IFERROR(AVERAGE(D:I),"") に任せる
-      // ただしもしテンプレートに関数がない場合に備えて数値計算も書き込む
-      if (f.average) {
-        const avg = calcSimpleAverage(values);
-        if (avg !== null && isFinite(avg)) {
-          const cell = ws.getCell(row, 10);
-          cell.value = Math.round(avg * 100) / 100;
-        }
-        // 関数がテンプレートにある場合はそれを優先したいが、上書きする形でOK
-        // （両方とも同じ値になるため）
-      }
-    });
-
-    // ==================== 下段: 測定セクション (E-I 5列、従来通り) ====================
-    // B-6: 祝日でも measure_date (日付ヘッダー) は表示する。実データは祝日では書かない。
-    {
-      const tmStr = (tutugaData.targetMonth || "").split("-")[1];
-      const tm = parseInt(tmStr) || 0;
-      for (let d = 1; d <= 5; d++) {
-        const dateObj = weekSlots ? weekSlots[d] : null;
-        const headerDate = getReportHeaderDate(weekSlots, d, tm);
-        const col = 4 + d; // d=1→5(E), d=5→9(I)
-
-        if (!headerDate) {
-          // 月外日 → 該当列をクリア
-          clearWeeklySheetLowerDayColumn(ws, weekBase, d);
-          continue;
-        }
-
-        // 祝日（dateObj=null だが headerDate あり）の場合、データ部はクリアしてから measure_date のみ書く
-        if (!dateObj) {
-          clearWeeklySheetLowerDayColumn(ws, weekBase, d);
-        }
-
-        // measure_date を書き込み（祝日でも）
-        const measureDateField = lower.fields.find(ff => ff.id === "measure_date");
-        if (measureDateField && measureDateField.row_offset !== undefined) {
-          const mdRow = weekBase + measureDateField.row_offset;
-          const cell = ws.getCell(mdRow, col);
-          cell.value = toExcelDate(headerDate);
-          cell.numFmt = cell.numFmt || 'm/d';
-        }
-
-        if (!dateObj) continue; // 祝日: 実データは書かない
-        if (!weekData) continue;
-        const dayData = weekData[d];
-        if (!dayData) continue;
-
-        lower.fields.forEach(f => {
-          if (f.skip_weekly || f.row_offset === undefined) return;
-          if (f.id === "measure_date") return; // 既に書き込み済み
-          const row = weekBase + f.row_offset;
-          setCell(ws, row, col, dayData[f.id]);
-        });
-      }
-    }
-
-    // ==================== 上段の月外・休業日クリア（D-I列、固定値含む） ====================
-    // 注: 外観・臭気はテンプレート側で固定値が入っているため、月外日はクリア必要
-    // ただし、上段フィールドは非fixed値なので、上記ループで既に null を書いている
-    // → 追加処理は不要だが、もし weekSlots 自体が null (月構成上ありえない) の場合の保険
-  }
-}
-
-// 下段(測定セクション)のみ1日分クリア (row_offset 16-49)
-function clearWeeklySheetLowerDayColumn(ws, weekBase, d) {
-  const col = 4 + d;
-  for (let rowOffset = 16; rowOffset <= 49; rowOffset++) {
-    const cell = ws.getCell(weekBase + rowOffset, col);
-    cell.value = null;
-  }
 }
 
 // B-6: 週内の特定の曜日(d=1..5, 月..金)の日付を返す。祝日・休業日でも月内なら日付を返す。
