@@ -308,6 +308,31 @@ var TUTUGA_MECH3_ROW_W1 = {
 // レンダリング・ヘルパ
 // =====================================================================
 
+// Phase 8 修正02 Step3: 水質シート用 第1週月曜（前月跨ぎあり、土日なら翌週月曜）
+// 現状の Excel テンプレートはセル位置（行・列）固定で日付ヘッダ自体は静的なため、
+// 出力時に日付値を再計算して書き込むことは不要。本ヘルパは将来日付ヘッダの動的書込が
+// 必要になった場合の参照実装として用意する。
+function _tutugaGetWaterFirstMonday(monthStr) {
+  var parts = String(monthStr || '').split('-').map(Number);
+  var y = parts[0], m = parts[1];
+  var firstDay = new Date(y, m - 1, 1);
+  var dow = firstDay.getDay();
+  if (dow === 0) return new Date(y, m - 1, 2);
+  if (dow === 6) return new Date(y, m - 1, 3);
+  return new Date(y, m - 1, 1 - (dow - 1));
+}
+
+// Phase 8 修正02 Step3: 電気/機械/機器運転時間シート用 第1週開始日（土日除外、前月跨ぎなし）
+function _tutugaGetElecMechFirstStart(monthStr) {
+  var parts = String(monthStr || '').split('-').map(Number);
+  var y = parts[0], m = parts[1];
+  var firstDay = new Date(y, m - 1, 1);
+  var dow = firstDay.getDay();
+  if (dow === 0) return new Date(y, m - 1, 2);
+  if (dow === 6) return new Date(y, m - 1, 3);
+  return firstDay;
+}
+
 // 値が空 (null/undefined/'') かどうか。0 や false は有効値。
 function _tutugaIsEmpty(v) {
   return v === null || v === undefined || v === '';

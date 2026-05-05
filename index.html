@@ -2589,10 +2589,121 @@ function updateUndoButton() {
   }
 }
 
-// 対象月のカレンダー週構造。getMonthWeeks() で再計算される。
+// 対象月のカレンダー週構造。recomputeMonthWeeks() で再計算される。
 // 形式: [ {1:Date|null, 2:Date|null, 3:Date|null, 4:Date|null, 5:Date|null}, ... ]
 // 各週の 1-5 は月〜金の曜日インデックス。月外の日は null。
+// Phase 8 修正02 Step3: 水質と 電気/機械/機器運転時間で第1週の決め方が異なるため、
+//   currentSheet に応じて recomputeMonthWeeks() が異なるモデルを生成する。
 let monthWeeks = [];
+
+// ===== Phase 8 修正02 Step3: 第1週決定ロジック =====
+// 水質タブ: 第1週月曜は前月跨ぎあり（当月1日が月-金ならその週の月曜、土日なら翌週月曜）
+function getWaterFirstWeekMonday(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const firstDay = new Date(y, m - 1, 1);
+  const dow = firstDay.getDay(); // 0=日, 1=月..6=土
+  if (dow === 0) return new Date(y, m - 1, 2);   // 日 → 翌日（月）
+  if (dow === 6) return new Date(y, m - 1, 3);   // 土 → 2日後（月）
+  return new Date(y, m - 1, 1 - (dow - 1));      // 月-金: 当月1日を含む週の月曜
+}
+
+// 水質: 第N週の各曜日の日付 {mon, tue, wed, thu, fri}
+function getWaterWeekDates(monthStr, week) {
+  const firstMonday = getWaterFirstWeekMonday(monthStr);
+  const start = new Date(firstMonday);
+  start.setDate(firstMonday.getDate() + (week - 1) * 7);
+  const offset = (n) => { const d = new Date(start); d.setDate(start.getDate() + n); return d; };
+  return { mon: offset(0), tue: offset(1), wed: offset(2), thu: offset(3), fri: offset(4) };
+}
+
+// 水質: その第N週・曜日が当月の対象範囲か（第5週は金曜が翌月以降なら対象外）
+function isWaterDayActive(monthStr, week, dayKey) {
+  const dates = getWaterWeekDates(monthStr, week);
+  const target = dates[dayKey];
+  if (!target) return false;
+  if (week === 5) {
+    const [y, m] = monthStr.split('-').map(Number);
+    const nextMonthStart = new Date(y, m, 1);
+    if (dates.fri >= nextMonthStart) return false;
+  }
+  return true;
+}
+
+// 電気/機械/機器運転時間タブ: 第1週開始日（土日除外、前月跨ぎなし）
+function getElecMechFirstWeekStart(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const firstDay = new Date(y, m - 1, 1);
+  const dow = firstDay.getDay();
+  if (dow === 0) return new Date(y, m - 1, 2); // 日 → 翌日（月）
+  if (dow === 6) return new Date(y, m - 1, 3); // 土 → 2日後（月）
+  return firstDay;                             // 月-金 はそのまま
+}
+
+// 電気/機械/機器運転時間: 第N週の各曜日の日付（月内に収まらなければ null）
+// 第1週: 開始曜日から金曜まで（前は埋めない、月内のみ）
+// 第2週以降: 第1週金曜の翌月曜を起点に月-金、月内のみ
+function getElecMechWeekDates(monthStr, week) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const firstStart = getElecMechFirstWeekStart(monthStr);
+  const dayKeys = ['mon','tue','wed','thu','fri'];
+  const result = { mon: null, tue: null, wed: null, thu: null, fri: null };
+  if (week === 1) {
+    const startDow = firstStart.getDay(); // 1=月..5=金
+    for (let i = startDow - 1; i < 5; i++) {
+      const d = new Date(firstStart);
+      d.setDate(firstStart.getDate() + (i - (startDow - 1)));
+      if (d.getMonth() === m - 1) result[dayKeys[i]] = d;
+    }
+  } else {
+    // 第1週金曜 = firstStart + (5 - firstStart.getDay()) 日
+    const week1Friday = new Date(firstStart);
+    week1Friday.setDate(firstStart.getDate() + (5 - firstStart.getDay()));
+    // 第2週月曜 = 第1週金曜 + 3、第3週は + 10、...
+    const weekStart = new Date(week1Friday);
+    weekStart.setDate(week1Friday.getDate() + 3 + (week - 2) * 7);
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      if (d.getMonth() === m - 1) result[dayKeys[i]] = d;
+    }
+  }
+  return result;
+}
+
+function isElecMechDayActive(monthStr, week, dayKey) {
+  const dates = getElecMechWeekDates(monthStr, week);
+  return !!dates[dayKey];
+}
+
+// 水質用 monthWeeks 互換配列（{1:Mon..5:Fri}, week 1〜5 固定）
+function recomputeWaterMonthWeeks(monthStr) {
+  const result = [];
+  for (let w = 1; w <= 5; w++) {
+    const dates = getWaterWeekDates(monthStr, w);
+    const slot = { 1: null, 2: null, 3: null, 4: null, 5: null };
+    [1,2,3,4,5].forEach(d => {
+      const dk = ['mon','tue','wed','thu','fri'][d - 1];
+      slot[d] = isWaterDayActive(monthStr, w, dk) ? dates[dk] : null;
+    });
+    result.push(slot);
+  }
+  return result;
+}
+
+// 電気/機械/機器運転時間用 monthWeeks 互換配列
+function recomputeElecMechMonthWeeks(monthStr) {
+  const result = [];
+  for (let w = 1; w <= 5; w++) {
+    const dates = getElecMechWeekDates(monthStr, w);
+    const slot = { 1: null, 2: null, 3: null, 4: null, 5: null };
+    [1,2,3,4,5].forEach(d => {
+      const dk = ['mon','tue','wed','thu','fri'][d - 1];
+      slot[d] = dates[dk]; // null ならそのまま
+    });
+    result.push(slot);
+  }
+  return result;
+}
 
 // ===== ユーティリティ =====
 function currentYearMonth() {
@@ -2814,8 +2925,13 @@ function getMonthWeeks(year, month) {
 function recomputeMonthWeeks() {
   const ym = tutugaData.targetMonth;
   if (!ym || !/^\d{4}-\d{2}$/.test(ym)) { monthWeeks = []; return; }
-  const [y, m] = ym.split("-").map(Number);
-  monthWeeks = getMonthWeeks(y, m);
+  // Phase 8 修正02 Step3: currentSheet ごとに 第1週決定ロジックが異なる
+  if (currentSheet === 'water') {
+    monthWeeks = recomputeWaterMonthWeeks(ym);
+  } else {
+    // equip / elec / mech は同じ月内完結ロジック
+    monthWeeks = recomputeElecMechMonthWeeks(ym);
+  }
 }
 
 function getDateForDay(weekIdx, dayIdx) {
