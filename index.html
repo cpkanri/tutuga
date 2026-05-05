@@ -1338,6 +1338,18 @@ const STORAGE_MISC_KEYS_SET = new Set([
   "tutuga_last_inspector", "tutuga_current_month", STORAGE_SETTINGS_KEY
 ]);
 
+// cross-app shared storage 5MB を全 5 アプリ + 旧 2 prefix で共有管理。
+// QuotaExceededError 時は ALL_APP_PREFIXES 全てを横断で最古月を検索→削除して再試行。
+const ALL_APP_PREFIXES = [
+  "yoshiwa_",  // 吉和
+  "kamitono_", // 上殿
+  "shiwagi_",  // 柴木
+  "kake_",     // 加計
+  "tutuga_",   // 筒賀
+  "uedono_",   // 上殿 旧プレフィックス（移行残置）
+  "shibaki_"   // 柴木 旧プレフィックス（移行残置）
+];
+
 function byteLength(str) {
   if (str == null) return 0;
   // UTF-16 character count × 2 は近似としてOKだが、実際は 1キーあたり key+value の合計。
@@ -1354,24 +1366,33 @@ function getAllYoshiwaKeys() {
   return keys;
 }
 
+// cross-app: 全 7 prefix 配下のキーを列挙
+function getAllCrossAppKeys() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k) continue;
+    if (ALL_APP_PREFIXES.some(p => k.startsWith(p))) keys.push(k);
+  }
+  return keys;
+}
+
 function parseMonthKey(key) {
-  // "tutuga_weekly_2026-04" → { type: "weekly", ym: "2026-04" }
-  // safeSetItem の容量超過時最古削除ロジックで使用
-  const types = [
-    { prefix: "tutuga_weekly_",      type: "weekly",     label: "水質週報" }
-  ];
-  for (const t of types) {
-    if (key.startsWith(t.prefix)) {
-      const ym = key.substring(t.prefix.length);
-      if (/^\d{4}-\d{2}$/.test(ym)) return { type: t.type, label: t.label, ym, key };
-    }
+  // "tutuga_weekly_2026-04" → { app: "tutuga_", type: "weekly", ym: "2026-04" }
+  // safeSetItem の容量超過時最古削除ロジックで使用。
+  // ALL_APP_PREFIXES 全てに対し汎用的に末尾 YYYY-MM をマッチさせる。
+  for (const prefix of ALL_APP_PREFIXES) {
+    if (!key.startsWith(prefix)) continue;
+    const m = key.substring(prefix.length).match(/^([a-z_]+)_(\d{4}-\d{2})$/);
+    if (m) return { app: prefix, type: m[1], ym: m[2], key };
   }
   return null;
 }
 
-// safeSetItem の容量超過時最古削除ロジックで使用
+// safeSetItem の容量超過時最古削除ロジックで使用。
+// ALL_APP_PREFIXES 全 7 prefix を横断走査するため getAllCrossAppKeys を使う。
 function computeStorageUsage() {
-  const keys = getAllYoshiwaKeys();
+  const keys = getAllCrossAppKeys();
   let totalBytes = 0;
   const byMonth = {};
   keys.forEach(k => {
@@ -1388,6 +1409,19 @@ function computeStorageUsage() {
   const months = Object.values(byMonth).sort((a, b) => a.ym.localeCompare(b.ym));
   const pct = Math.min(100, Math.round((totalBytes / STORAGE_QUOTA_BYTES) * 1000) / 10);
   return { totalBytes, pct, months, quotaBytes: STORAGE_QUOTA_BYTES };
+}
+
+// cross-app: ALL_APP_PREFIXES 横断で最古月のキー群を全削除し、削除件数を返す。
+// safeSetItem の QuotaExceededError リトライから呼ばれる。
+function pruneOldestMonth(excludeYm) {
+  const usage = computeStorageUsage();
+  const victims = excludeYm
+    ? usage.months.filter(m => m.ym !== excludeYm)
+    : usage.months;
+  if (victims.length === 0) return 0;
+  const oldest = victims[0];
+  oldest.items.forEach(it => localStorage.removeItem(it.key));
+  return oldest.items.length;
 }
 
 // QuotaExceededError 検知
@@ -1414,11 +1448,8 @@ function safeSetItem(key, value) {
     } catch(e) {
       if (!isQuotaError(e)) return { ok: false, error: e, attempt };
       const currentYm = tutugaData.targetMonth || "";
-      const usage = computeStorageUsage();
-      const victims = usage.months.filter(m => m.ym !== currentYm);
-      if (victims.length === 0) return { ok: false, error: e, attempt, quotaExhausted: true };
-      const oldest = victims[0];
-      oldest.items.forEach(it => localStorage.removeItem(it.key));
+      const removed = pruneOldestMonth(currentYm);
+      if (removed === 0) return { ok: false, error: e, attempt, quotaExhausted: true };
     }
   }
   return { ok: false, error: new Error("retry limit"), attempt: 4, quotaExhausted: true };
@@ -4130,69 +4161,10 @@ function getDateForDayKey(weekIdx, dayKey) {
   return getDateForDay(weekIdx, dayIdx);
 }
 
-// 列ヘッダーの日付・祝日マーク・振替先マークを更新
-// kind: "mech" or "elec" — kind ごとに holidaySubstitutes が違う
-function updateColDateHeaders(tableId, weekIdx, kind) {
-  const week = (kind === "mech") ? tutugaData.mech[weekIdx]
-              : (kind === "elec") ? tutugaData.elec[weekIdx] : null;
-  const holidays = getHolidayDaysInWeek(weekIdx);
-  const subs = (week && week.holidaySubstitutes) || {};
-  // B-5 修正: 複数の祝日が同じ振替先に集約されるケースに対応するため配列化
-  // { "thu": ["mon", "wed"] } = 木曜が月曜と水曜両方の振替先
-  const subTargets = {};
-  Object.keys(subs).forEach(orig => {
-    const target = subs[orig];
-    if (target) {
-      if (!subTargets[target]) subTargets[target] = [];
-      subTargets[target].push(orig);
-    }
-  });
-
-  // 日付表示
-  document.querySelectorAll("#" + tableId + " thead .col-date").forEach(span => {
-    const dk = span.dataset.hday;
-    const d = getDateForDayKey(weekIdx, dk);
-    span.textContent = d ? (d.getMonth() + 1) + "/" + d.getDate() : "";
-  });
-
-  // 祝日 / 振替先マーカー (動的に「×N日分」表示)
-  document.querySelectorAll("#" + tableId + " thead .col-marker").forEach(span => {
-    const dk = span.dataset.mday;
-    let label = "";
-    let cls = "col-marker";
-    if (holidays.indexOf(dk) >= 0) {
-      label = "祝日";
-      cls += " marker-holiday";
-    } else if (subTargets[dk] && subTargets[dk].length > 0) {
-      // B-5 修正: 集約数 + 1 (= 自分の元の点検 + N回分の振替)
-      const count = subTargets[dk].length + 1;
-      label = "×" + count + "日分";
-      cls += " marker-substitute";
-    }
-    span.textContent = label;
-    span.className = cls;
-  });
-}
-
 // パターンに応じて活性日を判定
 function isDayActiveForPattern(pattern, dayKey) {
   const p = SCHEDULE_PATTERNS[pattern];
   return p ? p.days.indexOf(dayKey) >= 0 : false;
-}
-
-// 列ヘッダー HTML を生成（曜日ラベル + 日付スパン + 祝日/振替マーク + 前日コピーボタン）
-function buildEquipTableHead() {
-  const dayLabels = ["月", "火", "水", "木", "金"];
-  let html = '<th>機器/項目</th>';
-  EQUIP_DAYS.forEach((dk, i) => {
-    html += `<th class="col-${dk}">${dayLabels[i]}<br>` +
-            `<span class="col-date" data-hday="${dk}"></span>` +
-            `<span class="col-marker" data-mday="${dk}"></span>` +
-            `<button type="button" class="col-copy-btn" data-copyday="${dk}" title="前日のデータをコピー">↩前日</button>` +
-            `<button type="button" class="col-clear-btn" data-clearday="${dk}" title="この曜日のデータをクリア">×クリア</button>` +
-            `</th>`;
-  });
-  return html;
 }
 
 // 機器セクション + 項目行のHTML生成（共通）
@@ -4476,233 +4448,6 @@ function getActiveDays(weekData, weekIdx) {
   return result;
 }
 
-// 振替先候補（パターンの活性日でない曜日のうち、月内かつ祝日でない日）
-function getSubstituteCandidates(weekIdx, weekData) {
-  if (!weekData) return [];
-  const pattern = weekData.pattern || "mwf";
-  const baseDays = (SCHEDULE_PATTERNS[pattern] && SCHEDULE_PATTERNS[pattern].days) || [];
-  const holidays = getHolidayDaysInWeek(weekIdx);
-  return EQUIP_DAYS.filter(dk =>
-    baseDays.indexOf(dk) < 0 &&     // 元のパターンに含まれない
-    holidays.indexOf(dk) < 0 &&     // 祝日でない
-    !!getDateForDayKey(weekIdx, dk) // 月内に存在する
-  );
-}
-
-// 振替先選択UIの描画
-// kind: "mech" | "elec"
-function renderHolidaySubstituteUI(kind, weekIdx) {
-  const containerId = (kind === "mech") ? "mechSubstitute" : "elecSubstitute";
-  let container = document.getElementById(containerId);
-  // 親要素は週タブのすぐ下のパターンセレクタの後あたり
-  if (!container) {
-    const panel = document.getElementById((kind === "mech") ? "mechPanel" : "elecPanel");
-    if (!panel) return;
-    container = document.createElement("div");
-    container.id = containerId;
-    container.className = "holiday-substitute-wrap";
-    // パターンセレクタの後に挿入
-    const partTabs = document.getElementById((kind === "mech") ? "mechPartTabs" : "elecPartTabs");
-    if (partTabs) {
-      panel.insertBefore(container, partTabs);
-    } else {
-      panel.appendChild(container);
-    }
-  }
-
-  const week = (kind === "mech") ? tutugaData.mech[weekIdx] : tutugaData.elec[weekIdx];
-  if (!week) { container.innerHTML = ""; return; }
-
-  const baseDays = (SCHEDULE_PATTERNS[week.pattern] && SCHEDULE_PATTERNS[week.pattern].days) || [];
-  const holidays = getHolidayDaysInWeek(weekIdx);
-  const targetHolidays = baseDays.filter(dk => holidays.indexOf(dk) >= 0);
-
-  if (targetHolidays.length === 0) {
-    container.innerHTML = "";
-    return;
-  }
-
-  const candidates = getSubstituteCandidates(weekIdx, week);
-  if (!week.holidaySubstitutes) week.holidaySubstitutes = {};
-
-  const dayLabel = { mon: "月", tue: "火", wed: "水", thu: "木", fri: "金" };
-  const subs = week.holidaySubstitutes;
-
-  let html = '<div class="holiday-substitute"><div class="hs-title">⚠️ 祝日振替先を選択</div>';
-  targetHolidays.forEach(hday => {
-    const date = getDateForDayKey(weekIdx, hday);
-    const dateStr = date ? `${date.getMonth()+1}/${date.getDate()}` : "";
-    html += `<div class="hs-row"><span class="hs-from">${dayLabel[hday]}(${dateStr}) 祝日 →</span>`;
-    if (candidates.length === 0) {
-      html += `<span class="hs-warn">振替候補なし</span>`;
-    } else {
-      html += `<select class="hs-select" data-kind="${kind}" data-from="${hday}">`;
-      html += `<option value="">未選択</option>`;
-      candidates.forEach(c => {
-        const cd = getDateForDayKey(weekIdx, c);
-        const cs = cd ? `${cd.getMonth()+1}/${cd.getDate()}` : "";
-        const sel = (subs[hday] === c) ? " selected" : "";
-        html += `<option value="${c}"${sel}>${dayLabel[c]}(${cs})</option>`;
-      });
-      html += `</select>`;
-    }
-    html += `</div>`;
-  });
-  html += '</div>';
-  container.innerHTML = html;
-
-  // change イベント
-  container.querySelectorAll(".hs-select").forEach(sel => {
-    sel.addEventListener("change", () => {
-      const kind = sel.dataset.kind;
-      const from = sel.dataset.from;
-      const w = (kind === "mech") ? tutugaData.mech[weekIdx] : tutugaData.elec[weekIdx];
-      if (!w) return;
-      if (!w.holidaySubstitutes) w.holidaySubstitutes = {};
-      if (sel.value) {
-        w.holidaySubstitutes[from] = sel.value;
-      } else {
-        delete w.holidaySubstitutes[from];
-      }
-      markDirty();
-      // 再描画
-      if (kind === "mech") renderMechPanel(); else renderElecPanel();
-    });
-  });
-}
-
-// 入力イベントを再バインド（テーブル再描画後に呼ぶ）
-// =====================================================
-// B-6 追加: 前日データコピー機能
-// =====================================================
-
-// targetDk より前の活性日でデータがある日を探す（同週→前週→さらに前へ遡る）
-function findPrevDayWithData(kind, weekIdx, targetDk) {
-  for (let w = weekIdx; w >= 1; w--) {
-    const week = (kind === "mech") ? tutugaData.mech[w] : tutugaData.elec[w];
-    if (!week || !week.days) continue;
-
-    const activeDays = getActiveDays(week, w);
-    let candidates;
-    if (w === weekIdx) {
-      // 当週: targetDk より前の活性日のみ（逆順）
-      const idx = activeDays.indexOf(targetDk);
-      candidates = (idx > 0) ? activeDays.slice(0, idx).reverse() : [];
-    } else {
-      // 前週以前: 全活性日を逆順
-      candidates = activeDays.slice().reverse();
-    }
-
-    for (const dk of candidates) {
-      const day = week.days[dk] || {};
-      // 月内日付かチェック
-      const date = getDateForDayKey(w, dk);
-      if (!date) continue;
-      // 実値があるかチェック
-      let hasData = false;
-      for (const k in day) {
-        if (day[k] !== null && day[k] !== undefined && day[k] !== "") {
-          hasData = true;
-          break;
-        }
-      }
-      if (hasData) {
-        return { weekIdx: w, dayKey: dk, date: date, data: day };
-      }
-    }
-  }
-  return null;
-}
-
-// targetDk に前日データをコピー
-function copyPrevDayData(kind, targetDk) {
-  const weekIdx = (kind === "mech") ? currentMechWeek : currentElecWeek;
-  const week = (kind === "mech") ? tutugaData.mech[weekIdx] : tutugaData.elec[weekIdx];
-  if (!week || !week.days || !week.days[targetDk]) {
-    showToast("コピー先の日が無効です", "error");
-    return;
-  }
-
-  // targetDk が活性日かチェック
-  const activeDays = getActiveDays(week, weekIdx);
-  if (activeDays.indexOf(targetDk) < 0) {
-    showToast("非活性日にはコピーできません", "error");
-    return;
-  }
-  const date = getDateForDayKey(weekIdx, targetDk);
-  if (!date) {
-    showToast("月外の日にはコピーできません", "error");
-    return;
-  }
-
-  const result = findPrevDayWithData(kind, weekIdx, targetDk);
-  if (!result) {
-    showToast("コピー元のデータが見つかりません", "error");
-    return;
-  }
-
-  // データをディープコピー
-  Object.keys(result.data).forEach(key => {
-    week.days[targetDk][key] = result.data[key];
-  });
-
-  // フォーム再描画
-  if (kind === "mech") {
-    loadMechDataToForm();
-  } else {
-    loadElecDataToForm();
-  }
-  markDirty();
-
-  // 通知
-  const srcDate = result.date;
-  const srcMd = `${srcDate.getMonth()+1}/${srcDate.getDate()}`;
-  const dstMd = `${date.getMonth()+1}/${date.getDate()}`;
-  showToast(`${srcMd} のデータを ${dstMd} にコピーしました`);
-}
-
-// 指定曜日のデータをクリア（機械/電気共通）
-function clearDayData(kind, targetDk) {
-  const weekIdx = (kind === "mech") ? currentMechWeek : currentElecWeek;
-  const week = (kind === "mech") ? tutugaData.mech[weekIdx] : tutugaData.elec[weekIdx];
-  if (!week || !week.days || !week.days[targetDk]) {
-    showToast("対象の日が無効です", "error");
-    return;
-  }
-  const activeDays = getActiveDays(week, weekIdx);
-  if (activeDays.indexOf(targetDk) < 0) {
-    showToast("非活性日のデータはありません");
-    return;
-  }
-  const date = getDateForDayKey(weekIdx, targetDk);
-  if (!date) {
-    showToast("月外の日です");
-    return;
-  }
-  const day = week.days[targetDk];
-  let hasData = false;
-  for (const k in day) {
-    if (day[k] !== null && day[k] !== undefined && day[k] !== "") { hasData = true; break; }
-  }
-  if (!hasData) {
-    showToast("データはありません");
-    return;
-  }
-  const dayLabelMap = { mon: "月", tue: "火", wed: "水", thu: "木", fri: "金" };
-  const kindLabel = (kind === "mech") ? "機械設備" : "電気設備";
-  const dkLabel = dayLabelMap[targetDk] || targetDk;
-  if (!confirm(kindLabel + " 第" + weekIdx + "週 " + dkLabel + "曜日のデータをクリアしますか？")) return;
-  pushUndo("クリア（" + kind + " 第" + weekIdx + "週 " + targetDk + "）");
-  Object.keys(day).forEach(k => { day[k] = null; });
-  if (kind === "mech") {
-    loadMechDataToForm();
-  } else {
-    loadElecDataToForm();
-  }
-  markDirty();
-  showToast(kindLabel + " 第" + weekIdx + "週 " + dkLabel + "曜日をクリアしました");
-}
-
 // イベント委譲: mechFormWrap / elecFormWrap 内の input/toggle-btn 変更を捕捉
 function bindEquipInputEvents(kind) {
   const dataAttr = (kind === "mech") ? "mfield" : "efield";
@@ -4828,40 +4573,6 @@ function loadScript(src) {
   });
 }
 
-function setCell(ws, row, col, val) {
-  if (val === null || val === undefined || val === "") return;
-  if (typeof val === "number" && !isFinite(val)) return; // NaN / ±Infinity はExcelが不正XMLとして扱う
-  const cell = ws.getCell(row, col);
-  const num = Number(val);
-  if (!isNaN(num) && val !== "" && typeof val !== "boolean") {
-    cell.value = num;
-    // B-6 修正: 入力文字列の小数点以下桁数を numFmt に反映
-    // "13.0" → "0.0", "0.123" → "0.000", "13" → General
-    if (typeof val === "string" && val.indexOf(".") >= 0) {
-      const parts = val.split(".");
-      const decimals = (parts[1] || "").length;
-      if (decimals > 0) {
-        cell.numFmt = "0." + "0".repeat(decimals);
-      } else {
-        cell.numFmt = "General";
-      }
-    } else {
-      // 整数 or 数値型はテンプレ書式を General に
-      const currentFmt = cell.numFmt || '';
-      if (currentFmt.includes('0.') || currentFmt === '0.000' || currentFmt === '0.00') {
-        cell.numFmt = 'General';
-      }
-    }
-  } else {
-    cell.value = val;
-  }
-}
-
-function toExcelDate(date) {
-  if (!date) return null;
-  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0));
-}
-
 // =====================================================
 // B-3 追加: シート複製ヘルパー
 // 機械・電気設備テンプレを5週分シートコピーするため
@@ -4956,48 +4667,6 @@ function duplicateWorksheet(wb, sourceName, newName) {
   return newWs;
 }
 
-// =====================================================
-// B-3 追加: 前月最終日の電気設備データ取得（Q列用）
-// localStorage の前月分 tutugaData を読み、最終週の最終活性日のデータを返す
-// =====================================================
-function getPrevMonthLastElecData() {
-  const ym = tutugaData.targetMonth;
-  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return null;
-  const [y, m] = ym.split("-").map(Number);
-  // 前月のYYYY-MM算出
-  const prevDate = new Date(y, m - 2, 1);  // m-2: month is 0-indexed, prev month
-  const prevYm = prevDate.getFullYear() + "-" + String(prevDate.getMonth() + 1).padStart(2, "0");
-  const prevKey = "tutuga_weekly_" + prevYm;
-
-  let prevData = null;
-  try {
-    const raw = localStorage.getItem(prevKey);
-    if (raw) prevData = JSON.parse(raw);
-  } catch (e) { return null; }
-
-  if (!prevData || !prevData.elec) return null;
-
-  // 前月の最終週から逆引き
-  for (let w = 5; w >= 1; w--) {
-    const wd = prevData.elec[w];
-    if (!wd || !wd.days) continue;
-    // 最終活性日を探す
-    const reverseDays = [...EQUIP_DAYS].reverse();
-    for (const dk of reverseDays) {
-      const day = wd.days[dk];
-      if (!day) continue;
-      // いずれかのフィールドに値があれば最終日とみなす
-      const hasValue = Object.values(day).some(v => v !== null && v !== undefined && v !== "");
-      if (hasValue) return day;
-    }
-  }
-  return null;
-}
-
-// =====================================================
-// B-3 追加: 機械設備シートの埋め込み
-// 元の「日常機械設備」シートを 第1〜第5週 にコピー、各週のデータを書き込み
-// =====================================================
 // B-6 追加: 令和形式の年月文字列に変換 ("2026-04" → "令和8年4月")
 function formatEraMonth(targetMonth) {
   if (!targetMonth || !/^\d{4}-\d{2}$/.test(targetMonth)) return "";
@@ -5020,82 +4689,6 @@ function getWeekDateRangeStr(weekIdx) {
     return `${first.getMonth()+1}/${first.getDate()}`;
   }
   return `${first.getMonth()+1}/${first.getDate()}-${last.getMonth()+1}/${last.getDate()}`;
-}
-
-// B-6 追加: 1ブロックの行数を計算（結合セル領域の最終行を考慮）
-// テンプレ A173:I186 のような大きな結合領域がブロック境界を跨ぐと
-// 縦結合時に結合内の最後の値が全体に反映されてしまうため、結合終端を含めた行数を返す
-function getBlockRowCount(ws) {
-  let maxRow = ws.actualRowCount;
-  if (ws.model && ws.model.merges) {
-    ws.model.merges.forEach(merge => {
-      const m = merge.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-      if (m) {
-        const r2 = parseInt(m[4]);
-        if (r2 > maxRow) maxRow = r2;
-      }
-    });
-  }
-  return maxRow + 2;  // 余裕2行
-}
-
-// B-6 追加: 同一シート内で行範囲を別の位置にコピー
-// srcStartRow〜srcEndRow を destStartRow=srcStartRow+offset の位置にコピー
-function copyBlockRows(ws, srcStartRow, srcEndRow, offset) {
-  if (offset <= 0) return;
-  // セル値・スタイル・数式
-  for (let r = srcStartRow; r <= srcEndRow; r++) {
-    const srcRow = ws.getRow(r);
-    const destRow = ws.getRow(r + offset);
-    if (srcRow.height) destRow.height = srcRow.height;
-    srcRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
-      const newCell = destRow.getCell(colNum);
-      if (cell.formula) {
-        // 数式の行参照を offset 分シフト
-        const newFormula = shiftFormulaRows(cell.formula, offset, srcStartRow, srcEndRow);
-        newCell.value = { formula: newFormula };
-      } else if (cell.value !== null && cell.value !== undefined) {
-        newCell.value = cell.value;
-      }
-      if (cell.style) {
-        try { newCell.style = JSON.parse(JSON.stringify(cell.style)); } catch (e) {
-          newCell.font = cell.font; newCell.alignment = cell.alignment;
-          newCell.border = cell.border; newCell.fill = cell.fill;
-          newCell.numFmt = cell.numFmt;
-        }
-      }
-      if (cell.numFmt) newCell.numFmt = cell.numFmt;
-    });
-  }
-
-  // 結合セルもオフセットして追加
-  if (ws.model && ws.model.merges) {
-    const newMerges = [];
-    ws.model.merges.forEach(merge => {
-      const m = merge.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-      if (m) {
-        const r1 = parseInt(m[2]);
-        const r2 = parseInt(m[4]);
-        if (r1 >= srcStartRow && r2 <= srcEndRow) {
-          newMerges.push(`${m[1]}${r1+offset}:${m[3]}${r2+offset}`);
-        }
-      }
-    });
-    newMerges.forEach(m => {
-      try { ws.mergeCells(m); } catch (e) {}
-    });
-  }
-}
-
-// 数式の行参照をシフト (簡易版: A1〜ZZ999 形式の参照を offset 分加算)
-function shiftFormulaRows(formula, offset, srcStartRow, srcEndRow) {
-  return formula.replace(/(\$?[A-Z]+\$?)(\d+)/g, function(match, col, row) {
-    const r = parseInt(row);
-    if (r >= srcStartRow && r <= srcEndRow) {
-      return col + (r + offset);
-    }
-    return match;  // 範囲外の参照はそのまま
-  });
 }
 
 // ===== Phase 5b: Excel 出力 (template.js renderer に委譲) =====
@@ -5173,226 +4766,6 @@ async function exportExcel() {
   } finally {
     if (btn) { btn.textContent = origText; btn.disabled = false; }
   }
-}
-
-// ===== 水質週報シート埋め込み（カレンダー連動）=====
-// 列は曜日インデックス d (1=月..5=金) で決まる: col = 4 + d → E..I
-// monthWeeks[w-1][d] が null の日（月外 or 祝日・年末年始）は書込まず、
-// テンプレートの固定値（外観・臭気など）もクリアする。
-function clearWeeklySheetDayColumn(ws, weekBase, d) {
-  const col = 4 + d;
-  // 上段(2)〜下段末(49)までのデータ行を全てクリア。外観(22-25)・臭気(28-31)等の固定値も含む。
-  for (let rowOffset = 2; rowOffset <= 49; rowOffset++) {
-    const cell = ws.getCell(weekBase + rowOffset, col);
-    cell.value = null;
-  }
-}
-
-// ===== 積算セクション 計算ヘルパー =====
-// 差分方式: (最後の値 - 最初の値) / 実カレンダー日数
-// 累積メーター値なので、週の起点と終点の差分から1日平均を算出
-function calcDifferentialAverage(values, dates) {
-  // values: [D,E,F,G,H,I] の値配列 (null/undefined/""=空)
-  // dates:  [D,E,F,G,H,I] の Date配列 (null=月外/休業日)
-  let firstIdx = -1, lastIdx = -1;
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
-    if (v !== null && v !== undefined && v !== "" && !isNaN(Number(v))) {
-      if (firstIdx === -1) firstIdx = i;
-      lastIdx = i;
-    }
-  }
-  if (firstIdx === -1 || lastIdx === firstIdx) return null; // 入力1つ以下は計算不可
-
-  const startVal = Number(values[firstIdx]);
-  const endVal = Number(values[lastIdx]);
-  const startDate = dates[firstIdx];
-  const endDate = dates[lastIdx];
-  if (!startDate || !endDate) return null;
-
-  const days = Math.round((endDate - startDate) / 86400000); // 1日 = 86400000ms
-  if (days <= 0) return null;
-
-  return (endVal - startVal) / days;
-}
-
-// 平均方式: AVERAGE(D:I) - 空欄自動除外
-function calcSimpleAverage(values) {
-  const nums = [];
-  for (const v of values) {
-    if (v === null || v === undefined || v === "") continue;
-    const n = Number(v);
-    if (!isNaN(n)) nums.push(n);
-  }
-  if (nums.length === 0) return null;
-  return nums.reduce((a, b) => a + b, 0) / nums.length;
-}
-
-// Week N の I列値 = Week N+1 の最初の入力値と日付を返す
-// Week 5（index=4）や、翌週の月内日がない場合は null を返す
-function findNextWeekCheckAnchor(weekIdx, fieldId) {
-  if (weekIdx >= 4) return { value: null, date: null }; // Week 5 は翌月なのでI列なし
-
-  const nextWeekSlots = monthWeeks[weekIdx + 1];
-  const nextWeekData = tutugaData.weeks[weekIdx + 2]; // weeksは1始まり
-  if (!nextWeekSlots || !nextWeekData) return { value: null, date: null };
-
-  // Week N+1 の月〜金 (d=1..5) の最初の非空点検日
-  for (let d = 1; d <= 5; d++) {
-    const dateObj = nextWeekSlots[d];
-    if (!dateObj) continue;
-    const dayData = nextWeekData[d];
-    if (!dayData) continue;
-    const v = dayData[fieldId];
-    if (v !== null && v !== undefined && v !== "") {
-      return { value: v, date: dateObj };
-    }
-  }
-  return { value: null, date: null };
-}
-
-// B-6: 週内の特定の曜日(d=1..5, 月..金)の日付を返す。祝日・休業日でも月内なら日付を返す。
-// 水質週報の日付ヘッダー用 - 月外（前月/翌月）の場合のみ null を返す。
-function getReportHeaderDate(weekSlots, d, targetMonth) {
-  if (!weekSlots) return null;
-  if (weekSlots[d]) return weekSlots[d];
-  // weekSlots[d] が null（祝日）の場合、他の有効日から逆算
-  for (let i = 1; i <= 5; i++) {
-    if (weekSlots[i]) {
-      const candidate = new Date(weekSlots[i]);
-      candidate.setDate(weekSlots[i].getDate() + (d - i));
-      // その日が同じ月なら返す（前月/翌月にまたぐ場合は null）
-      if (candidate.getMonth() + 1 === targetMonth) return candidate;
-      return null;
-    }
-  }
-  return null;
-}
-
-// ===== 水質管理報告、新 書込 =====
-// 日次データをページ1(row 8-37)とページ2(row 49-78)に転記
-// MLDOはQ/R列にのみ出力
-function fillQualityReportSheet(wb, yyyy, mm) {
-  const ws = wb.getWorksheet("水質管理報告、新");
-  if (!ws) return;
-
-  const monthMap = buildMonthDateMap(yyyy, mm);
-
-  const daysInMonth = new Date(yyyy, mm, 0).getDate();
-  const dayNamesJP = ["日","月","火","水","木","金","土"];
-
-  for (let day = 1; day <= 30; day++) { // テンプレートは30日までしか持たない
-    // ページ1: Row 7 + day  (day=1→row8 ... day=30→row37)
-    const row1 = 7 + day;
-    // ページ2: Row 48 + day (day=1→row49 ... day=30→row78)
-    const row2 = 48 + day;
-
-    if (day > daysInMonth) continue;
-
-    const dateObj = new Date(yyyy, mm - 1, day);
-    const dateKey = yyyy + "-" + String(mm).padStart(2, "0") + "-" + String(day).padStart(2, "0");
-
-    // A列=日付(数値), B列=曜日 はテンプレート既存（日付は1-30でハードコード済）
-    // 念のため B列曜日を上書き
-    setCell(ws, row1, 2, dayNamesJP[dateObj.getDay()]);
-    setCell(ws, row2, 2, dayNamesJP[dateObj.getDay()]);
-
-    // 休業日(祝日・年末年始)はデータ書込せず、テンプレート固定値(外観 G-J, 臭気 M-P)も含めて全クリア
-    if (isCompanyHoliday(dateObj)) {
-      // ページ1: C〜R 列 (3〜18) = 水温・外観・透視度・臭気・MLDO すべて
-      for (let c = 3; c <= 18; c++) ws.getCell(row1, c).value = null;
-      // ページ2: C〜Q 列 (3〜17) = PH・PH終沈・SV30・残留塩素 すべて
-      for (let c = 3; c <= 17; c++) ws.getCell(row2, c).value = null;
-      continue;
-    }
-
-    const dayData = monthMap[dateKey];
-    if (!dayData) continue;
-
-    // ===== ページ1: 水温/透視度/MLDO =====
-    // （外観 G-J、臭気 M-P はテンプレート固定値を使用するため書込みしない）
-    // 水温 C-F
-    setCell(ws, row1, 3, dayData.temp_inflow);   // C: 流入
-    setCell(ws, row1, 4, dayData.temp_ditch1);   // D: No.1ディッチ
-    setCell(ws, row1, 5, dayData.temp_ditch2);   // E: No.2ディッチ
-    setCell(ws, row1, 6, dayData.temp_outflow);  // F: 放流水
-    // 透視度 K-L
-    setCell(ws, row1, 11, dayData.transparency_inflow);
-    setCell(ws, row1, 12, dayData.transparency_outflow);
-    // MLDO Q-R (週報には書かない、ここだけ)
-    setCell(ws, row1, 17, dayData.mldo_no1_ditch);
-    setCell(ws, row1, 18, dayData.mldo_no2_ditch);
-
-    // ===== ページ2: PH/SV30/残留塩素 (アンモニア等はPhase2) =====
-    // PH: C=流入, D=No.1ディッチ, E=No.2ディッチ, F=No.1終沈, G=No.2終沈, H=放流水
-    setCell(ws, row2, 3, dayData.ph_inflow);
-    setCell(ws, row2, 4, dayData.ph_ditch1);
-    setCell(ws, row2, 5, dayData.ph_ditch2);
-    setCell(ws, row2, 6, dayData.ph_settling_1);
-    setCell(ws, row2, 7, dayData.ph_settling_2);
-    setCell(ws, row2, 8, dayData.ph_outflow);
-    // SV30: I=No.1ディッチ, J=No.2ディッチ
-    setCell(ws, row2, 9, dayData.sv30_1);
-    setCell(ws, row2, 10, dayData.sv30_2);
-    // K-P (アンモニア/亜硝酸/硝酸) はPhase 2
-    // 残留塩素 Q
-    setCell(ws, row2, 17, dayData.chlorine_residual);
-  }
-}
-
-// ===== 運転管理月報 書込 =====
-function fillOperationReportSheet(wb, yyyy, mm) {
-  const ws = wb.getWorksheet("運転管理月報");
-  if (!ws) return;
-
-  const monthMap = buildMonthDateMap(yyyy, mm);
-  const daysInMonth = new Date(yyyy, mm, 0).getDate();
-  const dayNamesJP = ["日","月","火","水","木","金","土"];
-
-  for (let day = 1; day <= 30; day++) {
-    // Row5 + day: day1→row6, day30→row35
-    const row = 5 + day;
-    if (day > daysInMonth) continue;
-    const dateObj = new Date(yyyy, mm - 1, day);
-    const dateKey = yyyy + "-" + String(mm).padStart(2, "0") + "-" + String(day).padStart(2, "0");
-
-    // A列・B列 (日・曜日) はテンプレートにハードコード済みだが、念のため曜日上書き
-    setCell(ws, row, 2, dayNamesJP[dateObj.getDay()]);
-
-    const dayData = monthMap[dateKey];
-    if (!dayData) continue;
-
-    // C: 全日電力量, D: 力測電力量, E: 無効電力量, F: 上水使用量
-    setCell(ws, row, 3, dayData.electric_total);
-    setCell(ws, row, 4, dayData.electric_meter);
-    setCell(ws, row, 5, dayData.electric_reactive);
-    setCell(ws, row, 6, dayData.water_usage);
-
-    // K: 返送汚泥流量1 (L=差分関数)
-    setCell(ws, row, 11, dayData.return_sludge_1);
-    // M: 返送汚泥流量2 (N=差分関数)
-    setCell(ws, row, 13, dayData.return_sludge_2);
-    // O: 余剰汚泥流量 (P=差分関数)
-    setCell(ws, row, 15, dayData.excess_sludge);
-  }
-}
-
-// 日付→日データをマップ化（monthWeeks ベース、月外はスキップ）
-function buildMonthDateMap(yyyy, mm) {
-  const map = {};
-  for (let w = 1; w <= 5; w++) {
-    const weekSlots = monthWeeks[w - 1];
-    const weekData = tutugaData.weeks[w];
-    if (!weekSlots || !weekData) continue;
-    for (let d = 1; d <= 5; d++) {
-      const dateObj = weekSlots[d];
-      if (!dateObj) continue;
-      if (dateObj.getFullYear() !== yyyy || (dateObj.getMonth() + 1) !== mm) continue;
-      const dayData = weekData[d];
-      if (dayData) map[formatDateKey(dateObj)] = dayData;
-    }
-  }
-  return map;
 }
 
 // ===== イベントハンドラ =====
