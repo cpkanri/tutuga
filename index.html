@@ -2216,6 +2216,34 @@ const TUTUGA_FIELDS = {
   }
 };
 
+// Phase 8 修正02 Step2: 電気設備の (×1kwh) 読み と 使用量 ペアを自動計算化。
+// 同じプレフィックスの「__読み」/「__使用量」ペアを識別し、使用量フィールドを
+// type:'autoCalc' に変更する。計算式: 当日の読み − 直近の読み（同週前曜日 → 同月前週 →
+// 前月最終週 まで遡る、最大 2 ヶ月）。前回データなしの場合は空欄。
+const ELEC_AUTO_CALC_PAIRS = (() => {
+  const pairs = {};  // usageKey → readingKey
+  const allElecFields = [];
+  ['sub1', 'sub2', 'sub3'].forEach(sub => {
+    (TUTUGA_FIELDS.elec[sub] || []).forEach(sec => {
+      (sec.fields || []).forEach(f => allElecFields.push(f));
+    });
+  });
+  const READ_SUFFIX = '__読み';
+  const USE_SUFFIX = '__使用量';
+  allElecFields.forEach(f => {
+    if (!f.key || !f.key.endsWith(USE_SUFFIX)) return;
+    const prefix = f.key.slice(0, -USE_SUFFIX.length);
+    const readingKey = prefix + READ_SUFFIX;
+    if (allElecFields.some(g => g.key === readingKey)) {
+      pairs[f.key] = readingKey;
+      // 使用量フィールドを autoCalc 型に変更（renderer が自動計算表示として描画）
+      f.type = 'autoCalc';
+      f.autoCalcFrom = readingKey;
+    }
+  });
+  return pairs;
+})();
+
 // 行オフセット定数 (tutuga_structure.md §週オフセット)
 const WATER_BLOCK_ROW = { 1: 1, 2: 53, 3: 105, 4: 157, 5: 209 };
 const EQUIP_WEEK_START = { 1: 8, 2: 46, 3: 84, 4: 122, 5: 160 };
@@ -4213,6 +4241,10 @@ function buildEquipFormHtml(kind, sub, weekIdx, dayIdx) {
       } else if (f.type === "auto") {
         // GAS 自動転記。フォームでは表示用 input (disabled)
         html += `<input type="text" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}" placeholder="自動転記" disabled>`;
+      } else if (f.type === "autoCalc") {
+        // Phase 8 修正02 Step2: __読み と __使用量 ペアの自動計算（前日差分）。
+        // 値は recomputeElecAutoCalc() が描画後・読み入力時に注入する。
+        html += `<input type="text" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}" data-autocalc-from="${escapeHtml(f.autoCalcFrom || '')}" placeholder="自動計算" disabled>`;
       } else {
         html += `<span style="color:#999;">―</span>`;
       }
@@ -4324,6 +4356,8 @@ function renderElecPanel() {
     wrap.innerHTML = buildEquipFormHtml("elec", currentElecSub, currentWeek, currentDay);
     bindEquipInputEvents("elec");
     loadElecDataToForm();
+    // Phase 8 修正02 Step2: autoCalc 自動計算値を注入（描画＋tutugaData 反映）
+    recomputeElecAutoCalc();
   }
 }
 
@@ -4452,6 +4486,103 @@ function getActiveDays(weekData, weekIdx) {
 }
 
 // イベント委譲: mechFormWrap / elecFormWrap 内の input/toggle-btn 変更を捕捉
+// Phase 8 修正02 Step2: 同フィールドの直近の「読み」値を遡って探索（最大 2 ヶ月前まで）。
+// 順序: 同週前曜日 → 同月前週 → 前月最終週 → 前々月最終週。見つからなければ null。
+function findPreviousElecReading(month, week, day, sourceKey) {
+  const dayOrder = ['mon', 'tue', 'wed', 'thu', 'fri'];
+  const currentIdx = dayOrder.indexOf(day);
+
+  const elecForMonth = (m) => {
+    if (m === month) return tutugaData.elec || {};
+    try {
+      const raw = localStorage.getItem('tutuga_weekly_' + m);
+      if (!raw) return {};
+      const data = JSON.parse(raw);
+      return (data && data.elec) || {};
+    } catch (e) { return {}; }
+  };
+
+  const tryOne = (m, w, d) => {
+    const elec = elecForMonth(m);
+    const wk = elec[w];
+    if (!wk || !wk.days) return null;
+    const dayData = wk.days[d];
+    if (!dayData) return null;
+    const v = dayData[sourceKey];
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return isFinite(n) ? n : null;
+  };
+
+  // 同週前曜日
+  if (currentIdx > 0) {
+    for (let i = currentIdx - 1; i >= 0; i--) {
+      const v = tryOne(month, week, dayOrder[i]);
+      if (v !== null) return v;
+    }
+  }
+  // 同月前週（fri→mon の順）
+  for (let w = week - 1; w >= 1; w--) {
+    for (let i = dayOrder.length - 1; i >= 0; i--) {
+      const v = tryOne(month, w, dayOrder[i]);
+      if (v !== null) return v;
+    }
+  }
+  // 前月（最大 2 ヶ月遡る）
+  let m = month;
+  for (let monthsBack = 0; monthsBack < 2; monthsBack++) {
+    const parts = m.split('-').map(Number);
+    if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) break;
+    const prev = new Date(parts[0], parts[1] - 2, 1);
+    m = prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0');
+    for (let w = 5; w >= 1; w--) {
+      for (let i = dayOrder.length - 1; i >= 0; i--) {
+        const v = tryOne(m, w, dayOrder[i]);
+        if (v !== null) return v;
+      }
+    }
+  }
+  return null;
+}
+
+// Phase 8 修正02 Step2: 当日の読み − 直近の読み を返す。前回データなしなら ''。
+function computeElectricalUsage(month, week, day, sourceKey) {
+  const wk = (tutugaData.elec || {})[week];
+  const dayData = wk && wk.days && wk.days[day];
+  const currentRaw = dayData && dayData[sourceKey];
+  if (currentRaw === null || currentRaw === undefined || currentRaw === '') return '';
+  const current = Number(currentRaw);
+  if (!isFinite(current)) return '';
+  const prev = findPreviousElecReading(month, week, day, sourceKey);
+  if (prev === null) return '';
+  const usage = current - prev;
+  return isFinite(usage) ? usage : '';
+}
+
+// Phase 8 修正02 Step2: 描画後・読み変更後に呼ぶ。autoCalc 入力欄に値を注入し、
+// 同時に tutugaData.elec[w].days[d][usageKey] へ書き込んで保存対象にする。
+function recomputeElecAutoCalc() {
+  const wrap = document.getElementById('elecFormWrap');
+  if (!wrap) return;
+  const month = tutugaData.targetMonth;
+  if (!month) return;
+  const week = currentWeek;
+  const day = DAY_NUM_TO_STR[currentDay] || 'mon';
+  const wk = (tutugaData.elec || {})[week];
+  const dayData = wk && wk.days && wk.days[day];
+
+  wrap.querySelectorAll('input[data-autocalc-from]').forEach(input => {
+    const sourceKey = input.dataset.autocalcFrom;
+    const usageKey = input.getAttribute('data-efield');
+    if (!sourceKey || !usageKey) return;
+    const usage = computeElectricalUsage(month, week, day, sourceKey);
+    input.value = (usage === '' || usage == null) ? '' : usage;
+    if (dayData) {
+      dayData[usageKey] = (usage === '' || usage == null) ? null : usage;
+    }
+  });
+}
+
 function bindEquipInputEvents(kind) {
   const dataAttr = (kind === "mech") ? "mfield" : "efield";
   const containerId = (kind === "mech") ? "mechFormWrap" : "elecFormWrap";
@@ -4492,7 +4623,17 @@ function bindEquipInputEvents(kind) {
     if (ev.target.matches(`input[data-${dataAttr}]`)) markDirty();
   };
   const onChange = function(ev) {
-    if (ev.target.matches(`input[data-${dataAttr}]`)) markDirty();
+    if (!ev.target.matches(`input[data-${dataAttr}]`)) return;
+    markDirty();
+    // Phase 8 修正02 Step2: elec の読み変更時にペア使用量を再計算
+    if (kind === "elec") {
+      const changedKey = ev.target.dataset[dataAttr];
+      if (changedKey && Object.values(ELEC_AUTO_CALC_PAIRS).indexOf(changedKey) >= 0) {
+        // 変更された値を tutugaData に反映してから再計算
+        saveCurrentFormToData();
+        recomputeElecAutoCalc();
+      }
+    }
   };
 
   container.addEventListener("click", onClick);
