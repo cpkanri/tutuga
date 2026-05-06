@@ -2576,8 +2576,11 @@ function getCurrentUndoContext() {
   } else if (currentSheet === 'elec') {
     ctx.subtab = currentElecSub;
     ctx.day = DAY_NUM_TO_STR[currentDay] || null;
+  } else if (currentSheet === 'equip') {
+    // Phase 8 修正04C: equip も bulk クリア対象として currentDay を設定。
+    // 単一フィールド変更の場合は attachUndoTracking 内で data-eday に上書きされる。
+    ctx.day = DAY_NUM_TO_STR[currentDay] || null;
   }
-  // equip は全曜日同時表示なので day はフィールド側 (data-eday) で持つ
   return ctx;
 }
 
@@ -2824,6 +2827,113 @@ function updateUndoButton() {
     btn.style.opacity = "1";
     btn.title = "直前の入力を元に戻す（残り " + undoStack.length + " 件）";
   }
+}
+
+// ===== Phase 8 修正04C: 共通フォーム操作ヘルパー（クリア・前日コピー で利用） =====
+
+// 現在表示中のタブのフォームコンテナ（DOM ルート要素）を返す
+function getCurrentFormContainer() {
+  if (currentSheet === 'water') return document.getElementById('formWrap');
+  if (currentSheet === 'equip') return document.getElementById('equipBody');
+  if (currentSheet === 'mech')  return document.getElementById('mechFormWrap');
+  if (currentSheet === 'elec')  return document.getElementById('elecFormWrap');
+  return null;
+}
+
+// 現在表示中の「タブ × サブタブ × 週 × 日」に該当する操作対象フィールド要素を列挙
+// disabled (type:'auto'/'autoCalc' 等) は除外。
+// equip は全曜日同時表示なので currentDay の列のみ抽出。
+function getCurrentFormFields() {
+  const container = getCurrentFormContainer();
+  if (!container) return [];
+  const sel = [
+    'input[data-field]', 'select[data-field]', 'button.toggle-btn[data-field]',
+    'input[data-equip]',
+    'input[data-mfield]', 'button.toggle-btn[data-mfield]',
+    'input[data-efield]', 'button.toggle-btn[data-efield]'
+  ].join(', ');
+  let all = Array.from(container.querySelectorAll(sel));
+  if (currentSheet === 'equip') {
+    const dk = DAY_NUM_TO_STR[currentDay];
+    all = all.filter(el => el.dataset.eday === dk);
+  }
+  return all.filter(el => !el.disabled);
+}
+
+// 現在表示中のフィールドの { fieldKey, oldValue, day? } スナップショットを返す
+// （Undo bulk エントリの fields 配列としてそのまま使える形式）
+function getCurrentFormSnapshot() {
+  return getCurrentFormFields().map(el => {
+    const isToggle = (el.tagName === 'BUTTON' && el.classList.contains('toggle-btn'));
+    const fieldKey = el.dataset.field || el.dataset.equip || el.dataset.mfield || el.dataset.efield;
+    const oldValue = isToggle ? (el.dataset.val || '') : (el.value || '');
+    const snap = { fieldKey: fieldKey, oldValue: oldValue };
+    if (currentSheet === 'equip') {
+      snap.day = el.dataset.eday;
+    }
+    return snap;
+  });
+}
+
+// 現在表示中の全フィールドの DOM をクリア（input.value = '' / toggle.dataset.val = '')
+// 呼び出し後に saveCurrentFormToData() で tutugaData に反映する。
+function clearCurrentFormDOM() {
+  getCurrentFormFields().forEach(el => {
+    if (el.tagName === 'BUTTON' && el.classList.contains('toggle-btn')) {
+      el.dataset.val = '';
+      el.textContent = '―';
+    } else {
+      el.value = '';
+    }
+    // Undo の previousValue 追跡もリセット
+    el.dataset.previousValue = '';
+  });
+}
+
+// 統一クリア処理：現在表示中のタブ × サブタブ × 週 × 日 の全フィールドをクリア
+// クリア前のスナップショットを Undo bulk エントリとして記録する。
+// type:'auto'/'autoCalc' は disabled なので getCurrentFormFields で除外され影響なし
+// （ただしクリア後の saveCurrentToLocalStorage 経路で recompute され連動する）。
+function clearCurrentForm() {
+  const label = clearConfirmLabel();
+  if (!confirm(label)) return;
+
+  // クリア前のスナップショット
+  const snapshot = getCurrentFormSnapshot();
+
+  // フォーム DOM クリア
+  clearCurrentFormDOM();
+
+  // データ層へ反映
+  try { saveCurrentFormToData(); } catch (_) {}
+
+  // elec の autocalc 連動（読み値クリアにより使用量も再計算される）
+  if (currentSheet === 'elec') {
+    try { recomputeElecAutoCalc(); } catch (_) {}
+  }
+
+  // Undo bulk エントリ
+  pushBulkUndo(snapshot);
+
+  // localStorage 反映
+  saveCurrentToLocalStorage();
+  markDirty();
+  showToast("クリアしました");
+}
+
+function clearConfirmLabel() {
+  const dayJp = (DAY_NUM_TO_STR[currentDay] || '').toUpperCase();  // 確認ダイアログ用ラベル
+  if (currentSheet === 'water') {
+    const which = (currentWaterSub === 'usage') ? '使用量' : '水質測定';
+    return '水質 / ' + which + '（第' + currentWeek + '週 ' + dayJp + '）の入力をクリアしますか？';
+  } else if (currentSheet === 'equip') {
+    return '機器運転時間（第' + currentWeek + '週 ' + dayJp + '）の入力をクリアしますか？';
+  } else if (currentSheet === 'mech') {
+    return '機械設備（第' + currentWeek + '週 ' + dayJp + ' / 点検表 ' + currentMechSub + '/3）の入力をクリアしますか？';
+  } else if (currentSheet === 'elec') {
+    return '電気設備（第' + currentWeek + '週 ' + dayJp + ' / 点検表 ' + currentElecSub + '/3）の入力をクリアしますか？';
+  }
+  return '現在のフォームをクリアしますか？';
 }
 
 // 対象月のカレンダー週構造。recomputeMonthWeeks() で再計算される。
@@ -5113,21 +5223,9 @@ function copyFromPrevDay() {
   showToast("前日の値をコピーしました");
 }
 
-// ===== 全クリア (現在のセクション/日) =====
-function clearCurrentSection() {
-  if (!confirm("現在の日のこのセクションをクリアしますか？")) return;
-  // Phase 8 修正04A: クリアは複数フィールド変更のため Undo 対象外（仕様）
-  const cell = tutugaData.weeks[currentWeek][currentDay];
-  if (!cell) return;
-  const keys = (currentWaterSub === "usage")
-    ? TUTUGA_FIELDS.water.usage.concat(TUTUGA_FIELDS.water.usageFormExtras)
-    : TUTUGA_FIELDS.water.measureFormFull;
-  keys.forEach(k => { cell[k] = (k === "inspector" || k === "bikou") ? "" : null; });
-  loadDataToForm();
-  saveCurrentToLocalStorage();  // Phase 8 修正04A: クリア後の状態を localStorage に反映
-  markDirty();
-  showToast("クリアしました");
-}
+// ===== 全クリア =====
+// Phase 8 修正04C: 旧 clearCurrentSection は clearCurrentForm に統合され削除。
+// btnClear ハンドラから clearCurrentForm() を直接呼ぶ。
 
 // ===== Excel出力 =====
 function loadScript(src) {
@@ -5451,15 +5549,9 @@ function bindEvents() {
     }
   });
   document.getElementById("btnClear").addEventListener("click", () => {
-    if (currentSheet === "water") {
-      clearCurrentSection();
-    } else if (currentSheet === "equip") {
-      clearCurrentEquip();
-    } else if (currentSheet === "mech") {
-      clearCurrentMech();
-    } else if (currentSheet === "elec") {
-      clearCurrentElec();
-    }
+    // Phase 8 修正04C: 全タブで共通の clearCurrentForm に統一
+    // （現在表示中のタブ × サブタブ × 週 × 日 のみクリア、Undo bulk 連動）
+    clearCurrentForm();
   });
   // B-6: 元に戻す
   const btnUndo = document.getElementById("btnUndo");
@@ -5483,73 +5575,9 @@ function bindEvents() {
   });
 }
 
-// 機械設備: 現在週の全曜日をクリア（月内日のみ）
-// Phase 8 修正04A 追補2: pattern (mwf = 月/水/金) ベースの activeDays フィルタを廃止。
-// 5月運用中は fri が mwf に含まれるため偶然正常動作していたが、9月以降の月初平日が
-// 火または木で始まる月（例: 2026-09 火曜始まり、2026-10 木曜始まり）で、第1週の
-// 単独日が pattern に含まれずクリアされない潜在バグがあるため予防的に修正。
-// 機器運転時間 (clearCurrentEquip) ・電気 (clearCurrentElec) と同じ方針に揃える。
-function clearCurrentMech() {
-  const w = currentMechWeek;
-  if (!confirm("機械設備 第" + w + "週の全曜日のデータをクリアしますか？")) return;
-  const week = tutugaData.mech && tutugaData.mech[w];
-  if (!week || !week.days) return;
-  EQUIP_DAYS.forEach(dk => {
-    if (!getDateForDayKey(w, dk)) return;  // 月外日はスキップ
-    const day = week.days[dk];
-    if (!day) return;
-    Object.keys(day).forEach(k => { day[k] = null; });
-  });
-  loadMechDataToForm();
-  saveCurrentToLocalStorage();  // クリア後の状態を localStorage に反映
-  markDirty();
-  showToast("機械設備 第" + w + "週の全データをクリアしました");
-}
-
-// 電気設備: 現在週の全曜日をクリア（月内日のみ）
-// Phase 8 修正04A 追補: pattern (tt = 火/木) ベースの activeDays フィルタを廃止。
-// 月初平日始まりの第1週で表示される単独日（例: 2026-05 週1 の fri）が
-// 電気 pattern に含まれずクリアされない問題があった。
-// 月内日に存在する全データを無条件でクリアする方針（機器運転時間と同じ）。
-function clearCurrentElec() {
-  const w = currentElecWeek;
-  if (!confirm("電気設備 第" + w + "週の全曜日のデータをクリアしますか？")) return;
-  const week = tutugaData.elec && tutugaData.elec[w];
-  if (!week || !week.days) return;
-  EQUIP_DAYS.forEach(dk => {
-    if (!getDateForDayKey(w, dk)) return;  // 月外日はスキップ
-    const day = week.days[dk];
-    if (!day) return;
-    Object.keys(day).forEach(k => { day[k] = null; });
-  });
-  loadElecDataToForm();
-  saveCurrentToLocalStorage();  // クリア後の状態を localStorage に反映
-  markDirty();
-  showToast("電気設備 第" + w + "週の全データをクリアしました");
-}
-
-// 機器運転時間: 現在週の全曜日をクリア
-// Phase 8 修正04A: equip タブのクリアハンドラが未実装だったため新設
-function clearCurrentEquip() {
-  const w = currentWeek;
-  if (!confirm("機器運転時間 第" + w + "週の全データをクリアしますか？")) return;
-  // Phase 8 修正04A: クリアは複数フィールド変更のため Undo 対象外（仕様）
-  if (!tutugaData.equip) tutugaData.equip = {};
-  if (!tutugaData.equip[w]) tutugaData.equip[w] = emptyEquipWeek();
-  const week = tutugaData.equip[w];
-  TUTUGA_FIELDS.equip.keys.forEach(k => {
-    if (!week[k]) week[k] = {};
-    EQUIP_DAYS.forEach(dk => {
-      // 月内日のみクリア対象（範囲外は元々入力できないので触らない）
-      if (!getDateForDayKey(w, dk)) return;
-      week[k][dk] = null;
-    });
-  });
-  loadEquipDataToForm();
-  saveCurrentToLocalStorage();  // Phase 8 修正04A: クリア後の状態を localStorage に反映
-  markDirty();
-  showToast("機器運転時間 第" + w + "週の全データをクリアしました");
-}
+// Phase 8 修正04C: 旧 clearCurrentMech / clearCurrentElec / clearCurrentEquip は
+// 共通の clearCurrentForm に統合され削除（btnClear ハンドラから直接呼ぶ形に変更）。
+// 仕様: 「現在表示中のタブ × サブタブ × 週 × 日」のみクリア（週全体・サブタブ横断はしない）。
 
 // ===== 初期化 =====
 async function init() {
