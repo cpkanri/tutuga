@@ -499,11 +499,28 @@ function _tutugaWriteNichijoFixed(ws) {
 // =====================================================================
 // テンプレ A5/A43/A81/A119/A157 = 各週開始日、F5/.../F157 = 各週終了日。
 // 旧テンプレは3月固定のシリアル値だったため月選択に追従していなかった。
-// 既存スタイル (numFmtId=58 = [$-411]ggge"年"m"月"d"日") は維持される。
+// 既存スタイル (numFmtId=58 = [$-411]ggge"年"m"月"d"日") は維持されるべき
+// だが、ExcelJS が cell.value=Date 代入時にデフォルト書式で上書きする
+// ケースがあるため Phase 8 修正10 で明示再適用する。
 //
 // 第1週: 月初平日 (_tutugaGetElecMechFirstStart) から金曜 or 月末日
 // 第2週以降: 第1週金曜 +3 +(w-2)*7 を月曜とし金 or 月末日まで
 // 月末超過週は null クリア。
+
+// Phase 8 修正10: 和暦書式（テンプレと同じ）。Date 書き込み後に明示再適用。
+var TUTUGA_EQUIP_DATE_NUMFMT = '[$-411]ggge"年"m"月"d"日";@';
+
+// Phase 8 修正10: ローカルタイム Date を UTC 0:00 に正規化。
+// JST の Date を ExcelJS でシリアル値化すると UTC 換算で前日にズレるため、
+// 同じ y/m/d を UTC ベースで再生成して書き込む。
+function _tutugaToUtcDate(localDate) {
+  return new Date(Date.UTC(
+    localDate.getFullYear(),
+    localDate.getMonth(),
+    localDate.getDate()
+  ));
+}
+
 function _tutugaWriteEquipmentDates(ws, monthStr) {
   if (!ws || !monthStr) return;
   var parts = String(monthStr).split('-').map(Number);
@@ -520,6 +537,8 @@ function _tutugaWriteEquipmentDates(ws, monthStr) {
 
   for (var w = 1; w <= 5; w++) {
     var aRow = aRows[w - 1];
+    var aCell = ws.getCell(aRow, 1);
+    var fCell = ws.getCell(aRow, 6);
     var weekStart, weekEnd;
 
     if (w === 1) {
@@ -529,8 +548,8 @@ function _tutugaWriteEquipmentDates(ws, monthStr) {
       var ws2 = new Date(week1Fri);
       ws2.setDate(week1Fri.getDate() + 3 + (w - 2) * 7);
       if (ws2.getMonth() !== m - 1 || ws2 > monthEnd) {
-        ws.getCell(aRow, 1).value = null;
-        ws.getCell(aRow, 6).value = null;
+        aCell.value = null;
+        fCell.value = null;
         continue;
       }
       weekStart = ws2;
@@ -539,8 +558,11 @@ function _tutugaWriteEquipmentDates(ws, monthStr) {
       weekEnd = (fri <= monthEnd && fri.getMonth() === m - 1) ? fri : monthEnd;
     }
 
-    ws.getCell(aRow, 1).value = weekStart;
-    ws.getCell(aRow, 6).value = weekEnd;
+    aCell.value = _tutugaToUtcDate(weekStart);
+    fCell.value = _tutugaToUtcDate(weekEnd);
+    // ExcelJS のデフォルト書式上書きを防ぐため、テンプレと同じ和暦書式を明示再適用
+    aCell.numFmt = TUTUGA_EQUIP_DATE_NUMFMT;
+    fCell.numFmt = TUTUGA_EQUIP_DATE_NUMFMT;
   }
 }
 
