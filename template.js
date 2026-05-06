@@ -339,9 +339,15 @@ function _tutugaIsEmpty(v) {
 }
 
 // セルに値を書き込む。空値は書き込まない (テンプレ初期値を温存)。
+// Phase 8 修正05: 半角ハイフン `-`（休止/該当なし）はテキスト書式で書き込み、
+// 数値書式が事前設定されたセルでも `-` がそのまま表示されるようにする。
 function _tutugaWriteCell(ws, row, col, value) {
   if (_tutugaIsEmpty(value)) return;
-  ws.getCell(row, col).value = value;
+  var cell = ws.getCell(row, col);
+  if (value === '-') {
+    try { cell.numFmt = '@'; } catch (e) {}
+  }
+  cell.value = value;
 }
 
 // 注入済みグローバル定数を必要時に解決する (index.html 側に存在するはず)
