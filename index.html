@@ -2936,6 +2936,201 @@ function clearConfirmLabel() {
   return '現在のフォームをクリアしますか？';
 }
 
+// ===== Phase 8 修正04C: 前日コピー（全タブ対応） =====
+
+// 月文字列 'YYYY-MM' から n ヶ月前の月文字列を返す
+function subtractMonths(monthStr, n) {
+  if (!monthStr) return '';
+  const parts = monthStr.split('-').map(Number);
+  if (parts.length < 2) return '';
+  const d = new Date(parts[0], parts[1] - 1, 1);
+  d.setMonth(d.getMonth() - n);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return yy + '-' + mm;
+}
+
+// 指定月のデータを取得（現在月なら tutugaData、それ以外は localStorage から）
+function loadMonthData(monthStr) {
+  if (!monthStr) return null;
+  if (monthStr === tutugaData.targetMonth) return tutugaData;
+  try {
+    const raw = localStorage.getItem('tutuga_weekly_' + monthStr);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('loadMonthData failed:', monthStr, e);
+    return null;
+  }
+}
+
+// 現在表示中のタブ・サブタブで参照すべきフィールドキー一覧（type:'auto'/'autoCalc' は除外）
+function getCurrentTabFieldKeys() {
+  if (currentSheet === 'water') {
+    return (currentWaterSub === 'usage')
+      ? TUTUGA_FIELDS.water.usage.concat(TUTUGA_FIELDS.water.usageFormExtras)
+      : TUTUGA_FIELDS.water.measureFormFull;
+  } else if (currentSheet === 'equip') {
+    return TUTUGA_FIELDS.equip.keys.slice();
+  } else if (currentSheet === 'mech') {
+    return _collectEquipSubFieldKeys(TUTUGA_FIELDS.mech['sub' + currentMechSub] || []);
+  } else if (currentSheet === 'elec') {
+    return _collectEquipSubFieldKeys(TUTUGA_FIELDS.elec['sub' + currentElecSub] || []);
+  }
+  return [];
+}
+
+function _collectEquipSubFieldKeys(sections) {
+  const keys = [];
+  sections.forEach(sec => (sec.fields || []).forEach(f => {
+    if (f.type === 'auto' || f.type === 'autoCalc') return;
+    keys.push(f.key);
+  }));
+  return keys;
+}
+
+// 月別データから「指定週・指定日」の {fieldKey: value} オブジェクトを返す
+// 現在のタブ・サブタブのフィールドのみが対象。
+function getDayDataFromMonthData(data, week, dayKey) {
+  if (!data || !week || !dayKey) return null;
+  if (currentSheet === 'water') {
+    const dayNum = DAY_STR_TO_NUM[dayKey];
+    if (!dayNum) return null;
+    return (data.weeks && data.weeks[week] && data.weeks[week][dayNum]) || null;
+  } else if (currentSheet === 'equip') {
+    const eweek = data.equip && data.equip[week];
+    if (!eweek) return null;
+    const out = {};
+    TUTUGA_FIELDS.equip.keys.forEach(k => {
+      const dayObj = eweek[k];
+      if (dayObj && (dayKey in dayObj)) out[k] = dayObj[dayKey];
+    });
+    return out;
+  } else if (currentSheet === 'mech') {
+    const mweek = data.mech && data.mech[week];
+    return (mweek && mweek.days && mweek.days[dayKey]) || null;
+  } else if (currentSheet === 'elec') {
+    const eweek = data.elec && data.elec[week];
+    return (eweek && eweek.days && eweek.days[dayKey]) || null;
+  }
+  return null;
+}
+
+// 現在の (tab, week, day, month) から遡って、最も近いデータが入っている日を返す
+// 戻り値: { week, day, month } または null
+// 範囲: 同週内の前曜日 → 同月内の前週 → 前月 → 前々月
+function findPreviousDayWithData(startWeek, startDayKey, startMonth) {
+  const dayOrder = ['mon', 'tue', 'wed', 'thu', 'fri'];
+  const fieldKeys = getCurrentTabFieldKeys();
+  if (fieldKeys.length === 0) return null;
+
+  const dayHasData = (monthData, week, dayKey) => {
+    const d = getDayDataFromMonthData(monthData, week, dayKey);
+    if (!d) return false;
+    return fieldKeys.some(k => {
+      const v = d[k];
+      return v !== null && v !== undefined && v !== '';
+    });
+  };
+
+  // 現在月から前々月まで（最大 3 ヶ月分）
+  for (let mi = 0; mi <= 2; mi++) {
+    const m = (mi === 0) ? startMonth : subtractMonths(startMonth, mi);
+    if (!m) continue;
+    const data = loadMonthData(m);
+    if (!data) continue;
+
+    // 開始週・開始日インデックス
+    const startW = (mi === 0) ? Number(startWeek) : 5;
+    const startDIdx = (mi === 0) ? (dayOrder.indexOf(startDayKey) - 1) : (dayOrder.length - 1);
+
+    // 開始週の開始日より前を逆走査
+    for (let di = startDIdx; di >= 0; di--) {
+      if (dayHasData(data, startW, dayOrder[di])) {
+        return { week: startW, day: dayOrder[di], month: m };
+      }
+    }
+    // 同月の前週から
+    for (let w = startW - 1; w >= 1; w--) {
+      for (let di = dayOrder.length - 1; di >= 0; di--) {
+        if (dayHasData(data, w, dayOrder[di])) {
+          return { week: w, day: dayOrder[di], month: m };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// 水質タブで前日コピーから除外するフィールド（測定者・備考は引き継がない）
+function shouldSkipFieldForCopy(fieldKey) {
+  if (currentSheet === 'water') {
+    return fieldKey === 'inspector' || fieldKey === 'bikou';
+  }
+  return false;
+}
+
+// 全タブ共通の前日コピー実行
+function copyPreviousDayToCurrent() {
+  // 入力途中の値を tutugaData に確定（前月から遡る場合の参照のため）
+  try { saveCurrentFormToData(); } catch (_) {}
+
+  const curMonth = tutugaData.targetMonth || '';
+  const curDayKey = DAY_NUM_TO_STR[currentDay] || 'mon';
+
+  const prev = findPreviousDayWithData(currentWeek, curDayKey, curMonth);
+  if (!prev) {
+    alert('前日のデータが見つかりません。');
+    return;
+  }
+
+  const prevMonthData = loadMonthData(prev.month);
+  const prevData = getDayDataFromMonthData(prevMonthData, prev.week, prev.day);
+  if (!prevData) {
+    alert('前日のデータが見つかりません。');
+    return;
+  }
+
+  // コピー前のスナップショット（Undo 用）
+  const snapshot = getCurrentFormSnapshot();
+
+  // 現在のフォームに値を反映
+  const fields = getCurrentFormFields();
+  fields.forEach(el => {
+    const isToggle = (el.tagName === 'BUTTON' && el.classList.contains('toggle-btn'));
+    const fieldKey = el.dataset.field || el.dataset.equip || el.dataset.mfield || el.dataset.efield;
+    if (!fieldKey) return;
+    if (shouldSkipFieldForCopy(fieldKey)) return;
+    if (!(fieldKey in prevData)) return;
+    const v = prevData[fieldKey];
+    const sv = (v == null) ? '' : String(v);
+    if (isToggle) {
+      el.dataset.val = sv;
+      el.textContent = sv || '―';
+    } else {
+      el.value = sv;
+    }
+    el.dataset.previousValue = sv;
+  });
+
+  // データ層に反映
+  try { saveCurrentFormToData(); } catch (_) {}
+  // elec autocalc 連動（読み値がコピーされたら使用量も再計算）
+  if (currentSheet === 'elec') {
+    try { recomputeElecAutoCalc(); } catch (_) {}
+  }
+
+  // Undo bulk エントリ（コピー前の値を一括で記録）
+  pushBulkUndo(snapshot);
+
+  // localStorage 反映
+  saveCurrentToLocalStorage();
+  markDirty();
+
+  const monthLabel = (prev.month && prev.month !== curMonth) ? (prev.month + ' / ') : '';
+  showToast(monthLabel + '第' + prev.week + '週 ' + (prev.day || '') + ' の値をコピーしました');
+}
+
 // 対象月のカレンダー週構造。recomputeMonthWeeks() で再計算される。
 // 形式: [ {1:Date|null, 2:Date|null, 3:Date|null, 4:Date|null, 5:Date|null}, ... ]
 // 各週の 1-5 は月〜金の曜日インデックス。月外の日は null。
@@ -4572,9 +4767,11 @@ function renderAll() {
   if (mechPanel)  mechPanel.style.display  = "none";
   if (elecPanel)  elecPanel.style.display  = "none";
 
+  // Phase 8 修正04C: 前日コピーボタンは全タブで表示
+  if (btnCopy) btnCopy.style.display = "";
+
   if (currentSheet === "water") {
     if (waterPanel) waterPanel.style.display = "";
-    if (btnCopy) btnCopy.style.display = "";
     if (btnExcel) btnExcel.style.display = "";
     renderWeekTabs();
     renderSecTabs();
@@ -4583,17 +4780,14 @@ function renderAll() {
     renderForm();
   } else if (currentSheet === "equip") {
     if (equipPanel) equipPanel.style.display = "";
-    if (btnCopy) btnCopy.style.display = "none";
     if (btnExcel) btnExcel.style.display = "";
     renderEquipPanel();
   } else if (currentSheet === "mech") {
     if (mechPanel) mechPanel.style.display = "";
-    if (btnCopy) btnCopy.style.display = "none";
     if (btnExcel) btnExcel.style.display = "";
     renderMechPanel();
   } else if (currentSheet === "elec") {
     if (elecPanel) elecPanel.style.display = "";
-    if (btnCopy) btnCopy.style.display = "none";
     if (btnExcel) btnExcel.style.display = "";
     renderElecPanel();
   }
@@ -5203,25 +5397,8 @@ function showToast(msg, type) {
 }
 
 // ===== 前日コピー =====
-function copyFromPrevDay() {
-  if (currentDay <= 1) { showToast("前日が存在しません", "error"); return; }
-  saveFormToData();
-  // Phase 8 修正04A: 複数フィールド変更のため Undo 対象外（仕様）
-  const prev = tutugaData.weeks[currentWeek][currentDay - 1];
-  const curr = tutugaData.weeks[currentWeek][currentDay];
-  if (!prev || !curr) return;
-  const keys = (currentWaterSub === "usage")
-    ? TUTUGA_FIELDS.water.usage.concat(TUTUGA_FIELDS.water.usageFormExtras)
-    : TUTUGA_FIELDS.water.measureFormFull;
-  keys.forEach(k => {
-    // 測定者・備考はコピー対象外
-    if (k === "inspector" || k === "bikou") return;
-    curr[k] = prev[k];
-  });
-  loadDataToForm();
-  markDirty();
-  showToast("前日の値をコピーしました");
-}
+// Phase 8 修正04C: 旧 copyFromPrevDay は copyPreviousDayToCurrent に統合され削除。
+// 全タブ共通のコピー処理 + 同月内・前月最大2ヶ月遡って直近のデータを自動探索する仕様。
 
 // ===== 全クリア =====
 // Phase 8 修正04C: 旧 clearCurrentSection は clearCurrentForm に統合され削除。
@@ -5544,9 +5721,8 @@ function bindEvents() {
   });
 
   document.getElementById("btnCopy").addEventListener("click", () => {
-    if (currentSheet === "water") {
-      copyFromPrevDay();
-    }
+    // Phase 8 修正04C: 全タブで前日コピー（直近のデータがある日から自動探索）
+    copyPreviousDayToCurrent();
   });
   document.getElementById("btnClear").addEventListener("click", () => {
     // Phase 8 修正04C: 全タブで共通の clearCurrentForm に統一
