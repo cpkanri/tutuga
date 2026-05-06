@@ -5451,23 +5451,24 @@ function clearCurrentMech() {
   showToast("機械設備 第" + w + "週の全データをクリアしました");
 }
 
-// 電気設備: 現在週の全曜日をクリア（活性日かつ月内のみ）
+// 電気設備: 現在週の全曜日をクリア（月内日のみ）
+// Phase 8 修正04A 追補: pattern (tt = 火/木) ベースの activeDays フィルタを廃止。
+// 月初平日始まりの第1週で表示される単独日（例: 2026-05 週1 の fri）が
+// 電気 pattern に含まれずクリアされない問題があった。
+// 月内日に存在する全データを無条件でクリアする方針（機器運転時間と同じ）。
 function clearCurrentElec() {
   const w = currentElecWeek;
   if (!confirm("電気設備 第" + w + "週の全曜日のデータをクリアしますか？")) return;
   const week = tutugaData.elec && tutugaData.elec[w];
   if (!week || !week.days) return;
-  const activeDays = getActiveDays(week, w);
-  // Phase 8 修正04A: クリアは複数フィールド変更のため Undo 対象外（仕様）
   EQUIP_DAYS.forEach(dk => {
-    if (activeDays.indexOf(dk) < 0) return;
-    if (!getDateForDayKey(w, dk)) return;
+    if (!getDateForDayKey(w, dk)) return;  // 月外日はスキップ
     const day = week.days[dk];
     if (!day) return;
     Object.keys(day).forEach(k => { day[k] = null; });
   });
   loadElecDataToForm();
-  saveCurrentToLocalStorage();  // Phase 8 修正04A: クリア後の状態を localStorage に反映
+  saveCurrentToLocalStorage();  // クリア後の状態を localStorage に反映
   markDirty();
   showToast("電気設備 第" + w + "週の全データをクリアしました");
 }
