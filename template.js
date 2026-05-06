@@ -398,6 +398,102 @@ function _tutugaWriteWaterSheet(ws, allData) {
   }
 }
 
+// =====================================================================
+// Phase 8 修正08: 「外観」「臭気」固定値書き込み
+// =====================================================================
+// 入力フォーム削除に伴い、Excel 出力時に動的固定値で埋める。
+// 共通ルール: 週5回運用（土・日空欄）。
+
+// 水質管理報告 (idx=2) - 外観 (列 I-N = 9-14)
+var TUTUGA_SUIKAN_APPEARANCE_BY_COL = {
+  9:  '黄灰色',  // I: 流入
+  10: '茶色',    // J: No.1 ディッチ
+  11: '茶色',    // K: No.2 ディッチ
+  12: '透明',    // L: No.1 終沈
+  13: '透明',    // M: No.2 終沈
+  14: '透明'     // N: 放流水
+};
+
+// 水質管理報告 - 臭気 (列 C-H = 3-8)
+var TUTUGA_SUIKAN_ODOR_BY_COL = {
+  3: '下水臭',
+  4: '活性汚泥臭',
+  5: '活性汚泥臭',
+  6: '無',
+  7: '無',
+  8: '無'
+};
+
+// 日常水質 (idx=0) - 4 行（流入/D1/D2/放流）の外観 (blockRow + offset)
+var TUTUGA_NICHIJO_APPEARANCE_BY_ROW_OFFSET = {
+  19: '黄灰色',  // 流入
+  20: '茶色',    // No.1 ディッチ
+  21: '茶色',    // No.2 ディッチ
+  22: '透明'     // 放流
+};
+
+// 日常水質 - 4 行の臭気
+var TUTUGA_NICHIJO_ODOR_BY_ROW_OFFSET = {
+  25: '下水臭',
+  26: '活性汚泥臭',
+  27: '活性汚泥臭',
+  28: '無'
+};
+
+// 水質管理報告シート: 行=日付, 列=測定場所。
+// 行8 = 月初日, 行 8+(d-1) = 第d日 (外観), 行 49+(d-1) = 第d日 (臭気)。
+// テンプレに3月固定値が埋め込まれているため、対象月外/土日も含めて
+// 必ず上書きする (値 or null)。
+function _tutugaWriteSuikanFixed(ws, monthStr) {
+  if (!ws || !monthStr) return;
+  var parts = String(monthStr).split('-').map(Number);
+  var y = parts[0], m = parts[1];
+  if (!y || !m) return;
+  var daysInMonth = new Date(y, m, 0).getDate();
+
+  function fillBlock(startRow, colMap) {
+    var cols = Object.keys(colMap).map(Number);
+    for (var d = 1; d <= 31; d++) {
+      var row = startRow + (d - 1);
+      var inMonth = d <= daysInMonth;
+      var dow = inMonth ? new Date(y, m - 1, d).getDay() : -1;
+      var writeable = inMonth && dow !== 0 && dow !== 6;
+      for (var i = 0; i < cols.length; i++) {
+        ws.getCell(row, cols[i]).value = writeable ? colMap[cols[i]] : null;
+      }
+    }
+  }
+
+  fillBlock(8,  TUTUGA_SUIKAN_APPEARANCE_BY_COL);
+  fillBlock(49, TUTUGA_SUIKAN_ODOR_BY_COL);
+}
+
+// 日常水質シート: 5 週 × mon-fri 5 列。テンプレに既存値はないので
+// 単純に全平日セルへ固定値を書く（水温と同じ挙動。月跨ぎフィルタなし）。
+function _tutugaWriteNichijoFixed(ws) {
+  if (!ws) return;
+  var WATER_BLOCK_ROW = _tutugaConst('WATER_BLOCK_ROW', { 1:1, 2:53, 3:105, 4:157, 5:209 });
+  var MEASURE_DAY_COL = _tutugaConst('MEASURE_DAY_COL', { mon:10, tue:11, wed:12, thu:13, fri:14 });
+  var DAYS5 = ['mon','tue','wed','thu','fri'];
+
+  function applyGroup(map) {
+    for (var w = 1; w <= 5; w++) {
+      var blockRow = WATER_BLOCK_ROW[w];
+      if (!blockRow) continue;
+      Object.keys(map).forEach(function(offStr) {
+        var rowOff = Number(offStr);
+        var value = map[offStr];
+        DAYS5.forEach(function(dc) {
+          ws.getCell(blockRow + rowOff, MEASURE_DAY_COL[dc]).value = value;
+        });
+      });
+    }
+  }
+
+  applyGroup(TUTUGA_NICHIJO_APPEARANCE_BY_ROW_OFFSET);
+  applyGroup(TUTUGA_NICHIJO_ODOR_BY_ROW_OFFSET);
+}
+
 // 機器運転時間シート
 function _tutugaWriteEquipmentSheet(ws, allData) {
   var EQUIP_WEEK_START   = _tutugaConst('EQUIP_WEEK_START',   { 1:8, 2:46, 3:84, 4:122, 5:160 });
@@ -541,17 +637,22 @@ async function buildTutugaWorkbook(allData) {
 
   _tutugaApplyMonthHeaders(wb, data.month);
 
-  var wsWater = wb.worksheets[TUTUGA_SHEET_IDX.daily_water];
-  var wsEquip = wb.worksheets[TUTUGA_SHEET_IDX.equipment_hours];
-  var wsElec  = wb.worksheets[TUTUGA_SHEET_IDX.daily_elec];
-  var wsMech  = wb.worksheets[TUTUGA_SHEET_IDX.daily_mech];
+  var wsWater  = wb.worksheets[TUTUGA_SHEET_IDX.daily_water];
+  var wsSuikan = wb.worksheets[TUTUGA_SHEET_IDX.water_report];
+  var wsEquip  = wb.worksheets[TUTUGA_SHEET_IDX.equipment_hours];
+  var wsElec   = wb.worksheets[TUTUGA_SHEET_IDX.daily_elec];
+  var wsMech   = wb.worksheets[TUTUGA_SHEET_IDX.daily_mech];
 
-  if (wsWater) _tutugaWriteWaterSheet(wsWater, data);
-  if (wsEquip) _tutugaWriteEquipmentSheet(wsEquip, data);
-  if (wsElec)  _tutugaWriteElectricalSheet(wsElec, data);
-  if (wsMech)  _tutugaWriteMechanicalSheet(wsMech, data);
+  if (wsWater) {
+    _tutugaWriteWaterSheet(wsWater, data);
+    _tutugaWriteNichijoFixed(wsWater);
+  }
+  if (wsSuikan) _tutugaWriteSuikanFixed(wsSuikan, data.month);
+  if (wsEquip)  _tutugaWriteEquipmentSheet(wsEquip, data);
+  if (wsElec)   _tutugaWriteElectricalSheet(wsElec, data);
+  if (wsMech)   _tutugaWriteMechanicalSheet(wsMech, data);
 
-  // 運転管理月報 / 水質管理報告 は Phase 5+ で実装予定
+  // 運転管理月報 は Phase 5+ で実装予定
   return wb;
 }
 
