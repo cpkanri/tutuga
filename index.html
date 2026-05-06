@@ -4857,6 +4857,7 @@ function clearCurrentSection() {
     : TUTUGA_FIELDS.water.measureFormFull;
   keys.forEach(k => { cell[k] = (k === "inspector" || k === "bikou") ? "" : null; });
   loadDataToForm();
+  saveCurrentToLocalStorage();  // Phase 8 修正04A: クリア後の状態を localStorage に反映
   markDirty();
   showToast("クリアしました");
 }
@@ -5185,6 +5186,8 @@ function bindEvents() {
   document.getElementById("btnClear").addEventListener("click", () => {
     if (currentSheet === "water") {
       clearCurrentSection();
+    } else if (currentSheet === "equip") {
+      clearCurrentEquip();
     } else if (currentSheet === "mech") {
       clearCurrentMech();
     } else if (currentSheet === "elec") {
@@ -5229,6 +5232,7 @@ function clearCurrentMech() {
     Object.keys(day).forEach(k => { day[k] = null; });
   });
   loadMechDataToForm();
+  saveCurrentToLocalStorage();  // Phase 8 修正04A: クリア後の状態を localStorage に反映
   markDirty();
   showToast("機械設備 第" + w + "週の全データをクリアしました");
 }
@@ -5249,8 +5253,32 @@ function clearCurrentElec() {
     Object.keys(day).forEach(k => { day[k] = null; });
   });
   loadElecDataToForm();
+  saveCurrentToLocalStorage();  // Phase 8 修正04A: クリア後の状態を localStorage に反映
   markDirty();
   showToast("電気設備 第" + w + "週の全データをクリアしました");
+}
+
+// 機器運転時間: 現在週の全曜日をクリア
+// Phase 8 修正04A: equip タブのクリアハンドラが未実装だったため新設
+function clearCurrentEquip() {
+  const w = currentWeek;
+  if (!confirm("機器運転時間 第" + w + "週の全データをクリアしますか？")) return;
+  pushUndo("クリア（機器運転時間 第" + w + "週）");
+  if (!tutugaData.equip) tutugaData.equip = {};
+  if (!tutugaData.equip[w]) tutugaData.equip[w] = emptyEquipWeek();
+  const week = tutugaData.equip[w];
+  TUTUGA_FIELDS.equip.keys.forEach(k => {
+    if (!week[k]) week[k] = {};
+    EQUIP_DAYS.forEach(dk => {
+      // 月内日のみクリア対象（範囲外は元々入力できないので触らない）
+      if (!getDateForDayKey(w, dk)) return;
+      week[k][dk] = null;
+    });
+  });
+  loadEquipDataToForm();
+  saveCurrentToLocalStorage();  // Phase 8 修正04A: クリア後の状態を localStorage に反映
+  markDirty();
+  showToast("機器運転時間 第" + w + "週の全データをクリアしました");
 }
 
 // ===== 初期化 =====
