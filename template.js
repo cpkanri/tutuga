@@ -322,15 +322,64 @@ function _tutugaGetWaterFirstMonday(monthStr) {
   return new Date(y, m - 1, 1 - (dow - 1));
 }
 
-// Phase 8 修正02 Step3: 電気/機械/機器運転時間シート用 第1週開始日（土日除外、前月跨ぎなし）
+// Phase 8 バグ修正11: 祝日判定。index.html 側 isCompanyHoliday を参照する。
+function _tutugaIsHoliday(date) {
+  if (!date) return false;
+  try {
+    if (typeof window !== 'undefined' && typeof window.isCompanyHoliday === 'function') {
+      return !!window.isCompanyHoliday(date);
+    }
+    if (typeof isCompanyHoliday === 'function') {
+      return !!isCompanyHoliday(date);
+    }
+  } catch (e) {}
+  return false;
+}
+
+function _tutugaIsWorkday(date) {
+  if (!date) return false;
+  var dow = date.getDay();
+  if (dow === 0 || dow === 6) return false;
+  if (_tutugaIsHoliday(date)) return false;
+  return true;
+}
+
+// 指定日から前進して最初の平日（土日・祝日でない日）を返す。
+// limit を超えたら null。
+function _tutugaAdvanceToWorkday(date, limit) {
+  if (!date) return null;
+  var cursor = new Date(date);
+  while (!_tutugaIsWorkday(cursor)) {
+    cursor.setDate(cursor.getDate() + 1);
+    if (limit && cursor > limit) return null;
+  }
+  return cursor;
+}
+
+// 指定日から後退して最初の平日を返す。
+// floor を下回ったら floor を返す（安全策）。
+function _tutugaRetreatToWorkday(date, floor) {
+  if (!date) return floor ? new Date(floor) : null;
+  var cursor = new Date(date);
+  while (!_tutugaIsWorkday(cursor)) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (floor && cursor < floor) return new Date(floor);
+  }
+  return cursor;
+}
+
+// Phase 8 修正02 Step3 + バグ修正11: 電気/機械/機器運転時間シート用 第1週開始日。
+// 土日に加えて祝日も除外し、月内最初の平日を返す。
 function _tutugaGetElecMechFirstStart(monthStr) {
   var parts = String(monthStr || '').split('-').map(Number);
   var y = parts[0], m = parts[1];
-  var firstDay = new Date(y, m - 1, 1);
-  var dow = firstDay.getDay();
-  if (dow === 0) return new Date(y, m - 1, 2);
-  if (dow === 6) return new Date(y, m - 1, 3);
-  return firstDay;
+  var lastDay = new Date(y, m, 0).getDate();
+  for (var d = 1; d <= lastDay; d++) {
+    var date = new Date(y, m - 1, d);
+    if (_tutugaIsWorkday(date)) return date;
+  }
+  // 月全体が休日というあり得ない状況のフォールバック
+  return new Date(y, m - 1, 1);
 }
 
 // 値が空 (null/undefined/'') かどうか。0 や false は有効値。
@@ -530,10 +579,10 @@ function _tutugaWriteEquipmentDates(ws, monthStr) {
   var aRows = [5, 43, 81, 119, 157];
   var firstStart = _tutugaGetElecMechFirstStart(monthStr);
   var firstStartDow = firstStart.getDay();
-  var week1Fri = new Date(firstStart);
-  week1Fri.setDate(firstStart.getDate() + (5 - firstStartDow));
+  // 第1週金曜の暦上ターゲット（祝日でも一旦計算）
+  var week1FriTarget = new Date(firstStart);
+  week1FriTarget.setDate(firstStart.getDate() + (5 - firstStartDow));
   var monthEnd = new Date(y, m, 0);
-  if (week1Fri > monthEnd) week1Fri = monthEnd;
 
   for (var w = 1; w <= 5; w++) {
     var aRow = aRows[w - 1];
@@ -542,20 +591,35 @@ function _tutugaWriteEquipmentDates(ws, monthStr) {
     var weekStart, weekEnd;
 
     if (w === 1) {
+      // 開始日は既に _tutugaGetElecMechFirstStart で平日に進めた値
       weekStart = firstStart;
-      weekEnd = week1Fri;
+      // 終了日は週金曜（または月末日）→ 祝日なら手前の平日へ後退
+      var w1End = (week1FriTarget > monthEnd) ? monthEnd : week1FriTarget;
+      weekEnd = _tutugaRetreatToWorkday(w1End, weekStart);
     } else {
-      var ws2 = new Date(week1Fri);
-      ws2.setDate(week1Fri.getDate() + 3 + (w - 2) * 7);
-      if (ws2.getMonth() !== m - 1 || ws2 > monthEnd) {
+      // 第N週月曜のターゲット
+      var monTarget = new Date(week1FriTarget);
+      monTarget.setDate(week1FriTarget.getDate() + 3 + (w - 2) * 7);
+      // 月外なら null クリア
+      if (monTarget.getMonth() !== m - 1 || monTarget > monthEnd) {
         aCell.value = null;
         fCell.value = null;
         continue;
       }
-      weekStart = ws2;
-      var fri = new Date(ws2);
-      fri.setDate(ws2.getDate() + 4);
-      weekEnd = (fri <= monthEnd && fri.getMonth() === m - 1) ? fri : monthEnd;
+      // 月曜が祝日なら次平日へ前進（同週内 or 月末まで）
+      var monAdvanced = _tutugaAdvanceToWorkday(monTarget, monthEnd);
+      if (!monAdvanced) {
+        aCell.value = null;
+        fCell.value = null;
+        continue;
+      }
+      weekStart = monAdvanced;
+      // 第N週金曜のターゲット
+      var friTarget = new Date(monTarget);
+      friTarget.setDate(monTarget.getDate() + 4);
+      var clampedFri = (friTarget > monthEnd || friTarget.getMonth() !== m - 1) ? monthEnd : friTarget;
+      // 金曜（または月末日）が祝日なら手前の平日へ後退
+      weekEnd = _tutugaRetreatToWorkday(clampedFri, weekStart);
     }
 
     aCell.value = _tutugaToUtcDate(weekStart);
@@ -651,6 +715,67 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
 }
 
 // =====================================================================
+// Phase 8 バグ修正11: 全シート日付の対象年月反映
+// =====================================================================
+// テンプレに静的に埋め込まれた3月の datetime 値を、対象年月に応じて書き換える。
+// 起点は 2 セルだけで全シート連動：
+//   - 日常水質 I3        : 第1週ページ起点 (前週月曜、前月跨ぎあり)
+//                          → J3-N3, I55, I107, I159, I211 (式) 連鎖更新
+//                          → 日常機械設備 E3-I3, E180 等 (=日常水質!I3+...) 連鎖更新
+//                          → 日常電気設備 G2-K2 (=日常水質!I3+...) 連鎖更新
+//   - 運転管理月報 A6    : 月初日 → A7-A36 (式 sharedFormula =A6+1) 連鎖更新
+//                          → 水質管理報告 A8 (=運転管理月報!A6) → A9-A38 連鎖更新
+//   - 運転管理月報 A37-A39 (静的 datetime) と月末超過 sharedFormula 行 → null クリア
+// 式の cached result は古い3月のままなので buildTutugaWorkbook 側で
+// fullCalcOnLoad=true を立てて Excel 開封時に強制再計算させる。
+function _tutugaWriteMonthBaseDates(wb, monthStr) {
+  if (!wb || !monthStr) return;
+  var parts = String(monthStr).split('-').map(Number);
+  var y = parts[0], m = parts[1];
+  if (!y || !m) return;
+  var lastDay = new Date(y, m, 0).getDate();
+
+  // ===== 日常水質 I3 = 対象月内最初の月曜の前週月曜（前月跨ぎあり） =====
+  var wsWater = wb.worksheets[TUTUGA_SHEET_IDX.daily_water];
+  if (wsWater) {
+    var monthFirst = new Date(y, m - 1, 1);
+    var firstMonday = new Date(monthFirst);
+    while (firstMonday.getDay() !== 1) {
+      firstMonday.setDate(firstMonday.getDate() + 1);
+    }
+    var prevMonday = new Date(firstMonday);
+    prevMonday.setDate(prevMonday.getDate() - 7);
+
+    var i3 = wsWater.getCell('I3');
+    i3.value = _tutugaToUtcDate(prevMonday);
+    // テンプレ既存書式を明示再適用（ExcelJS のデフォルト書式上書き対策）
+    i3.numFmt = 'm"月"d"日("aaa")"';
+  }
+
+  // ===== 運転管理月報 A6 = 月初日、A(6+lastDay)..A39 = null =====
+  var wsOper = wb.worksheets[TUTUGA_SHEET_IDX.operation_monthly];
+  if (wsOper) {
+    var day1 = new Date(y, m - 1, 1);
+    var a6 = wsOper.getCell('A6');
+    a6.value = _tutugaToUtcDate(day1);
+    a6.numFmt = 'd';
+
+    // 月末超過行（対象月外日）をクリア。
+    // A6=day1, A7-A36 は sharedFormula =A6+1 連鎖、A37-A39 は静的 datetime。
+    // - 31日月: A36=月末、A37-A39 を null
+    // - 30日月: A35=月末、A36(式)/A37-A39 を null
+    // - 29日月: A34=月末、A35(式)/A36(式)/A37-A39 を null
+    // - 28日月: A33=月末、A34(式)/A35(式)/A36(式)/A37-A39 を null
+    var firstNullRow = 6 + lastDay;  // 月内最終日が A(6+lastDay-1)
+    for (var r = firstNullRow; r <= 39; r++) {
+      wsOper.getCell('A' + r).value = null;
+    }
+  }
+
+  // 水質管理報告 A8=式参照 / 機械設備 E3-I3 / 電気設備 G2-K2 は触らない（自動追従）
+}
+
+// =====================================================================
 // 月年タイトル書き込み (Phase 8 バグ修正07)
 // =====================================================================
 // テンプレートに静的に埋め込まれた "令和8年3月" / "令和8年　   3月分" を
@@ -706,6 +831,11 @@ async function buildTutugaWorkbook(allData) {
   await wb.xlsx.load(bytes.buffer);
 
   var data = allData || {};
+
+  // Phase 8 バグ修正11: 全シート日付を対象年月に書き換え（I3 / A6 起点で連鎖更新）。
+  // テンプレ式の cached result は3月固定のため、fullCalcOnLoad で Excel 開封時に強制再計算。
+  _tutugaWriteMonthBaseDates(wb, data.month);
+  if (wb.calcProperties) wb.calcProperties.fullCalcOnLoad = true;
 
   _tutugaApplyMonthHeaders(wb, data.month);
 
