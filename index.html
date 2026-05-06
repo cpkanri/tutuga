@@ -4398,11 +4398,66 @@ function loadDataToForm() {
   }
 }
 
-// ===== オートアドバンス機能 =====
+// ===== オートアドバンス機能（Phase 8 修正06: 全タブ対応） =====
 
-// 現在のフォーム上のフォーカス可能なフィールドリストを順番に取得
+// 旧 API（互換用）: 水質タブの advanceable フィールドを返す。
+// Phase 8 修正06 以降は getNavigableFields() に移行済み（残置のみ）。
 function getAdvanceableFields() {
   return Array.from(document.querySelectorAll('#formWrap input[data-field], #formWrap select[data-field]'));
+}
+
+// 現在のタブで Enter で移動可能なフィールドを順番に列挙する
+// - water/elec/mech (per-day): 現在表示中のフォーム内 DOM 順
+// - equip (per-week 並列表示): 列優先（mon列→tue列→...→fri列、各列内は行順）
+// - disabled / 非表示 / type:'auto'/'autoCalc'（描画されない）は除外
+function getNavigableFields() {
+  if (currentSheet === 'equip') {
+    return _getEquipNavigableFields();
+  }
+  return _getPerDayNavigableFields();
+}
+
+function _getPerDayNavigableFields() {
+  const container = (typeof getCurrentFormContainer === 'function') ? getCurrentFormContainer() : null;
+  if (!container) return [];
+  const all = Array.from(container.querySelectorAll('input, select'));
+  return all.filter(_isFieldEnterNavigable);
+}
+
+function _getEquipNavigableFields() {
+  // 機器運転時間: 列優先（mon→tue→wed→thu→fri）、各列内は行順（DOM 順）
+  const body = document.getElementById('equipBody');
+  if (!body) return [];
+  const dayOrder = ['mon','tue','wed','thu','fri'];
+  const result = [];
+  dayOrder.forEach(dk => {
+    body.querySelectorAll('input[data-equip][data-eday="' + dk + '"]').forEach(el => {
+      if (_isFieldEnterNavigable(el)) result.push(el);
+    });
+  });
+  return result;
+}
+
+function _isFieldEnterNavigable(el) {
+  if (!el) return false;
+  if (el.disabled) return false;
+  if (el.type === 'hidden') return false;
+  if (typeof window.getComputedStyle === 'function') {
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+  }
+  return true;
+}
+
+// Phase 8 修正06: モバイルキーボードに「次へ」キーを表示するため
+// rootEl 配下の全 input / select に enterkeyhint='next' を付与する
+function applyEnterKeyHintNext(rootEl) {
+  if (!rootEl) return;
+  rootEl.querySelectorAll('input, select').forEach(el => {
+    if (el.disabled) return;
+    if (el.type === 'hidden') return;
+    el.setAttribute('enterkeyhint', 'next');
+  });
 }
 
 // 指定要素を画面の上から1/3位置にスクロール
@@ -4416,10 +4471,12 @@ function scrollToTopThird(el) {
   window.scrollBy({ top: scrollBy, left: 0, behavior: 'smooth' });
 }
 
-// 次のフィールドに進む
-// currentWaterSub が usage で最後まで行ったら measure に切替
+// Enter キーで次のフィールドに進む（全タブ共通）
+// - 同じビュー内の次フィールドがあればフォーカス移動
+// - なければ advanceToNextDay() で次日（または equip では次週）へ自動切替
+// - サブタブ跨ぎ・月跨ぎ・タブ跨ぎはしない
 function advanceToNextField(currentEl) {
-  const fields = getAdvanceableFields();
+  const fields = getNavigableFields();
   const idx = fields.indexOf(currentEl);
   if (idx < 0) return;
 
@@ -4430,43 +4487,86 @@ function advanceToNextField(currentEl) {
     if (next.tagName === 'INPUT' && (next.type === 'number' || next.type === 'text')) {
       try { next.select(); } catch(e) {}
     }
-  } else {
-    if (currentSheet === 'water' && currentWaterSub === 'usage') {
-      switchSectionAndFocusFirst('measure');
-    }
-    currentEl.blur();
+    return;
   }
+  // 同日（equip では同週）内に次フィールドなし → 次日 / 次週へ
+  advanceToNextDay();
 }
 
-// 水質サブタブ切替＋最初のフィールドにフォーカス
-function switchSectionAndFocusFirst(targetSub) {
-  saveCurrentFormToData();
-  currentWaterSub = targetSub;
-  currentMain = currentSheet;
-
-  // 水質サブタブ (data-water-sub) のactive状態を更新
-  document.querySelectorAll('#waterSubTabs [data-water-sub]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.waterSub === currentWaterSub);
-  });
-
-  // フォーム再描画
-  if (typeof renderForm === 'function') {
-    renderForm();
-  } else if (typeof renderAll === 'function') {
-    renderAll();
+// 次の active day（または equip では次週）に切替してフォーカスを移す
+// 月跨ぎはしない。月内に次がなければ false（フォーカスはそのまま）。
+function advanceToNextDay() {
+  const month = tutugaData.targetMonth || '';
+  if (!month) return false;
+  if (currentSheet === 'equip') {
+    return _advanceToNextEquipWeek(month);
   }
+  return _advanceToNextPerDayDay(month);
+}
 
-  // 少し待ってから最初のフィールドにフォーカス（DOM更新待ち）
-  setTimeout(() => {
-    const first = document.querySelector('#formWrap input[data-field], #formWrap select[data-field]');
-    if (first) {
-      first.focus();
-      setTimeout(() => scrollToTopThird(first), 50);
-      if (first.tagName === 'INPUT' && (first.type === 'number' || first.type === 'text')) {
-        try { first.select(); } catch(e) {}
+function _advanceToNextPerDayDay(month) {
+  const isActive = (currentSheet === 'water')
+    ? isWaterDayActive
+    : isElecMechDayActive;
+  const dayOrder = ['mon','tue','wed','thu','fri'];
+  const currentDayKey = DAY_NUM_TO_STR[currentDay] || 'mon';
+  const dayIdx = dayOrder.indexOf(currentDayKey);
+
+  // 同週内の次曜日
+  for (let i = dayIdx + 1; i < dayOrder.length; i++) {
+    if (isActive(month, currentWeek, dayOrder[i])) {
+      _switchToPerDayContext(currentWeek, dayOrder[i]);
+      return true;
+    }
+  }
+  // 次週以降（最大第5週まで）
+  for (let w = currentWeek + 1; w <= 5; w++) {
+    for (let i = 0; i < dayOrder.length; i++) {
+      if (isActive(month, w, dayOrder[i])) {
+        _switchToPerDayContext(w, dayOrder[i]);
+        return true;
       }
     }
-  }, 100);
+  }
+  return false;
+}
+
+function _switchToPerDayContext(week, dayKey) {
+  // バグ修正03 と同じく切替前に保存（既存挙動維持）
+  try { saveCurrentFormToData(); } catch (_) {}
+  try { saveCurrentToLocalStorage(); } catch (_) {}
+  currentWeek = Number(week);
+  currentDay = DAY_STR_TO_NUM[dayKey] || 1;
+  renderAll();
+  setTimeout(_focusFirstNavigableField, 100);
+}
+
+function _advanceToNextEquipWeek(month) {
+  for (let w = currentWeek + 1; w <= 5; w++) {
+    let weekHasActive = false;
+    for (const dk of ['mon','tue','wed','thu','fri']) {
+      if (isElecMechDayActive(month, w, dk)) { weekHasActive = true; break; }
+    }
+    if (!weekHasActive) continue;
+    try { saveCurrentFormToData(); } catch (_) {}
+    try { saveCurrentToLocalStorage(); } catch (_) {}
+    currentWeek = w;
+    renderAll();
+    setTimeout(_focusFirstNavigableField, 100);
+    return true;
+  }
+  return false;
+}
+
+function _focusFirstNavigableField() {
+  const fields = getNavigableFields();
+  if (fields.length === 0) return;
+  const first = fields[0];
+  first.focus();
+  setTimeout(() => scrollToTopThird(first), 50);
+  if (first.tagName === 'INPUT' && (first.type === 'number' || first.type === 'text')) {
+    try { first.select(); } catch(e) {}
+  }
 }
 
 function markDirty() {
@@ -4744,6 +4844,9 @@ function renderForm() {
   // Phase 8 修正04A: input/select の単一フィールド変更を Undo スタックに記録
   attachUndoTracking(wrap);
 
+  // Phase 8 修正06: モバイルキーボードに「次へ」キーを表示
+  applyEnterKeyHintNext(wrap);
+
   loadDataToForm();
 }
 
@@ -4920,10 +5023,21 @@ function renderEquipPanel() {
         markDirty();
       }
     });
+    // Phase 8 修正06: Enter キーで次フィールドへ自動移動（列優先、同週最後で次週へ）
+    body.addEventListener("keydown", (ev) => {
+      if (ev.key !== 'Enter') return;
+      if (ev.target.tagName === 'TEXTAREA') return;
+      if (!ev.target.matches('input[data-equip]')) return;
+      ev.preventDefault();
+      advanceToNextField(ev.target);
+    });
   }
 
   // Phase 8 修正04A: 単一フィールド変更を Undo スタックに記録
   attachUndoTracking(body);
+
+  // Phase 8 修正06: モバイルキーボードに「次へ」キーを表示
+  applyEnterKeyHintNext(body);
 }
 
 function loadEquipDataToForm() {
@@ -5100,6 +5214,8 @@ function renderMechPanel() {
     wrap.innerHTML = buildEquipFormHtml("mech", currentMechSub, currentWeek, currentDay);
     bindEquipInputEvents("mech");
     loadMechDataToForm();
+    // Phase 8 修正06: モバイルキーボードに「次へ」キーを表示
+    applyEnterKeyHintNext(wrap);
   }
 }
 
@@ -5139,6 +5255,8 @@ function renderElecPanel() {
     loadElecDataToForm();
     // Phase 8 修正02 Step2: autoCalc 自動計算値を注入（描画＋tutugaData 反映）
     recomputeElecAutoCalc();
+    // Phase 8 修正06: モバイルキーボードに「次へ」キーを表示
+    applyEnterKeyHintNext(wrap);
   }
 }
 
@@ -5419,6 +5537,7 @@ function bindEquipInputEvents(kind) {
     container.removeEventListener("input", prev.input);
     container.removeEventListener("change", prev.change);
     if (prev.focusin) container.removeEventListener("focusin", prev.focusin);  // Phase 8 修正05 追補
+    if (prev.keydown) container.removeEventListener("keydown", prev.keydown);  // Phase 8 修正06
   }
 
   const onClick = function(ev) {
@@ -5503,11 +5622,21 @@ function bindEquipInputEvents(kind) {
     }
   };
 
+  // Phase 8 修正06: Enter キーで次フィールドへ自動移動（同日最後で次日 / 次週へ）
+  const onKeyDown = function(ev) {
+    if (ev.key !== 'Enter') return;
+    if (ev.target.tagName === 'TEXTAREA') return;
+    if (!ev.target.matches('input[data-' + dataAttr + '], select[data-' + dataAttr + ']')) return;
+    ev.preventDefault();
+    advanceToNextField(ev.target);
+  };
+
   container.addEventListener("click", onClick);
   container.addEventListener("input", onInput);
   container.addEventListener("change", onChange);
   container.addEventListener("focusin", onFocusIn);  // Phase 8 修正05 追補: previousValidValue 初期化フェイルセーフ
-  container[handlerKey] = { click: onClick, input: onInput, change: onChange, focusin: onFocusIn };
+  container.addEventListener("keydown", onKeyDown);  // Phase 8 修正06: Enter ナビゲーション
+  container[handlerKey] = { click: onClick, input: onInput, change: onChange, focusin: onFocusIn, keydown: onKeyDown };
 
   // Phase 8 修正04A: input/select の単一フィールド変更を Undo スタックに記録
   attachUndoTracking(container);
