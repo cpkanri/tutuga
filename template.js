@@ -483,6 +483,47 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
 }
 
 // =====================================================================
+// 月年タイトル書き込み (Phase 8 バグ修正07)
+// =====================================================================
+// テンプレートに静的に埋め込まれた "令和8年3月" / "令和8年　   3月分" を
+// 対象年月で上書きする。シート/セルは _handover/筒賀_テンプレート.xlsx の
+// 実態に合わせて固定。両セルとも結合範囲のマスタセル。
+var TUTUGA_MONTH_HEADER_CELLS = [
+  // sheet0 日常水質: M1 (M1:R2 結合) → "令和N年M月"
+  { sheetIdx: 0, cell: 'M1', style: 'reiwa_short' },
+  // sheet1 運転管理月報: J1 (J1:M1 結合) → "令和N年　   M月分"
+  // 全角スペース1個 + 半角スペース3個でテンプレ実態を再現
+  { sheetIdx: 1, cell: 'J1', style: 'reiwa_long' }
+];
+
+function _tutugaFormatMonthHeader(yyyymm, style) {
+  if (!yyyymm || !/^\d{4}-\d{2}$/.test(yyyymm)) return '';
+  var parts = yyyymm.split('-');
+  var y = parseInt(parts[0], 10);
+  var m = parseInt(parts[1], 10);
+  var reiwa = y - 2018;
+  if (style === 'reiwa_short') {
+    return '令和' + reiwa + '年' + m + '月';
+  }
+  if (style === 'reiwa_long') {
+    return '令和' + reiwa + '年　   ' + m + '月分';
+  }
+  return y + '年' + m + '月';
+}
+
+function _tutugaApplyMonthHeaders(wb, yyyymm) {
+  if (!yyyymm) return;
+  for (var i = 0; i < TUTUGA_MONTH_HEADER_CELLS.length; i++) {
+    var conf = TUTUGA_MONTH_HEADER_CELLS[i];
+    var ws = wb.worksheets[conf.sheetIdx];
+    if (!ws) continue;
+    var text = _tutugaFormatMonthHeader(yyyymm, conf.style);
+    if (!text) continue;
+    ws.getCell(conf.cell).value = text;
+  }
+}
+
+// =====================================================================
 // 公開 API: buildTutugaWorkbook(allData) → Promise<ExcelJS.Workbook>
 // =====================================================================
 async function buildTutugaWorkbook(allData) {
@@ -497,6 +538,9 @@ async function buildTutugaWorkbook(allData) {
   await wb.xlsx.load(bytes.buffer);
 
   var data = allData || {};
+
+  _tutugaApplyMonthHeaders(wb, data.month);
+
   var wsWater = wb.worksheets[TUTUGA_SHEET_IDX.daily_water];
   var wsEquip = wb.worksheets[TUTUGA_SHEET_IDX.equipment_hours];
   var wsElec  = wb.worksheets[TUTUGA_SHEET_IDX.daily_elec];
