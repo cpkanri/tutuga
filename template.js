@@ -494,6 +494,56 @@ function _tutugaWriteNichijoFixed(ws) {
   applyGroup(TUTUGA_NICHIJO_ODOR_BY_ROW_OFFSET);
 }
 
+// =====================================================================
+// Phase 8 修正09: 主要機器運転時間 (idx=5) の A列・F列日付を動的書き込み
+// =====================================================================
+// テンプレ A5/A43/A81/A119/A157 = 各週開始日、F5/.../F157 = 各週終了日。
+// 旧テンプレは3月固定のシリアル値だったため月選択に追従していなかった。
+// 既存スタイル (numFmtId=58 = [$-411]ggge"年"m"月"d"日") は維持される。
+//
+// 第1週: 月初平日 (_tutugaGetElecMechFirstStart) から金曜 or 月末日
+// 第2週以降: 第1週金曜 +3 +(w-2)*7 を月曜とし金 or 月末日まで
+// 月末超過週は null クリア。
+function _tutugaWriteEquipmentDates(ws, monthStr) {
+  if (!ws || !monthStr) return;
+  var parts = String(monthStr).split('-').map(Number);
+  var y = parts[0], m = parts[1];
+  if (!y || !m) return;
+
+  var aRows = [5, 43, 81, 119, 157];
+  var firstStart = _tutugaGetElecMechFirstStart(monthStr);
+  var firstStartDow = firstStart.getDay();
+  var week1Fri = new Date(firstStart);
+  week1Fri.setDate(firstStart.getDate() + (5 - firstStartDow));
+  var monthEnd = new Date(y, m, 0);
+  if (week1Fri > monthEnd) week1Fri = monthEnd;
+
+  for (var w = 1; w <= 5; w++) {
+    var aRow = aRows[w - 1];
+    var weekStart, weekEnd;
+
+    if (w === 1) {
+      weekStart = firstStart;
+      weekEnd = week1Fri;
+    } else {
+      var ws2 = new Date(week1Fri);
+      ws2.setDate(week1Fri.getDate() + 3 + (w - 2) * 7);
+      if (ws2.getMonth() !== m - 1 || ws2 > monthEnd) {
+        ws.getCell(aRow, 1).value = null;
+        ws.getCell(aRow, 6).value = null;
+        continue;
+      }
+      weekStart = ws2;
+      var fri = new Date(ws2);
+      fri.setDate(ws2.getDate() + 4);
+      weekEnd = (fri <= monthEnd && fri.getMonth() === m - 1) ? fri : monthEnd;
+    }
+
+    ws.getCell(aRow, 1).value = weekStart;
+    ws.getCell(aRow, 6).value = weekEnd;
+  }
+}
+
 // 機器運転時間シート
 function _tutugaWriteEquipmentSheet(ws, allData) {
   var EQUIP_WEEK_START   = _tutugaConst('EQUIP_WEEK_START',   { 1:8, 2:46, 3:84, 4:122, 5:160 });
@@ -648,7 +698,10 @@ async function buildTutugaWorkbook(allData) {
     _tutugaWriteNichijoFixed(wsWater);
   }
   if (wsSuikan) _tutugaWriteSuikanFixed(wsSuikan, data.month);
-  if (wsEquip)  _tutugaWriteEquipmentSheet(wsEquip, data);
+  if (wsEquip) {
+    _tutugaWriteEquipmentSheet(wsEquip, data);
+    _tutugaWriteEquipmentDates(wsEquip, data.month);
+  }
   if (wsElec)   _tutugaWriteElectricalSheet(wsElec, data);
   if (wsMech)   _tutugaWriteMechanicalSheet(wsMech, data);
 
