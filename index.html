@@ -4516,8 +4516,13 @@ function renderElecPanel() {
 // 機械・電気の保存・読込関数 (Phase 5a)
 // 描画は data-mfield/data-efield + data-day で曜日キー("mon"〜"fri")
 // データは tutugaData.mech[w].days[dk][key]
+//
+// Phase 8 修正03 追補: 以前は saveEquipFormToData / loadEquipDataToForm という
+// 名前で定義されていたが、機器運転時間タブ用の同名関数（line 4305-4327）と
+// 衝突して JS の関数宣言巻き上げにより equip 用ロジックが死んでいた。
+// 機器運転時間タブの値が消える原因だったため、この kind 引数版を別名へ改名。
 // =====================================================
-function saveEquipFormToData(kind) {
+function saveMechElecFormToData(kind) {
   const fieldAttr = (kind === "mech") ? "mfield" : "efield";
   const week = (kind === "mech")
     ? tutugaData.mech[currentWeek]
@@ -4543,10 +4548,10 @@ function saveEquipFormToData(kind) {
   });
 }
 
-function saveMechFormToData() { saveEquipFormToData("mech"); }
-function saveElecFormToData() { saveEquipFormToData("elec"); }
+function saveMechFormToData() { saveMechElecFormToData("mech"); }
+function saveElecFormToData() { saveMechElecFormToData("elec"); }
 
-function loadEquipDataToForm(kind) {
+function loadMechElecDataToForm(kind) {
   const fieldAttr = (kind === "mech") ? "mfield" : "efield";
   const week = (kind === "mech")
     ? tutugaData.mech[currentWeek]
@@ -4568,8 +4573,8 @@ function loadEquipDataToForm(kind) {
   });
 }
 
-function loadMechDataToForm() { loadEquipDataToForm("mech"); }
-function loadElecDataToForm() { loadEquipDataToForm("elec"); }
+function loadMechDataToForm() { loadMechElecDataToForm("mech"); }
+function loadElecDataToForm() { loadMechElecDataToForm("elec"); }
 
 // =====================================================
 // B-2 追加: 祝日振替ロジック
