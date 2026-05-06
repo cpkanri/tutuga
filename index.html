@@ -2544,13 +2544,16 @@ function showSaveHistoryDialog() {
   dialog.style.display = 'flex';
 }
 
-// ===== B-6 + Phase 8 修正04A: 元に戻す（Undo）スタック =====
-// 単一フィールド変更のみを記録（クリア・前日コピーは Undo 対象外）。
+// ===== B-6 + Phase 8 修正04A/04C: 元に戻す（Undo）スタック =====
+// 単一フィールド変更 (type:'field') と複数フィールド一括変更 (type:'bulk') を記録。
 // 最大 10 件、全タブ横断（タブ・サブタブ・週・日・月切替でクリアしない）。
 // ログアウト時のみクリア。
 //
-// スタックエントリ形式:
-//   { tab, subtab, week, day, month, fieldKey, oldValue, newValue }
+// エントリ形式:
+//   { type: 'field', tab, subtab, week, day, month, fieldKey, oldValue, newValue }
+//   { type: 'bulk',  tab, subtab, week, day, month, fields: [{fieldKey, oldValue}, ...] }
+//
+// クリア・前日コピーは bulk エントリで記録（Phase 8 修正04C で対応）。
 let undoStack = [];
 const UNDO_MAX = 10;
 let isUndoing = false;  // Undo 実行中は新しいエントリを記録しない
@@ -2581,15 +2584,39 @@ function getCurrentUndoContext() {
 function pushFieldUndo(entry) {
   if (isUndoing) return;
   if (!entry || !entry.fieldKey) return;
+  // Phase 8 修正04C: type フィールドを自動付与（既存呼び出し側は変更不要）
+  if (!entry.type) entry.type = 'field';
   undoStack.push(entry);
   if (undoStack.length > UNDO_MAX) undoStack.shift();
   updateUndoButton();
 }
 
-// 旧 API（互換用 no-op）: クリア・コピー等は Undo 対象外
-function pushUndo(_label) { /* deprecated: 旧スナップショット方式は廃止 */ }
+// Phase 8 修正04C: 複数フィールド一括変更を Undo スタックに記録
+// snapshotFields: [{ fieldKey, oldValue }, ...]（クリア前 / 前日コピー前のスナップショット）
+// 現在の表示コンテキスト（tab/subtab/week/day/month）で記録される。
+// equip タブの場合、fieldKey は "key|day" 形式で曜日も含める（フィールド側に day がないため）。
+function pushBulkUndo(snapshotFields) {
+  if (isUndoing) return;
+  if (!snapshotFields || snapshotFields.length === 0) return;
+  const ctx = getCurrentUndoContext();
+  const entry = {
+    type: 'bulk',
+    tab: ctx.tab,
+    subtab: ctx.subtab,
+    week: ctx.week,
+    day: ctx.day,
+    month: ctx.month,
+    fields: snapshotFields
+  };
+  undoStack.push(entry);
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+  updateUndoButton();
+}
 
-// 元に戻す（field 単位）
+// 旧 API（互換用 no-op）: 旧スナップショット方式は廃止
+function pushUndo(_label) { /* deprecated */ }
+
+// 元に戻す（field / bulk）
 async function performUndo() {
   if (undoStack.length === 0) {
     showToast("元に戻せる操作がありません");
@@ -2600,22 +2627,48 @@ async function performUndo() {
   try {
     await switchToUndoContext(entry);
 
-    const field = findFieldByUndoEntry(entry);
-    if (field) {
-      setFieldValueForUndo(field, entry.oldValue);
+    if (entry.type === 'bulk') {
+      // Phase 8 修正04C: 複数フィールド一括復元
+      let firstField = null;
+      (entry.fields || []).forEach(f => {
+        const field = findFieldByUndoEntry({
+          tab: entry.tab,
+          // equip は fieldKey に day が含まれる形式 "key|day"
+          day: f.day || entry.day,
+          fieldKey: f.fieldKey
+        });
+        if (!field) return;
+        if (!firstField) firstField = field;
+        setFieldValueForUndo(field, f.oldValue);
+        field.dataset.previousValue = f.oldValue == null ? '' : String(f.oldValue);
+      });
       // データ層に反映
       try { saveCurrentFormToData(); } catch (_) {}
-      // elec の autocalc 連動
       if (currentSheet === 'elec') {
         try { recomputeElecAutoCalc(); } catch (_) {}
       }
-      // 次の change で正しい oldValue を取るために previousValue を更新
-      field.dataset.previousValue = entry.oldValue == null ? '' : String(entry.oldValue);
-      // フォーカス + スクロール
-      try { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
-      try { if (typeof field.focus === 'function') field.focus(); } catch (_) {}
+      // 最初のフィールドにフォーカス + スクロール
+      if (firstField) {
+        try { firstField.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+        try { if (typeof firstField.focus === 'function') firstField.focus(); } catch (_) {}
+      } else {
+        console.warn('Undo (bulk): no fields restored', entry);
+      }
     } else {
-      console.warn('Undo: field not found for entry', entry);
+      // type: 'field'（既存の単一フィールド復元）
+      const field = findFieldByUndoEntry(entry);
+      if (field) {
+        setFieldValueForUndo(field, entry.oldValue);
+        try { saveCurrentFormToData(); } catch (_) {}
+        if (currentSheet === 'elec') {
+          try { recomputeElecAutoCalc(); } catch (_) {}
+        }
+        field.dataset.previousValue = entry.oldValue == null ? '' : String(entry.oldValue);
+        try { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+        try { if (typeof field.focus === 'function') field.focus(); } catch (_) {}
+      } else {
+        console.warn('Undo: field not found for entry', entry);
+      }
     }
 
     saveCurrentToLocalStorage();
