@@ -861,6 +861,39 @@ body.login-active { overflow: hidden; }
   color: #5a6a7d;
   margin-top: 1px;
 }
+/* Phase 8 修正04D: 機器運転時間タブの日別個別ボタン（クリア・前日コピー） */
+.equip-day-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+.equip-day-actions button {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 4px;
+  min-height: 36px;
+  border-radius: 4px;
+  border: 1px solid #c9d7e5;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.1;
+}
+.equip-day-actions .btn-equip-day-copy {
+  background: #e8f0f7;
+  color: #1a4f8a;
+}
+.equip-day-actions .btn-equip-day-copy:active {
+  background: #d3e2f0;
+}
+.equip-day-actions .btn-equip-day-clear {
+  background: #ffebee;
+  color: #c62828;
+  border-color: #f4cdd0;
+}
+.equip-day-actions .btn-equip-day-clear:active {
+  background: #ffd7dc;
+}
 .equip-table tbody td {
   padding: 4px;
   border: 1px solid #d9e2eb;
@@ -2559,7 +2592,8 @@ const UNDO_MAX = 10;
 let isUndoing = false;  // Undo 実行中は新しいエントリを記録しない
 
 // 現在の表示コンテキスト
-function getCurrentUndoContext() {
+// Phase 8 修正04D: dayOverride で day を上書き可能（機器運転時間タブの個別ボタン用）
+function getCurrentUndoContext(dayOverride) {
   const ctx = {
     tab: currentSheet,
     subtab: null,
@@ -2567,19 +2601,21 @@ function getCurrentUndoContext() {
     day: null,
     month: tutugaData.targetMonth || ''
   };
+  const defaultDay = DAY_NUM_TO_STR[currentDay] || null;
   if (currentSheet === 'water') {
     ctx.subtab = currentWaterSub;
-    ctx.day = DAY_NUM_TO_STR[currentDay] || null;
+    ctx.day = dayOverride || defaultDay;
   } else if (currentSheet === 'mech') {
     ctx.subtab = currentMechSub;
-    ctx.day = DAY_NUM_TO_STR[currentDay] || null;
+    ctx.day = dayOverride || defaultDay;
   } else if (currentSheet === 'elec') {
     ctx.subtab = currentElecSub;
-    ctx.day = DAY_NUM_TO_STR[currentDay] || null;
+    ctx.day = dayOverride || defaultDay;
   } else if (currentSheet === 'equip') {
-    // Phase 8 修正04C: equip も bulk クリア対象として currentDay を設定。
+    // Phase 8 修正04C/04D: equip でも bulk クリア対象として day を設定。
+    // 個別ボタン経由なら dayOverride を採用、それ以外は currentDay から導出。
     // 単一フィールド変更の場合は attachUndoTracking 内で data-eday に上書きされる。
-    ctx.day = DAY_NUM_TO_STR[currentDay] || null;
+    ctx.day = dayOverride || defaultDay;
   }
   return ctx;
 }
@@ -2594,14 +2630,13 @@ function pushFieldUndo(entry) {
   updateUndoButton();
 }
 
-// Phase 8 修正04C: 複数フィールド一括変更を Undo スタックに記録
-// snapshotFields: [{ fieldKey, oldValue }, ...]（クリア前 / 前日コピー前のスナップショット）
-// 現在の表示コンテキスト（tab/subtab/week/day/month）で記録される。
-// equip タブの場合、fieldKey は "key|day" 形式で曜日も含める（フィールド側に day がないため）。
-function pushBulkUndo(snapshotFields) {
+// Phase 8 修正04C/04D: 複数フィールド一括変更を Undo スタックに記録
+// snapshotFields: [{ fieldKey, oldValue, day? }, ...]
+// dayOverride: 機器運転時間タブの個別ボタンから呼ぶ場合の対象 day（'mon'..'fri'）
+function pushBulkUndo(snapshotFields, dayOverride) {
   if (isUndoing) return;
   if (!snapshotFields || snapshotFields.length === 0) return;
-  const ctx = getCurrentUndoContext();
+  const ctx = getCurrentUndoContext(dayOverride);
   const entry = {
     type: 'bulk',
     tab: ctx.tab,
@@ -2843,7 +2878,8 @@ function getCurrentFormContainer() {
 // 現在表示中の「タブ × サブタブ × 週 × 日」に該当する操作対象フィールド要素を列挙
 // disabled (type:'auto'/'autoCalc' 等) は除外。
 // equip は全曜日同時表示なので currentDay の列のみ抽出。
-function getCurrentFormFields() {
+// Phase 8 修正04D: dayOverride で対象 day を上書き可能（機器運転時間タブの個別ボタン用）
+function getCurrentFormFields(dayOverride) {
   const container = getCurrentFormContainer();
   if (!container) return [];
   const sel = [
@@ -2854,7 +2890,7 @@ function getCurrentFormFields() {
   ].join(', ');
   let all = Array.from(container.querySelectorAll(sel));
   if (currentSheet === 'equip') {
-    const dk = DAY_NUM_TO_STR[currentDay];
+    const dk = dayOverride || DAY_NUM_TO_STR[currentDay];
     all = all.filter(el => el.dataset.eday === dk);
   }
   return all.filter(el => !el.disabled);
@@ -2862,8 +2898,9 @@ function getCurrentFormFields() {
 
 // 現在表示中のフィールドの { fieldKey, oldValue, day? } スナップショットを返す
 // （Undo bulk エントリの fields 配列としてそのまま使える形式）
-function getCurrentFormSnapshot() {
-  return getCurrentFormFields().map(el => {
+// Phase 8 修正04D: dayOverride で対象 day を上書き可能
+function getCurrentFormSnapshot(dayOverride) {
+  return getCurrentFormFields(dayOverride).map(el => {
     const isToggle = (el.tagName === 'BUTTON' && el.classList.contains('toggle-btn'));
     const fieldKey = el.dataset.field || el.dataset.equip || el.dataset.mfield || el.dataset.efield;
     const oldValue = isToggle ? (el.dataset.val || '') : (el.value || '');
@@ -2877,8 +2914,9 @@ function getCurrentFormSnapshot() {
 
 // 現在表示中の全フィールドの DOM をクリア（input.value = '' / toggle.dataset.val = '')
 // 呼び出し後に saveCurrentFormToData() で tutugaData に反映する。
-function clearCurrentFormDOM() {
-  getCurrentFormFields().forEach(el => {
+// Phase 8 修正04D: dayOverride で対象 day を上書き可能
+function clearCurrentFormDOM(dayOverride) {
+  getCurrentFormFields(dayOverride).forEach(el => {
     if (el.tagName === 'BUTTON' && el.classList.contains('toggle-btn')) {
       el.dataset.val = '';
       el.textContent = '―';
@@ -2892,17 +2930,18 @@ function clearCurrentFormDOM() {
 
 // 統一クリア処理：現在表示中のタブ × サブタブ × 週 × 日 の全フィールドをクリア
 // クリア前のスナップショットを Undo bulk エントリとして記録する。
+// Phase 8 修正04D: dayOverride で対象 day を上書き可能（機器運転時間タブの個別ボタン用）
 // type:'auto'/'autoCalc' は disabled なので getCurrentFormFields で除外され影響なし
 // （ただしクリア後の saveCurrentToLocalStorage 経路で recompute され連動する）。
-function clearCurrentForm() {
-  const label = clearConfirmLabel();
+function clearCurrentForm(dayOverride) {
+  const label = clearConfirmLabel(dayOverride);
   if (!confirm(label)) return;
 
   // クリア前のスナップショット
-  const snapshot = getCurrentFormSnapshot();
+  const snapshot = getCurrentFormSnapshot(dayOverride);
 
   // フォーム DOM クリア
-  clearCurrentFormDOM();
+  clearCurrentFormDOM(dayOverride);
 
   // データ層へ反映
   try { saveCurrentFormToData(); } catch (_) {}
@@ -2912,8 +2951,8 @@ function clearCurrentForm() {
     try { recomputeElecAutoCalc(); } catch (_) {}
   }
 
-  // Undo bulk エントリ
-  pushBulkUndo(snapshot);
+  // Undo bulk エントリ（dayOverride を反映）
+  pushBulkUndo(snapshot, dayOverride);
 
   // localStorage 反映
   saveCurrentToLocalStorage();
@@ -2921,8 +2960,9 @@ function clearCurrentForm() {
   showToast("クリアしました");
 }
 
-function clearConfirmLabel() {
-  const dayJp = (DAY_NUM_TO_STR[currentDay] || '').toUpperCase();  // 確認ダイアログ用ラベル
+function clearConfirmLabel(dayOverride) {
+  const dayKey = dayOverride || DAY_NUM_TO_STR[currentDay] || '';
+  const dayJp = dayKey.toUpperCase();  // 確認ダイアログ用ラベル
   if (currentSheet === 'water') {
     const which = (currentWaterSub === 'usage') ? '使用量' : '水質測定';
     return '水質 / ' + which + '（第' + currentWeek + '週 ' + dayJp + '）の入力をクリアしますか？';
@@ -3071,12 +3111,14 @@ function shouldSkipFieldForCopy(fieldKey) {
 }
 
 // 全タブ共通の前日コピー実行
-function copyPreviousDayToCurrent() {
+// Phase 8 修正04D: dayOverride で対象 day を上書き可能（機器運転時間タブの個別ボタン用）
+// dayOverride が指定された場合、その day を起点に前日を探索し、その day にコピーする。
+function copyPreviousDayToCurrent(dayOverride) {
   // 入力途中の値を tutugaData に確定（前月から遡る場合の参照のため）
   try { saveCurrentFormToData(); } catch (_) {}
 
   const curMonth = tutugaData.targetMonth || '';
-  const curDayKey = DAY_NUM_TO_STR[currentDay] || 'mon';
+  const curDayKey = dayOverride || DAY_NUM_TO_STR[currentDay] || 'mon';
 
   const prev = findPreviousDayWithData(currentWeek, curDayKey, curMonth);
   if (!prev) {
@@ -3091,11 +3133,11 @@ function copyPreviousDayToCurrent() {
     return;
   }
 
-  // コピー前のスナップショット（Undo 用）
-  const snapshot = getCurrentFormSnapshot();
+  // コピー前のスナップショット（Undo 用）— dayOverride で対象 day を制限
+  const snapshot = getCurrentFormSnapshot(dayOverride);
 
-  // 現在のフォームに値を反映
-  const fields = getCurrentFormFields();
+  // 現在のフォームに値を反映（dayOverride で対象 day を制限）
+  const fields = getCurrentFormFields(dayOverride);
   fields.forEach(el => {
     const isToggle = (el.tagName === 'BUTTON' && el.classList.contains('toggle-btn'));
     const fieldKey = el.dataset.field || el.dataset.equip || el.dataset.mfield || el.dataset.efield;
@@ -3120,8 +3162,8 @@ function copyPreviousDayToCurrent() {
     try { recomputeElecAutoCalc(); } catch (_) {}
   }
 
-  // Undo bulk エントリ（コピー前の値を一括で記録）
-  pushBulkUndo(snapshot);
+  // Undo bulk エントリ（コピー前の値を一括で記録、dayOverride を反映）
+  pushBulkUndo(snapshot, dayOverride);
 
   // localStorage 反映
   saveCurrentToLocalStorage();
@@ -4754,7 +4796,8 @@ function renderAll() {
   const equipPanel = document.getElementById("equipPanel");
   const mechPanel  = document.getElementById("mechPanel");
   const elecPanel  = document.getElementById("elecPanel");
-  const btnCopy = document.getElementById("btnCopy");
+  const btnCopy  = document.getElementById("btnCopy");
+  const btnClear = document.getElementById("btnClear");
   const btnExcel = document.getElementById("btnExcel");
 
   // メインタブ active
@@ -4767,8 +4810,12 @@ function renderAll() {
   if (mechPanel)  mechPanel.style.display  = "none";
   if (elecPanel)  elecPanel.style.display  = "none";
 
-  // Phase 8 修正04C: 前日コピーボタンは全タブで表示
-  if (btnCopy) btnCopy.style.display = "";
+  // Phase 8 修正04C/04D: 共通の「前日コピー」「クリア」は equip タブで非表示
+  // （equip タブには各日の日付ラベル右隣に個別ボタンを配置するため）
+  // 「保存」「元に戻す」は全タブ共通で表示維持。
+  const isEquip = (currentSheet === "equip");
+  if (btnCopy)  btnCopy.style.display  = isEquip ? "none" : "";
+  if (btnClear) btnClear.style.display = isEquip ? "none" : "";
 
   if (currentSheet === "water") {
     if (waterPanel) waterPanel.style.display = "";
@@ -4821,9 +4868,26 @@ function renderEquipPanel() {
   EQUIP_DAYS.forEach((dk, i) => {
     const date = getDateForDayKey(currentWeek, dk);
     const dateStr = date ? `<br><span style="font-size:10px;font-weight:normal;opacity:.7;">${date.getMonth()+1}/${date.getDate()}</span>` : "";
-    headHtml += `<th class="col-${dk}">${dayLabels[i]}${dateStr}</th>`;
+    // Phase 8 修正04D: 月内日のみ個別ボタン（クリア・前日コピー）を表示
+    const dayActions = date
+      ? `<div class="equip-day-actions"><button type="button" class="btn-equip-day-copy" data-day="${dk}" title="${dayLabels[i]}曜日に前日コピー">前日コピー</button><button type="button" class="btn-equip-day-clear" data-day="${dk}" title="${dayLabels[i]}曜日をクリア">クリア</button></div>`
+      : '';
+    headHtml += `<th class="col-${dk}">${dayLabels[i]}${dateStr}${dayActions}</th>`;
   });
   head.innerHTML = headHtml;
+
+  // Phase 8 修正04D: 個別ボタンの click ハンドラを attach
+  // （head.innerHTML 再生成ごとに新しい要素が作られるため毎回 attach で OK）
+  head.querySelectorAll('.btn-equip-day-clear').forEach(btn => {
+    btn.addEventListener('click', () => {
+      clearCurrentForm(btn.dataset.day);
+    });
+  });
+  head.querySelectorAll('.btn-equip-day-copy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      copyPreviousDayToCurrent(btn.dataset.day);
+    });
+  });
 
   // 本体: 22機器 × 5曜日
   let bodyHtml = "";
