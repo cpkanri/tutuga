@@ -1647,6 +1647,10 @@ function bindLoginEvents() {
     // Phase 8 修正03: ログアウト処理の前に未保存の入力を localStorage に保存
     // （再ログイン時に同期で復元される）
     if (typeof saveCurrentToLocalStorage === 'function') saveCurrentToLocalStorage();
+    // Phase 8 修正04A: ログアウト時に Undo スタックをクリア（仕様）
+    undoStack = [];
+    isUndoing = false;
+    if (typeof updateUndoButton === 'function') updateUndoButton();
     await doLogout();
     updateUserInfoUI();
     showLoginScreen();
@@ -2540,41 +2544,219 @@ function showSaveHistoryDialog() {
   dialog.style.display = 'flex';
 }
 
-// B-6: 元に戻す機能用のスナップショットスタック（最大10件）
+// ===== B-6 + Phase 8 修正04A: 元に戻す（Undo）スタック =====
+// 単一フィールド変更のみを記録（クリア・前日コピーは Undo 対象外）。
+// 最大 10 件、全タブ横断（タブ・サブタブ・週・日・月切替でクリアしない）。
+// ログアウト時のみクリア。
+//
+// スタックエントリ形式:
+//   { tab, subtab, week, day, month, fieldKey, oldValue, newValue }
 let undoStack = [];
 const UNDO_MAX = 10;
+let isUndoing = false;  // Undo 実行中は新しいエントリを記録しない
 
-// 現在の全データの完全コピーを取る
-function snapshotData() {
-  return {
-    tutuga: JSON.parse(JSON.stringify(tutugaData)),
-    label: ''
+// 現在の表示コンテキスト
+function getCurrentUndoContext() {
+  const ctx = {
+    tab: currentSheet,
+    subtab: null,
+    week: currentWeek,
+    day: null,
+    month: tutugaData.targetMonth || ''
   };
+  if (currentSheet === 'water') {
+    ctx.subtab = currentWaterSub;
+    ctx.day = DAY_NUM_TO_STR[currentDay] || null;
+  } else if (currentSheet === 'mech') {
+    ctx.subtab = currentMechSub;
+    ctx.day = DAY_NUM_TO_STR[currentDay] || null;
+  } else if (currentSheet === 'elec') {
+    ctx.subtab = currentElecSub;
+    ctx.day = DAY_NUM_TO_STR[currentDay] || null;
+  }
+  // equip は全曜日同時表示なので day はフィールド側 (data-eday) で持つ
+  return ctx;
 }
 
-// クリア・コピーなど大きな変更前にスナップショットを保存
-function pushUndo(label) {
-  const snap = snapshotData();
-  snap.label = label || '操作前';
-  undoStack.push(snap);
+function pushFieldUndo(entry) {
+  if (isUndoing) return;
+  if (!entry || !entry.fieldKey) return;
+  undoStack.push(entry);
   if (undoStack.length > UNDO_MAX) undoStack.shift();
   updateUndoButton();
 }
 
-// 元に戻す
-function performUndo() {
+// 旧 API（互換用 no-op）: クリア・コピー等は Undo 対象外
+function pushUndo(_label) { /* deprecated: 旧スナップショット方式は廃止 */ }
+
+// 元に戻す（field 単位）
+async function performUndo() {
   if (undoStack.length === 0) {
     showToast("元に戻せる操作がありません");
     return;
   }
-  const snap = undoStack.pop();
-  tutugaData = snap.tutuga;
-  ensureStructure();
-  saveToStorage();
+  const entry = undoStack.pop();
+  isUndoing = true;
+  try {
+    await switchToUndoContext(entry);
+
+    const field = findFieldByUndoEntry(entry);
+    if (field) {
+      setFieldValueForUndo(field, entry.oldValue);
+      // データ層に反映
+      try { saveCurrentFormToData(); } catch (_) {}
+      // elec の autocalc 連動
+      if (currentSheet === 'elec') {
+        try { recomputeElecAutoCalc(); } catch (_) {}
+      }
+      // 次の change で正しい oldValue を取るために previousValue を更新
+      field.dataset.previousValue = entry.oldValue == null ? '' : String(entry.oldValue);
+      // フォーカス + スクロール
+      try { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+      try { if (typeof field.focus === 'function') field.focus(); } catch (_) {}
+    } else {
+      console.warn('Undo: field not found for entry', entry);
+    }
+
+    saveCurrentToLocalStorage();
+    markDirty();
+    showToast("元に戻しました");
+  } finally {
+    isUndoing = false;
+    updateUndoButton();
+  }
+}
+
+function setFieldValueForUndo(field, value) {
+  const v = (value == null) ? '' : String(value);
+  if (field.tagName === 'BUTTON' && field.classList.contains('toggle-btn')) {
+    field.dataset.val = v;
+    field.textContent = v || '―';
+  } else if (field.tagName === 'SELECT') {
+    field.value = v;
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    field.value = v;
+    // input イベントを発火（autocalc 等の連動のため）
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+function findFieldByUndoEntry(entry) {
+  const tab = entry.tab;
+  const fk = entry.fieldKey;
+  if (!fk) return null;
+  const fkEsc = _cssEscape(fk);
+  if (tab === 'water') {
+    return document.querySelector('#formWrap [data-field="' + fkEsc + '"]');
+  } else if (tab === 'equip') {
+    const dayEsc = _cssEscape(entry.day || '');
+    return document.querySelector('#equipBody [data-equip="' + fkEsc + '"][data-eday="' + dayEsc + '"]');
+  } else if (tab === 'mech') {
+    return document.querySelector('#mechFormWrap [data-mfield="' + fkEsc + '"]');
+  } else if (tab === 'elec') {
+    return document.querySelector('#elecFormWrap [data-efield="' + fkEsc + '"]');
+  }
+  return null;
+}
+
+function _cssEscape(s) {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s);
+  return String(s).replace(/[\\"]/g, '\\$&');
+}
+
+// Undo 実行時の自動コンテキスト切替
+async function switchToUndoContext(entry) {
+  // 既存挙動維持: 切替前に現在の状態を localStorage に保存
+  saveCurrentToLocalStorage();
+
+  // 月切替（rare path）— targetMonth change ハンドラの最小再現（syncAll は呼ばない）
+  if (entry.month && entry.month !== tutugaData.targetMonth) {
+    tutugaData.targetMonth = entry.month;
+    const sel = document.getElementById("targetMonth");
+    if (sel) sel.value = entry.month;
+    tutugaData.weeks = {};
+    tutugaData.mech = {};
+    tutugaData.elec = {};
+    tutugaData.equip = {};
+    currentMechWeek = 1;
+    currentMechPart = 1;
+    currentElecWeek = 1;
+    currentElecPart = 1;
+    loadFromStorage();
+    recomputeMonthWeeks();
+  }
+
+  // タブ切替
+  if (entry.tab) {
+    currentSheet = entry.tab;
+    currentMain = currentSheet;
+  }
+
+  // サブタブ切替
+  if (entry.subtab != null) {
+    if (currentSheet === 'water') currentWaterSub = entry.subtab;
+    else if (currentSheet === 'mech') currentMechSub = Number(entry.subtab);
+    else if (currentSheet === 'elec') currentElecSub = Number(entry.subtab);
+  }
+
+  // 週切替
+  if (entry.week) currentWeek = Number(entry.week);
+
+  // 日切替（per-day タブのみ。equip は全日表示なのでスキップ）
+  if (entry.day && (currentSheet === 'water' || currentSheet === 'mech' || currentSheet === 'elec')) {
+    const dayNum = DAY_STR_TO_NUM[entry.day];
+    if (dayNum) currentDay = dayNum;
+  }
+
   renderAll();
-  markDirty();
-  updateUndoButton();
-  showToast("「" + snap.label + "」を元に戻しました");
+}
+
+// 各タブのフォーム生成後に呼ぶ：input/select に focus/change を追加して
+// 単一フィールド変更を Undo スタックに記録する。
+// （toggle ボタンは bindEquipInputEvents の onClick 内で直接記録）
+function attachUndoTracking(rootEl) {
+  if (!rootEl) return;
+  const els = rootEl.querySelectorAll('input[data-field], select[data-field], input[data-equip], input[data-mfield], input[data-efield]');
+  els.forEach(el => {
+    if (el.disabled) return;
+    if (el._tutugaUndoBound) return;
+    el._tutugaUndoBound = true;
+
+    const readVal = () => el.value || '';
+
+    el.addEventListener('focus', () => {
+      el.dataset.previousValue = readVal();
+    });
+    el.addEventListener('change', () => {
+      if (isUndoing) return;
+      const oldValue = el.dataset.previousValue != null ? el.dataset.previousValue : '';
+      const newValue = readVal();
+      if (oldValue === newValue) return;
+      const ctx = getCurrentUndoContext();
+      const fieldKey = el.dataset.field || el.dataset.equip
+        || el.dataset.mfield || el.dataset.efield;
+      if (!fieldKey) return;
+      // equip は曜日が要素属性側、mech/elec は data-day
+      let day = ctx.day;
+      if (ctx.tab === 'equip') {
+        day = el.dataset.eday || null;
+      } else if (el.dataset.day) {
+        day = el.dataset.day;
+      }
+      pushFieldUndo({
+        tab: ctx.tab,
+        subtab: ctx.subtab,
+        week: ctx.week,
+        day: day,
+        month: ctx.month,
+        fieldKey: fieldKey,
+        oldValue: oldValue,
+        newValue: newValue
+      });
+      el.dataset.previousValue = newValue;
+    });
+  });
 }
 
 function updateUndoButton() {
@@ -2587,8 +2769,7 @@ function updateUndoButton() {
   } else {
     btn.disabled = false;
     btn.style.opacity = "1";
-    const last = undoStack[undoStack.length - 1];
-    btn.title = "「" + last.label + "」を元に戻す（残り " + undoStack.length + " 件）";
+    btn.title = "直前の入力を元に戻す（残り " + undoStack.length + " 件）";
   }
 }
 
@@ -4141,8 +4322,23 @@ function renderForm() {
       btn.dataset.val = next;
       btn.textContent = next || "―";
       markDirty();
+      // Phase 8 修正04A: トグルボタン変更を Undo スタックに記録
+      if (!isUndoing && current !== next) {
+        const ctx = getCurrentUndoContext();
+        const fieldKey = btn.dataset.field;
+        if (fieldKey) {
+          pushFieldUndo({
+            tab: ctx.tab, subtab: ctx.subtab, week: ctx.week,
+            day: ctx.day, month: ctx.month,
+            fieldKey: fieldKey, oldValue: current, newValue: next
+          });
+        }
+      }
     });
   });
+
+  // Phase 8 修正04A: input/select の単一フィールド変更を Undo スタックに記録
+  attachUndoTracking(wrap);
 
   loadDataToForm();
 }
@@ -4300,6 +4496,9 @@ function renderEquipPanel() {
       }
     });
   }
+
+  // Phase 8 修正04A: 単一フィールド変更を Undo スタックに記録
+  attachUndoTracking(body);
 }
 
 function loadEquipDataToForm() {
@@ -4774,6 +4973,18 @@ function bindEquipInputEvents(kind) {
     btn.dataset.val = nextVal;
     btn.textContent = nextVal || "―";
     markDirty();
+    // Phase 8 修正04A: トグルボタン変更を Undo スタックに記録
+    if (!isUndoing && cur !== nextVal) {
+      const ctx = getCurrentUndoContext();
+      const fieldKey = btn.dataset[dataAttr];
+      if (fieldKey) {
+        pushFieldUndo({
+          tab: ctx.tab, subtab: ctx.subtab, week: ctx.week,
+          day: btn.dataset.day || ctx.day, month: ctx.month,
+          fieldKey: fieldKey, oldValue: cur, newValue: nextVal
+        });
+      }
+    }
   };
   const onInput = function(ev) {
     if (ev.target.matches(`input[data-${dataAttr}]`)) markDirty();
@@ -4796,6 +5007,9 @@ function bindEquipInputEvents(kind) {
   container.addEventListener("input", onInput);
   container.addEventListener("change", onChange);
   container[handlerKey] = { click: onClick, input: onInput, change: onChange };
+
+  // Phase 8 修正04A: input/select の単一フィールド変更を Undo スタックに記録
+  attachUndoTracking(container);
 }
 
 // === Phase 5a: 年報は除去済み ===
@@ -4829,7 +5043,7 @@ function showToast(msg, type) {
 function copyFromPrevDay() {
   if (currentDay <= 1) { showToast("前日が存在しません", "error"); return; }
   saveFormToData();
-  pushUndo("前日コピー");
+  // Phase 8 修正04A: 複数フィールド変更のため Undo 対象外（仕様）
   const prev = tutugaData.weeks[currentWeek][currentDay - 1];
   const curr = tutugaData.weeks[currentWeek][currentDay];
   if (!prev || !curr) return;
@@ -4849,7 +5063,7 @@ function copyFromPrevDay() {
 // ===== 全クリア (現在のセクション/日) =====
 function clearCurrentSection() {
   if (!confirm("現在の日のこのセクションをクリアしますか？")) return;
-  pushUndo("クリア（水質）");
+  // Phase 8 修正04A: クリアは複数フィールド変更のため Undo 対象外（仕様）
   const cell = tutugaData.weeks[currentWeek][currentDay];
   if (!cell) return;
   const keys = (currentWaterSub === "usage")
@@ -5223,7 +5437,7 @@ function clearCurrentMech() {
   const week = tutugaData.mech && tutugaData.mech[w];
   if (!week || !week.days) return;
   const activeDays = getActiveDays(week, w);
-  pushUndo("クリア（機械設備 第" + w + "週 全曜日）");
+  // Phase 8 修正04A: クリアは複数フィールド変更のため Undo 対象外（仕様）
   EQUIP_DAYS.forEach(dk => {
     if (activeDays.indexOf(dk) < 0) return;
     if (!getDateForDayKey(w, dk)) return;
@@ -5244,7 +5458,7 @@ function clearCurrentElec() {
   const week = tutugaData.elec && tutugaData.elec[w];
   if (!week || !week.days) return;
   const activeDays = getActiveDays(week, w);
-  pushUndo("クリア（電気設備 第" + w + "週 全曜日）");
+  // Phase 8 修正04A: クリアは複数フィールド変更のため Undo 対象外（仕様）
   EQUIP_DAYS.forEach(dk => {
     if (activeDays.indexOf(dk) < 0) return;
     if (!getDateForDayKey(w, dk)) return;
@@ -5263,7 +5477,7 @@ function clearCurrentElec() {
 function clearCurrentEquip() {
   const w = currentWeek;
   if (!confirm("機器運転時間 第" + w + "週の全データをクリアしますか？")) return;
-  pushUndo("クリア（機器運転時間 第" + w + "週）");
+  // Phase 8 修正04A: クリアは複数フィールド変更のため Undo 対象外（仕様）
   if (!tutugaData.equip) tutugaData.equip = {};
   if (!tutugaData.equip[w]) tutugaData.equip[w] = emptyEquipWeek();
   const week = tutugaData.equip[w];
