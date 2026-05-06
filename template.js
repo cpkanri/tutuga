@@ -38,12 +38,12 @@ var TUTUGA_USAGE_ROW_OFFSET = {
   returnSludge1: 9, returnSludge2: 10, discharge: 11
 };
 
-// ===== 下段水質測定 行オフセット (sheet=0, ブロック内, 28 項目) =====
+// ===== 下段水質測定 行オフセット (sheet=0, ブロック内) =====
+// Phase 8 修正08: 外観 (appear*) / 臭気 (odor*) はフォーム削除済み。
+// Excel 出力時に固定値書き込み（_tutugaWriteNichijoFixed）で別途処理する。
 var TUTUGA_MEASURE_ROW_OFFSET = {
   tempIn: 15, tempD1: 16, tempD2: 17, tempOut: 18,
-  appearIn: 19, appearD1: 20, appearD2: 21, appearOut: 22,
   transIn: 23, transOut: 24,
-  odorIn: 25, odorD1: 26, odorD2: 27, odorOut: 28,
   phIn: 29, phD1: 30, phD2: 31, phOut: 32,
   sv1_30: 33, sv1_24h: 34, sv2_30: 35, sv2_24h: 36,
   mlss1: 37, mlss2: 38,

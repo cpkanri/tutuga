@@ -1708,12 +1708,8 @@ function bindLoginEvents() {
 const MEASURE_FIELDS = [
   // 水温（4 + 終沈2）
   "tempIn", "tempD1", "tempD2", "tempOut", "tempFinal1", "tempFinal2",
-  // 外観（4）
-  "appearIn", "appearD1", "appearD2", "appearOut",
   // 透視度（2 + 終沈2）
   "transIn", "transOut", "transFinal1", "transFinal2",
-  // 臭気（4）
-  "odorIn", "odorD1", "odorD2", "odorOut",
   // PH（4 + 終沈2）
   "phIn", "phD1", "phD2", "phOut", "phFinal1", "phFinal2",
   // SV（1系・2系 SV30/SV24h）
@@ -2231,7 +2227,7 @@ const ALL_MECH_KEYS = TUTUGA_MECH_SECTIONS_ALL.flatMap(s => s.fields.map(f => f.
 const TUTUGA_USAGE_SHEET_KEYS = USAGE_KEYS.filter(k => k !== "excessSludge1" && k !== "excessSludge2"); // 9
 // Phase 8 修正02 Step1: excessSludge1/2 は水質側で入力せず、電気 sub2 の余剰汚泥流量計フィールドで直接入力する
 const TUTUGA_USAGE_FORM_EXTRAS = [];
-const TUTUGA_MEASURE_SHEET_KEYS = MEASURE_FIELDS.filter(k => !["tempFinal1","tempFinal2","transFinal1","transFinal2","phFinal1","phFinal2","inspector","bikou"].includes(k)); // 28
+const TUTUGA_MEASURE_SHEET_KEYS = MEASURE_FIELDS.filter(k => !["tempFinal1","tempFinal2","transFinal1","transFinal2","phFinal1","phFinal2","inspector","bikou"].includes(k)); // 20 (Phase 8 修正08: 外観・臭気 8 項目削除)
 
 const TUTUGA_FIELDS = {
   water: {
@@ -4692,12 +4688,12 @@ function renderWeekInfo() {
 }
 
 // 水質測定 (measure) のフォームグループ定義 — Phase 5a 簡易版
-// グループ: 水温 / 外観 / 透視度 / 臭気 / PH / SV / MLSS / 汚泥界面 / 塩素 / その他
+// グループ: 水温 / 透視度 / PH / SV / MLSS / 汚泥界面 / 塩素 / その他
+// Phase 8 修正08: 外観・臭気は固定値運用に変更したためフォームから削除
+//   （Excel 出力時に template.js 側で動的に固定値を書き込む）
 const MEASURE_FORM_GROUPS = [
   { title: "水温", keys: ["tempIn", "tempD1", "tempD2", "tempOut", "tempFinal1", "tempFinal2"] },
-  { title: "外観", keys: ["appearIn", "appearD1", "appearD2", "appearOut"] },
   { title: "透視度", keys: ["transIn", "transOut", "transFinal1", "transFinal2"] },
-  { title: "臭気", keys: ["odorIn", "odorD1", "odorD2", "odorOut"] },
   { title: "PH", keys: ["phIn", "phD1", "phD2", "phOut", "phFinal1", "phFinal2"] },
   { title: "SV (1系)", keys: ["sv1_30", "sv1_24h"] },
   { title: "SV (2系)", keys: ["sv2_30", "sv2_24h"] },
@@ -4715,18 +4711,10 @@ const MEASURE_FIELD_META = {
   tempOut:     { label: "水温（放流）",      unit: "℃",   step: "0.1",  type: "number" },
   tempFinal1:  { label: "水温（1系終沈）",   unit: "℃",   step: "0.1",  type: "number" },
   tempFinal2:  { label: "水温（2系終沈）",   unit: "℃",   step: "0.1",  type: "number" },
-  appearIn:    { label: "外観（流入）",      unit: "",    type: "select_dropdown", options: ["透明","黄濁","褐色","乳濁","その他"] },
-  appearD1:    { label: "外観（ディッチ1）", unit: "",    type: "select_dropdown", options: ["透明","黄濁","褐色","乳濁","その他"] },
-  appearD2:    { label: "外観（ディッチ2）", unit: "",    type: "select_dropdown", options: ["透明","黄濁","褐色","乳濁","その他"] },
-  appearOut:   { label: "外観（放流）",      unit: "",    type: "select_dropdown", options: ["透明","黄濁","褐色","乳濁","その他"] },
   transIn:     { label: "透視度（流入）",    unit: "cm",  step: "1",    type: "number" },
   transOut:    { label: "透視度（放流）",    unit: "cm",  step: "1",    type: "number" },
   transFinal1: { label: "透視度（1系終沈）", unit: "cm",  step: "1",    type: "number" },
   transFinal2: { label: "透視度（2系終沈）", unit: "cm",  step: "1",    type: "number" },
-  odorIn:      { label: "臭気（流入）",      unit: "",    type: "select_dropdown", options: ["無","弱","中","強"] },
-  odorD1:      { label: "臭気（ディッチ1）", unit: "",    type: "select_dropdown", options: ["無","弱","中","強"] },
-  odorD2:      { label: "臭気（ディッチ2）", unit: "",    type: "select_dropdown", options: ["無","弱","中","強"] },
-  odorOut:     { label: "臭気（放流）",      unit: "",    type: "select_dropdown", options: ["無","弱","中","強"] },
   phIn:        { label: "PH（流入）",        unit: "",    step: "0.01", type: "number" },
   phD1:        { label: "PH（ディッチ1）",   unit: "",    step: "0.01", type: "number" },
   phD2:        { label: "PH（ディッチ2）",   unit: "",    step: "0.01", type: "number" },
