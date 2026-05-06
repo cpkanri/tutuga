@@ -5430,23 +5430,25 @@ function bindEvents() {
   });
 }
 
-// 機械設備: 現在週の全曜日をクリア（活性日かつ月内のみ）
+// 機械設備: 現在週の全曜日をクリア（月内日のみ）
+// Phase 8 修正04A 追補2: pattern (mwf = 月/水/金) ベースの activeDays フィルタを廃止。
+// 5月運用中は fri が mwf に含まれるため偶然正常動作していたが、9月以降の月初平日が
+// 火または木で始まる月（例: 2026-09 火曜始まり、2026-10 木曜始まり）で、第1週の
+// 単独日が pattern に含まれずクリアされない潜在バグがあるため予防的に修正。
+// 機器運転時間 (clearCurrentEquip) ・電気 (clearCurrentElec) と同じ方針に揃える。
 function clearCurrentMech() {
   const w = currentMechWeek;
   if (!confirm("機械設備 第" + w + "週の全曜日のデータをクリアしますか？")) return;
   const week = tutugaData.mech && tutugaData.mech[w];
   if (!week || !week.days) return;
-  const activeDays = getActiveDays(week, w);
-  // Phase 8 修正04A: クリアは複数フィールド変更のため Undo 対象外（仕様）
   EQUIP_DAYS.forEach(dk => {
-    if (activeDays.indexOf(dk) < 0) return;
-    if (!getDateForDayKey(w, dk)) return;
+    if (!getDateForDayKey(w, dk)) return;  // 月外日はスキップ
     const day = week.days[dk];
     if (!day) return;
     Object.keys(day).forEach(k => { day[k] = null; });
   });
   loadMechDataToForm();
-  saveCurrentToLocalStorage();  // Phase 8 修正04A: クリア後の状態を localStorage に反映
+  saveCurrentToLocalStorage();  // クリア後の状態を localStorage に反映
   markDirty();
   showToast("機械設備 第" + w + "週の全データをクリアしました");
 }
