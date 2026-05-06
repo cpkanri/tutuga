@@ -5381,13 +5381,29 @@ function recomputeElecAutoCalc() {
 // Phase 8 修正05: 電気・機械の数値テキスト入力で許容する文字列か判定
 // 許可: 空文字、半角ハイフン1文字、数値（マイナス・小数点含む、入力途中の "1." や ".5" も可）
 // 拒否: 文字 / 複数のハイフン / 複数の小数点 / 単独の "." 等
+// Phase 8 修正05 追補: 全角ハイフン / 前後空白を含む貼り付けに対応するため、
+// 半角化と trim を行ってから判定する。
 function isValidElecMechValue(value) {
   if (value == null) return true;
-  const v = String(value);
+  // 全角ハイフン (ー / − / – / —) を半角に正規化、前後の空白を除去
+  let v = String(value)
+    .replace(/[ー−–—]/g, '-')
+    .replace(/[　\s]+$/g, '')
+    .replace(/^[　\s]+/g, '');
   if (v === '' || v === '-') return true;
   // ^-?\d*\.?\d*$ は単独の "." や "-." も許してしまうため明示的に除外
   if (v === '.' || v === '-.') return false;
   return /^-?\d*\.?\d*$/.test(v);
+}
+
+// Phase 8 修正05 追補: 電気・機械の数値テキスト入力に正規化を適用
+// 全角ハイフンを半角化、前後空白を除去（ペースト時の保険）
+function normalizeElecMechValue(value) {
+  if (value == null) return '';
+  return String(value)
+    .replace(/[ー−–—]/g, '-')
+    .replace(/[　\s]+$/g, '')
+    .replace(/^[　\s]+/g, '');
 }
 
 function bindEquipInputEvents(kind) {
@@ -5402,6 +5418,7 @@ function bindEquipInputEvents(kind) {
     container.removeEventListener("click", prev.click);
     container.removeEventListener("input", prev.input);
     container.removeEventListener("change", prev.change);
+    if (prev.focusin) container.removeEventListener("focusin", prev.focusin);  // Phase 8 修正05 追補
   }
 
   const onClick = function(ev) {
@@ -5442,16 +5459,35 @@ function bindEquipInputEvents(kind) {
     if (!ev.target.matches(`input[data-${dataAttr}]`)) return;
     // Phase 8 修正05: 電気・機械の数値テキスト入力は「数値 or `-` or 空文字」のみ許容。
     // 不正な入力（abc / 1-2 / -- 等）は直前の正常値に戻す。
+    // Phase 8 修正05 追補: 全角ハイフン等を半角に正規化してから判定（IME 切替忘れ対策）。
     const el = ev.target;
-    if (el.dataset.elecMechNumeric === '1') {
+    if (el.dataset.elecMechNumeric === '1' || el.classList.contains('elec-mech-numeric')) {
+      // 全角→半角 / トリム正規化を即時に反映（カーソル位置はキャレット末尾に近い扱いで OK）
+      const normalized = normalizeElecMechValue(el.value);
+      if (normalized !== el.value) {
+        el.value = normalized;
+      }
       if (!isValidElecMechValue(el.value)) {
-        el.value = el.dataset.previousValidValue || '';
-        // 値を戻したら markDirty しない（実質的に変更なし）
+        // 不正なら直前の正常値に戻す。previousValidValue 未初期化時は空文字
+        el.value = el.dataset.previousValidValue != null ? el.dataset.previousValidValue : '';
         return;
       }
       el.dataset.previousValidValue = el.value;
     }
     markDirty();
+  };
+
+  // Phase 8 修正05 追補: focus 時に previousValidValue を現在値で初期化（フェイルセーフ）。
+  // load タイミングや動的注入で初期化漏れがあっても、focus 時点で必ず正しい基準値が入る。
+  const onFocusIn = function(ev) {
+    if (!ev.target.matches(`input[data-${dataAttr}]`)) return;
+    const el = ev.target;
+    if (el.dataset.elecMechNumeric === '1' || el.classList.contains('elec-mech-numeric')) {
+      if (el.dataset.previousValidValue == null || el.dataset.previousValidValue === '') {
+        // 現在値が valid なら基準値として採用、invalid なら空文字
+        el.dataset.previousValidValue = isValidElecMechValue(el.value) ? el.value : '';
+      }
+    }
   };
   const onChange = function(ev) {
     if (!ev.target.matches(`input[data-${dataAttr}]`)) return;
@@ -5470,7 +5506,8 @@ function bindEquipInputEvents(kind) {
   container.addEventListener("click", onClick);
   container.addEventListener("input", onInput);
   container.addEventListener("change", onChange);
-  container[handlerKey] = { click: onClick, input: onInput, change: onChange };
+  container.addEventListener("focusin", onFocusIn);  // Phase 8 修正05 追補: previousValidValue 初期化フェイルセーフ
+  container[handlerKey] = { click: onClick, input: onInput, change: onChange, focusin: onFocusIn };
 
   // Phase 8 修正04A: input/select の単一フィールド変更を Undo スタックに記録
   attachUndoTracking(container);
