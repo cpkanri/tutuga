@@ -4992,8 +4992,14 @@ function buildEquipFormHtml(kind, sub, weekIdx, dayIdx) {
     html += `<div class="week-info" style="color:#999;">この曜日は対象月外です</div>`;
   }
   sections.forEach(sec => {
+    // Phase 8 修正04B: auto/autoCalc しかないセクションはセクションヘッダも描画しない
+    const visibleFields = (sec.fields || []).filter(f => f.type !== 'auto' && f.type !== 'autoCalc');
+    if (visibleFields.length === 0) return;
     html += `<div class="section"><div class="section-header">${escapeHtml(sec.title)}</div>`;
-    sec.fields.forEach(f => {
+    visibleFields.forEach(f => {
+      // Phase 8 修正04B: type:'auto' (GAS 自動転記) と type:'autoCalc' (使用量自動計算) は
+      // ユーザー入力不可のためフォーム描画から完全に省略。
+      // 計算ロジック・保存・GAS 送信・Excel 出力は維持（recomputeElecAutoCalc 等は別経路で動作）。
       html += `<div class="field"><span class="label">${escapeHtml(f.label)}</span><span class="unit">${escapeHtml(f.unit || "")}</span>`;
       if (f.type === "number") {
         html += `<input type="number" inputmode="decimal" step="${f.step || '1'}" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}"${disabledAttr}>`;
@@ -5004,13 +5010,6 @@ function buildEquipFormHtml(kind, sub, weekIdx, dayIdx) {
       } else if (f.type === "toggle") {
         const opts = JSON.stringify(f.options || []).replace(/"/g, '&quot;');
         html += `<button type="button" class="toggle-btn" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}" data-options="${opts}"${disabledAttr}>―</button>`;
-      } else if (f.type === "auto") {
-        // GAS 自動転記。フォームでは表示用 input (disabled)
-        html += `<input type="text" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}" placeholder="自動転記" disabled>`;
-      } else if (f.type === "autoCalc") {
-        // Phase 8 修正02 Step2: __読み と __使用量 ペアの自動計算（前日差分）。
-        // 値は recomputeElecAutoCalc() が描画後・読み入力時に注入する。
-        html += `<input type="text" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}" data-autocalc-from="${escapeHtml(f.autoCalcFrom || '')}" placeholder="自動計算" disabled>`;
       } else {
         html += `<span style="color:#999;">―</span>`;
       }
@@ -5335,26 +5334,31 @@ function computeElectricalUsage(month, week, day, sourceKey) {
   return isFinite(usage) ? usage : '';
 }
 
-// Phase 8 修正02 Step2: 描画後・読み変更後に呼ぶ。autoCalc 入力欄に値を注入し、
-// 同時に tutugaData.elec[w].days[d][usageKey] へ書き込んで保存対象にする。
+// Phase 8 修正02 Step2 / 04B: 描画後・読み変更後に呼ぶ。
+// 旧実装は DOM の input[data-autocalc-from] を走査していたが、04B で autoCalc 入力欄を
+// フォームから削除したため、ELEC_AUTO_CALC_PAIRS メタデータから autoCalc ペアを列挙する形に変更。
+// tutugaData.elec[w].days[d][usageKey] へ計算結果を書き込んで保存対象にする
+// （DOM 入力欄が残っている場合は併せて更新するが、現状 04B 以降は存在しない）。
 function recomputeElecAutoCalc() {
-  const wrap = document.getElementById('elecFormWrap');
-  if (!wrap) return;
   const month = tutugaData.targetMonth;
   if (!month) return;
   const week = currentWeek;
   const day = DAY_NUM_TO_STR[currentDay] || 'mon';
   const wk = (tutugaData.elec || {})[week];
   const dayData = wk && wk.days && wk.days[day];
+  if (!dayData) return;
 
-  wrap.querySelectorAll('input[data-autocalc-from]').forEach(input => {
-    const sourceKey = input.dataset.autocalcFrom;
-    const usageKey = input.getAttribute('data-efield');
+  const wrap = document.getElementById('elecFormWrap');  // 残っていれば DOM も更新
+
+  Object.keys(ELEC_AUTO_CALC_PAIRS).forEach(usageKey => {
+    const sourceKey = ELEC_AUTO_CALC_PAIRS[usageKey];
     if (!sourceKey || !usageKey) return;
     const usage = computeElectricalUsage(month, week, day, sourceKey);
-    input.value = (usage === '' || usage == null) ? '' : usage;
-    if (dayData) {
-      dayData[usageKey] = (usage === '' || usage == null) ? null : usage;
+    dayData[usageKey] = (usage === '' || usage == null) ? null : usage;
+    // 互換: 万一 DOM に該当 input が残っている場合は表示も更新
+    if (wrap) {
+      const input = wrap.querySelector('input[data-efield="' + _cssEscape(usageKey) + '"]');
+      if (input) input.value = (usage === '' || usage == null) ? '' : usage;
     }
   });
 }
