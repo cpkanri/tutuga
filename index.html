@@ -1644,6 +1644,9 @@ function bindLoginEvents() {
 
   const btnLogout = document.getElementById('btnLogout');
   if (btnLogout) btnLogout.addEventListener('click', async () => {
+    // Phase 8 修正03: ログアウト処理の前に未保存の入力を localStorage に保存
+    // （再ログイン時に同期で復元される）
+    if (typeof saveCurrentToLocalStorage === 'function') saveCurrentToLocalStorage();
     await doLogout();
     updateUserInfoUI();
     showLoginScreen();
@@ -2955,7 +2958,9 @@ function formatDateShort(d) {
 const WEEKDAY_JP = ["日","月","火","水","木","金","土"];
 
 // ===== localStorage 保存・読込 =====
-function saveToStorage() {
+// silent = true のとき、エラー時の alert/toast は出さず console.warn のみ
+// （Phase 8 修正03: 切替系イベントから呼ばれる際、UI を阻害しないため）
+function saveToStorage(silent) {
   try {
     saveCurrentFormToData();
     // Note: targetMonth は tutugaData の現在値を信頼する（DOM入力値からは読まない）
@@ -2963,15 +2968,37 @@ function saveToStorage() {
     // ここで読むと古い月のデータを新月のキーで保存してしまう
     tutugaData.startDate = document.getElementById("startDate").value || tutugaData.startDate;
     const mainRes = safeSetItem(storageKey(), JSON.stringify(tutugaData));
-    if (!mainRes.ok) { handleStorageSaveFailure(mainRes); return false; }
+    if (!mainRes.ok) {
+      if (silent) console.warn("saveToStorage (silent) failed:", mainRes);
+      else handleStorageSaveFailure(mainRes);
+      return false;
+    }
     const insp = findLastInspector();
     if (insp) safeSetItem("tutuga_last_inspector", insp);
     if (tutugaData.targetMonth) safeSetItem("tutuga_current_month", tutugaData.targetMonth);
     renderStorageBadge();
     return true;
   } catch (e) {
-    console.error("saveToStorage error:", e);
-    handleStorageSaveFailure({ error: e });
+    if (silent) {
+      console.warn("saveToStorage (silent) error:", e);
+    } else {
+      console.error("saveToStorage error:", e);
+      handleStorageSaveFailure({ error: e });
+    }
+    return false;
+  }
+}
+
+// Phase 8 修正03: 切替系イベント・ログアウト・beforeunload から呼ばれる
+// 「現在の入力値を localStorage に静かに保存する」ヘルパー。
+// - GAS 送信は行わない（保存ボタン経由のみ）
+// - エラーが出ても呼び出し元（切替）を阻害しない
+// - type:'auto'/'autoCalc' を含む全フィールドの最新値を保存
+function saveCurrentToLocalStorage() {
+  try {
+    return saveToStorage(true);
+  } catch (e) {
+    console.warn("saveCurrentToLocalStorage failed:", e);
     return false;
   }
 }
@@ -3894,6 +3921,7 @@ function renderDayTabs() {
   container.querySelectorAll("button").forEach(btn => {
     btn.addEventListener("click", () => {
       saveFormToData();
+      saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
       currentDay = Number(btn.dataset.day);
       renderAll();
     });
@@ -4138,6 +4166,7 @@ function renderWeekTabs() {
   container.querySelectorAll("button").forEach(btn => {
     btn.addEventListener("click", () => {
       saveCurrentFormToData();
+      saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
       currentWeek = Number(btn.dataset.week);
       // 新しい週で currentDay が月外なら、最初の有効日にスナップ
       const ws = monthWeeks[currentWeek - 1];
@@ -4222,6 +4251,7 @@ function renderEquipPanel() {
       b._tutugaBound = true;
       b.addEventListener("click", () => {
         saveCurrentFormToData();
+        saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
         currentWeek = Number(b.dataset.week);
         renderAll();
       });
@@ -4397,6 +4427,7 @@ function renderMechElecDayTabs(kind) {
   container.querySelectorAll("button").forEach(btn => {
     btn.addEventListener("click", () => {
       saveCurrentFormToData();
+      saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
       currentDay = Number(btn.dataset.day);
       if (kind === "mech") renderMechPanel(); else renderElecPanel();
     });
@@ -4412,6 +4443,7 @@ function renderMechPanel() {
       b._tutugaBound = true;
       b.addEventListener("click", () => {
         saveCurrentFormToData();
+        saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
         currentWeek = Number(b.dataset.week);
         renderMechPanel();
       });
@@ -4424,6 +4456,7 @@ function renderMechPanel() {
       b._tutugaBound = true;
       b.addEventListener("click", () => {
         saveCurrentFormToData();
+        saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
         currentMechSub = Number(b.dataset.mechSub);
         renderMechPanel();
       });
@@ -4448,6 +4481,7 @@ function renderElecPanel() {
       b._tutugaBound = true;
       b.addEventListener("click", () => {
         saveCurrentFormToData();
+        saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
         currentWeek = Number(b.dataset.week);
         renderElecPanel();
       });
@@ -4459,6 +4493,7 @@ function renderElecPanel() {
       b._tutugaBound = true;
       b.addEventListener("click", () => {
         saveCurrentFormToData();
+        saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
         currentElecSub = Number(b.dataset.elecSub);
         renderElecPanel();
       });
@@ -5079,6 +5114,7 @@ function bindEvents() {
   document.querySelectorAll("#mainTabs button").forEach(btn => {
     btn.addEventListener("click", () => {
       saveCurrentFormToData();
+      saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
       currentSheet = btn.dataset.sheet;
       currentMain = currentSheet;
       renderAll();
@@ -5089,6 +5125,7 @@ function bindEvents() {
   document.querySelectorAll("#waterSubTabs button").forEach(btn => {
     btn.addEventListener("click", () => {
       saveCurrentFormToData();
+      saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
       currentWaterSub = btn.dataset.waterSub;
       renderAll();
     });
@@ -5164,6 +5201,9 @@ function bindEvents() {
 
   // ページ離脱警告
   window.addEventListener("beforeunload", (e) => {
+    // Phase 8 修正03: ページを閉じる/リロード前に未保存の入力を localStorage にサイレント保存
+    // （GAS 送信は同期通信不可のためここでは行わない。localStorage 書き込みは同期処理で確実に走る）
+    saveCurrentToLocalStorage();
     if (isDirty) { e.preventDefault(); e.returnValue = ""; }
   });
 }
