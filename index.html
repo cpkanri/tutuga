@@ -2647,9 +2647,6 @@ function pushBulkUndo(snapshotFields, dayOverride) {
   updateUndoButton();
 }
 
-// 旧 API（互換用 no-op）: 旧スナップショット方式は廃止
-function pushUndo(_label) { /* deprecated */ }
-
 // 元に戻す（field / bulk）
 async function performUndo() {
   if (undoStack.length === 0) {
@@ -4395,12 +4392,6 @@ function loadDataToForm() {
 }
 
 // ===== オートアドバンス機能（Phase 8 修正06: 全タブ対応） =====
-
-// 旧 API（互換用）: 水質タブの advanceable フィールドを返す。
-// Phase 8 修正06 以降は getNavigableFields() に移行済み（残置のみ）。
-function getAdvanceableFields() {
-  return Array.from(document.querySelectorAll('#formWrap input[data-field], #formWrap select[data-field]'));
-}
 
 // 現在のタブで Enter で移動可能なフィールドを順番に列挙する
 // - water/elec/mech (per-day): 現在表示中のフォーム内 DOM 順
