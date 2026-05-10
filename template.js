@@ -390,10 +390,15 @@ function _tutugaIsEmpty(v) {
 // セルに値を書き込む。空値は書き込まない (テンプレ初期値を温存)。
 // Phase 8 修正05: 半角ハイフン `-`（休止/該当なし）はテキスト書式で書き込み、
 // 数値書式が事前設定されたセルでも `-` がそのまま表示されるようにする。
+// Phase 12 補追: ハイフン類 (-, ー, −, –, —, －, ―) を「ー」(U+30FC) に統一して書き込む。
 function _tutugaWriteCell(ws, row, col, value) {
   if (_tutugaIsEmpty(value)) return;
   var cell = ws.getCell(row, col);
-  if (value === '-') {
+  // Phase 12 補追: ハイフン類を「ー」(U+30FC) に統一
+  if (typeof value === 'string' && /^[-－ー−–—―]$/.test(value)) {
+    value = 'ー';
+  }
+  if (value === 'ー') {
     try { cell.numFmt = '@'; } catch (e) {}
   }
   cell.value = value;

@@ -5487,9 +5487,9 @@ function recomputeElecAutoCalc() {
 // 半角化と trim を行ってから判定する。
 function isValidElecMechValue(value) {
   if (value == null) return true;
-  // 全角ハイフン (ー / − / – / —) を半角に正規化、前後の空白を除去
+  // Phase 12 補追: 全角ハイフン (ー / − / – / — / － / ―) を半角に正規化、前後の空白を除去
   let v = String(value)
-    .replace(/[ー−–—]/g, '-')
+    .replace(/[ー−–—－―]/g, '-')
     .replace(/[　\s]+$/g, '')
     .replace(/^[　\s]+/g, '');
   if (v === '' || v === '-') return true;
@@ -5500,10 +5500,11 @@ function isValidElecMechValue(value) {
 
 // Phase 8 修正05 追補: 電気・機械の数値テキスト入力に正規化を適用
 // 全角ハイフンを半角化、前後空白を除去（ペースト時の保険）
+// Phase 12 補追: 正規表現を [ー−–—－―] に拡張（U+FF0D / U+2015 もカバー）
 function normalizeElecMechValue(value) {
   if (value == null) return '';
   return String(value)
-    .replace(/[ー−–—]/g, '-')
+    .replace(/[ー−–—－―]/g, '-')
     .replace(/[　\s]+$/g, '')
     .replace(/^[　\s]+/g, '');
 }
