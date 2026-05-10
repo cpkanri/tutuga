@@ -1387,91 +1387,110 @@ function byteLength(str) {
   try { return new Blob([str]).size; } catch(e) { return str.length * 2; }
 }
 
-// cross-app: 全 7 prefix 配下のキーを列挙
-function getAllCrossAppKeys() {
-  const keys = [];
+// 全アプリ横断で月次データのキーを列挙。
+// 戻り値: [{ app: <label>, prefix, type, ym, key, bytes }]
+// bytes は Blob ベースで正確に計測（tutuga 由来の byteLength を使用）。
+function listAllMonthKeys() {
+  const items = [];
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
     if (!k) continue;
-    if (STORAGE_APP_PREFIXES.some(a => k.startsWith(a.prefix))) keys.push(k);
-  }
-  return keys;
-}
-
-function parseMonthKey(key) {
-  // "tutuga_weekly_2026-04" → { app: "tutuga_", type: "weekly", ym: "2026-04" }
-  // safeSetItem の容量超過時最古削除ロジックで使用。
-  // STORAGE_APP_PREFIXES 全てに対し汎用的に末尾 YYYY-MM をマッチさせる。
-  for (const app of STORAGE_APP_PREFIXES) {
-    if (!key.startsWith(app.prefix)) continue;
-    const m = key.substring(app.prefix.length).match(/^([a-z_]+)_(\d{4}-\d{2})$/);
-    if (m) return { app: app.prefix, type: m[1], ym: m[2], key };
-  }
-  return null;
-}
-
-// safeSetItem の容量超過時最古削除ロジックで使用。
-// STORAGE_APP_PREFIXES 全 7 prefix を横断走査するため getAllCrossAppKeys を使う。
-function computeStorageUsage() {
-  const keys = getAllCrossAppKeys();
-  let totalBytes = 0;
-  const byMonth = {};
-  keys.forEach(k => {
-    const raw = localStorage.getItem(k) || "";
-    const bytes = byteLength(k) + byteLength(raw);
-    totalBytes += bytes;
-    const m = parseMonthKey(k);
-    if (m) {
-      if (!byMonth[m.ym]) byMonth[m.ym] = { ym: m.ym, bytes: 0, items: [] };
-      byMonth[m.ym].bytes += bytes;
-      byMonth[m.ym].items.push({ ...m, bytes });
+    for (const app of STORAGE_APP_PREFIXES) {
+      if (!k.startsWith(app.prefix)) continue;
+      const remainder = k.substring(app.prefix.length);
+      for (const type of STORAGE_MONTH_KEY_TYPES) {
+        if (!remainder.startsWith(type)) continue;
+        const ym = remainder.substring(type.length);
+        if (!/^\d{4}-\d{2}$/.test(ym)) break;
+        let bytes = 0;
+        try { bytes = byteLength(k) + byteLength(localStorage.getItem(k) || ""); } catch(e) {}
+        items.push({ app: app.label, prefix: app.prefix, type, ym, key: k, bytes });
+        break;
+      }
+      break;
     }
-  });
-  const months = Object.values(byMonth).sort((a, b) => a.ym.localeCompare(b.ym));
-  const pct = Math.min(100, Math.round((totalBytes / STORAGE_QUOTA_BYTES) * 1000) / 10);
-  return { totalBytes, pct, months, quotaBytes: STORAGE_QUOTA_BYTES };
+  }
+  return items;
 }
 
-// cross-app: STORAGE_APP_PREFIXES 横断で最古月のキー群を全削除し、削除件数を返す。
-// safeSetItem の QuotaExceededError リトライから呼ばれる。
-function pruneOldestMonth(excludeYm) {
-  const usage = computeStorageUsage();
-  const victims = excludeYm
-    ? usage.months.filter(m => m.ym !== excludeYm)
-    : usage.months;
-  if (victims.length === 0) return 0;
-  const oldest = victims[0];
-  oldest.items.forEach(it => localStorage.removeItem(it.key));
-  return oldest.items.length;
+// 各アプリの current_month と前月を保護対象として返す。
+// safeSetItem は protectedSet に含まれるキーを削除候補から除外する。
+function getProtectedMonthSet() {
+  const protectedSet = new Set();
+  for (const app of STORAGE_APP_PREFIXES) {
+    const cur = localStorage.getItem(app.prefix + "current_month");
+    if (cur && /^\d{4}-\d{2}$/.test(cur)) {
+      protectedSet.add(app.prefix + cur);
+      const ym = cur.split("-");
+      const y = parseInt(ym[0], 10), m = parseInt(ym[1], 10);
+      const prevY = m === 1 ? y - 1 : y;
+      const prevM = m === 1 ? 12 : m - 1;
+      const prev = prevY + "-" + String(prevM).padStart(2, "0");
+      protectedSet.add(app.prefix + prev);
+    }
+  }
+  return protectedSet;
 }
 
-// QuotaExceededError 検知
+// QuotaExceededError 検知（4 アプリ準拠: メッセージ正規表現も含む）
 function isQuotaError(err) {
   if (!err) return false;
   const name = err.name || "";
   const code = err.code;
+  const msg = String(err.message || "");
   return name === "QuotaExceededError" ||
          name === "NS_ERROR_DOM_QUOTA_REACHED" ||
-         code === 22 || code === 1014;
+         code === 22 || code === 1014 ||
+         /quota/i.test(msg);
 }
 
-// バッジ機能は削除されたが、既存の呼び出しを壊さないため no-op を定義
-function renderStorageBadge() { /* no-op: バッジ機能は廃止 */ }
-
-// setItem ラッパー: Quota 時に最古データを1件削除してリトライ（最大3回）
+// setItem ラッパー: Quota 時に最古月のデータ群を全アプリ横断で一括削除してリトライ（最大5回）
+// 削除イベントは showToast(warn) と recordSaveLog("自動削除", ..., "warn", ...) で通知・記録。
 function safeSetItem(key, value) {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  const deleted = [];
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
       localStorage.setItem(key, value);
-      return { ok: true, attempt };
-    } catch(e) {
-      if (!isQuotaError(e)) return { ok: false, error: e, attempt };
-      const currentYm = tutugaData.targetMonth || "";
-      const removed = pruneOldestMonth(currentYm);
-      if (removed === 0) return { ok: false, error: e, attempt, quotaExhausted: true };
+      if (deleted.length > 0) {
+        const detail = deleted.map(d => d.app + d.ym).join(", ");
+        try {
+          if (typeof showToast === "function") {
+            showToast("容量確保のため削除: " + detail, "warn");
+          }
+        } catch(e) {}
+        try {
+          if (typeof recordSaveLog === "function") {
+            recordSaveLog(
+              "自動削除",
+              deleted.map(d => d.app + d.ym),
+              "warn",
+              "容量確保のため自動削除"
+            );
+          }
+        } catch(e) {}
+      }
+      return { ok: true, deleted };
+    } catch (e) {
+      if (!isQuotaError(e)) return { ok: false, error: e, deleted };
+      const protectedSet = getProtectedMonthSet();
+      const candidates = listAllMonthKeys().filter(it =>
+        !protectedSet.has(it.prefix + it.ym)
+      );
+      if (candidates.length === 0) {
+        return { ok: false, error: e, deleted, quotaExhausted: true };
+      }
+      candidates.sort((a, b) => a.ym.localeCompare(b.ym));
+      const oldestYm = candidates[0].ym;
+      const toDelete = candidates.filter(it => it.ym === oldestYm);
+      toDelete.forEach(it => {
+        try {
+          localStorage.removeItem(it.key);
+          deleted.push({ app: it.app, ym: it.ym, key: it.key });
+        } catch(e2) {}
+      });
     }
   }
-  return { ok: false, error: new Error("retry limit"), attempt: 4, quotaExhausted: true };
+  return { ok: false, error: new Error("retry limit exceeded"), deleted, quotaExhausted: true };
 }
 
 // ===== 共通ヘルパー: ネットワークエラー判定 =====
