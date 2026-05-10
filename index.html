@@ -1372,15 +1372,16 @@ const STORAGE_MISC_KEYS_SET = new Set([
 ]);
 
 // cross-app shared storage 5MB を全 5 アプリ + 旧 2 prefix で共有管理。
-// QuotaExceededError 時は ALL_APP_PREFIXES 全てを横断で最古月を検索→削除して再試行。
-const ALL_APP_PREFIXES = [
-  "yoshiwa_",  // 吉和
-  "kamitono_", // 上殿
-  "shiwagi_",  // 柴木
-  "kake_",     // 加計
-  "tutuga_",   // 筒賀
-  "uedono_",   // 上殿 旧プレフィックス（移行残置）
-  "shibaki_"   // 柴木 旧プレフィックス（移行残置）
+// QuotaExceededError 時は STORAGE_APP_PREFIXES 全てを横断で最古月を検索→削除して再試行。
+// 構造は yoshiwa/kamitono/shiwagi/kake と完全一致 (Phase 11-C)。
+const STORAGE_APP_PREFIXES = [
+  { prefix: "yoshiwa_",  label: "吉和" },
+  { prefix: "kamitono_", label: "上殿" },
+  { prefix: "shiwagi_",  label: "柴木" },
+  { prefix: "kake_",     label: "加計" },
+  { prefix: "tutuga_",   label: "筒賀" },
+  { prefix: "uedono_",   label: "上殿(旧)" },
+  { prefix: "shibaki_",  label: "柴木(旧)" }
 ];
 
 function byteLength(str) {
@@ -1390,22 +1391,13 @@ function byteLength(str) {
   try { return new Blob([str]).size; } catch(e) { return str.length * 2; }
 }
 
-function getAllYoshiwaKeys() {
-  const keys = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k && k.startsWith(STORAGE_PREFIX)) keys.push(k);
-  }
-  return keys;
-}
-
 // cross-app: 全 7 prefix 配下のキーを列挙
 function getAllCrossAppKeys() {
   const keys = [];
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
     if (!k) continue;
-    if (ALL_APP_PREFIXES.some(p => k.startsWith(p))) keys.push(k);
+    if (STORAGE_APP_PREFIXES.some(a => k.startsWith(a.prefix))) keys.push(k);
   }
   return keys;
 }
@@ -1413,17 +1405,17 @@ function getAllCrossAppKeys() {
 function parseMonthKey(key) {
   // "tutuga_weekly_2026-04" → { app: "tutuga_", type: "weekly", ym: "2026-04" }
   // safeSetItem の容量超過時最古削除ロジックで使用。
-  // ALL_APP_PREFIXES 全てに対し汎用的に末尾 YYYY-MM をマッチさせる。
-  for (const prefix of ALL_APP_PREFIXES) {
-    if (!key.startsWith(prefix)) continue;
-    const m = key.substring(prefix.length).match(/^([a-z_]+)_(\d{4}-\d{2})$/);
-    if (m) return { app: prefix, type: m[1], ym: m[2], key };
+  // STORAGE_APP_PREFIXES 全てに対し汎用的に末尾 YYYY-MM をマッチさせる。
+  for (const app of STORAGE_APP_PREFIXES) {
+    if (!key.startsWith(app.prefix)) continue;
+    const m = key.substring(app.prefix.length).match(/^([a-z_]+)_(\d{4}-\d{2})$/);
+    if (m) return { app: app.prefix, type: m[1], ym: m[2], key };
   }
   return null;
 }
 
 // safeSetItem の容量超過時最古削除ロジックで使用。
-// ALL_APP_PREFIXES 全 7 prefix を横断走査するため getAllCrossAppKeys を使う。
+// STORAGE_APP_PREFIXES 全 7 prefix を横断走査するため getAllCrossAppKeys を使う。
 function computeStorageUsage() {
   const keys = getAllCrossAppKeys();
   let totalBytes = 0;
@@ -1444,7 +1436,7 @@ function computeStorageUsage() {
   return { totalBytes, pct, months, quotaBytes: STORAGE_QUOTA_BYTES };
 }
 
-// cross-app: ALL_APP_PREFIXES 横断で最古月のキー群を全削除し、削除件数を返す。
+// cross-app: STORAGE_APP_PREFIXES 横断で最古月のキー群を全削除し、削除件数を返す。
 // safeSetItem の QuotaExceededError リトライから呼ばれる。
 function pruneOldestMonth(excludeYm) {
   const usage = computeStorageUsage();
@@ -1469,8 +1461,6 @@ function isQuotaError(err) {
 
 // バッジ機能は削除されたが、既存の呼び出しを壊さないため no-op を定義
 function renderStorageBadge() { /* no-op: バッジ機能は廃止 */ }
-function openDataManager() { /* no-op: データ管理モーダルは廃止 */ }
-function closeDataManager() { /* no-op: データ管理モーダルは廃止 */ }
 
 // setItem ラッパー: Quota 時に最古データを1件削除してリトライ（最大3回）
 function safeSetItem(key, value) {
