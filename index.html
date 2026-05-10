@@ -2535,6 +2535,9 @@ function renderSaveHistoryDialog() {
     } else if (h.status === 'partial') {
       statusStyle = 'color:#f57c00;';
       statusLabel = '⚠ 一部失敗';
+    } else if (h.status === 'warn') {
+      statusStyle = 'color:#a76b00;';
+      statusLabel = '⚠ 自動削除';
     }
     html += '<tr style="background:' + bg + ';border-bottom:1px solid #e0e0e0;">';
     html += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;">' + escapeHtml(h.timestamp) + '</td>';
@@ -3559,7 +3562,6 @@ function saveToStorage(silent) {
     const insp = findLastInspector();
     if (insp) safeSetItem("tutuga_last_inspector", insp);
     if (tutugaData.targetMonth) safeSetItem("tutuga_current_month", tutugaData.targetMonth);
-    renderStorageBadge();
     return true;
   } catch (e) {
     if (silent) {
@@ -3588,11 +3590,10 @@ function saveCurrentToLocalStorage() {
 
 // 保存失敗時の案内。Quota 起因なら具体的なリカバリを促す。
 function handleStorageSaveFailure(res) {
-  renderStorageBadge();
   if (res && res.quotaExhausted) {
-    alert("データの保存に失敗しました。\n\n『データ管理』画面 (💾ボタン) から古いデータを削除してください。\nまた、『エクスポート』で事前にバックアップを取ることをお勧めします。");
+    alert("データの保存に失敗しました。\n\n古いデータの自動削除を試みましたが、保護対象（現在月・前月）以外に削除可能なデータが見つかりません。\n『エクスポート』でバックアップを取った上で、不要な月のデータを手動で削除してください。");
   } else if (res && res.error && isQuotaError(res.error)) {
-    alert("データの保存に失敗しました（容量不足）。\n\n『データ管理』画面 (💾ボタン) をご確認ください。");
+    alert("データの保存に失敗しました（容量不足）。");
   } else {
     showToast("保存に失敗しました", "error");
   }
@@ -4153,7 +4154,6 @@ async function syncAll() {
     // B-6: 全タブを再描画して、サーバー新データを確実に反映
     if (typeof renderAll === 'function') renderAll();
     else if (typeof loadDataToForm === 'function') loadDataToForm();
-    if (typeof renderStorageBadge === 'function') renderStorageBadge();
 
     if (btn) {
       btn.textContent = '✅ 取得済';
