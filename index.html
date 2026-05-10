@@ -367,6 +367,7 @@ input[type="number"] {
 }
 .toast.visible { opacity: 1; }
 .toast.error { background: rgba(198,40,40,0.95); }
+.toast.warn { background: rgba(217,165,0,0.95); }
 
 /* ===== 情報バー ===== */
 .info-bar {
@@ -1358,18 +1359,13 @@ if (typeof window !== 'undefined') {
 // 柴木・上殿で発生した QuotaExceededError 予防のため、使用量可視化・エラーハンドリング・
 // 月別データ管理・バックアップ・自動削除を提供する。
 // Base64テンプレート (EXCEL_TEMPLATE_B64) はグローバル変数保持のみで localStorage には入らない。
-const STORAGE_PREFIX = "tutuga_";
-const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024; // 想定上限 5MB（Androidブラウザ標準）
-const STORAGE_WARN_PCT = 60;
-const STORAGE_DANGER_PCT = 80;
-const STORAGE_SETTINGS_KEY = "tutuga_settings";
-const STORAGE_AUTH_KEYS_SET = new Set([
-  "tutuga_auth_token", "tutuga_auth_userId",
-  "tutuga_auth_userName", "tutuga_auth_expires"
-]);
-const STORAGE_MISC_KEYS_SET = new Set([
-  "tutuga_last_inspector", "tutuga_current_month", STORAGE_SETTINGS_KEY
-]);
+// 月次データのキー prefix（全アプリ共通の列挙対象）
+// tutuga 単体では weekly_ のみだが、横断削除では全 prefix を見る必要があるため 4 アプリと同じ配列を保持。
+const STORAGE_MONTH_KEY_TYPES = [
+  "weekly_",       // 週報データ (全アプリ)
+  "aeration_",     // エアレーション (吉和)
+  "mlss_return_"   // MLSS返送汚泥 (吉和)
+];
 
 // cross-app shared storage 5MB を全 5 アプリ + 旧 2 prefix で共有管理。
 // QuotaExceededError 時は STORAGE_APP_PREFIXES 全てを横断で最古月を検索→削除して再試行。
@@ -5631,10 +5627,14 @@ function escapeHtml(s) {
 
 
 // ===== トースト =====
+// type: undefined=success(default gray), "error"=red, "warn"=yellow
 function showToast(msg, type) {
   const el = document.getElementById("toast");
   el.textContent = msg;
-  el.className = "toast visible" + (type === "error" ? " error" : "");
+  let cls = "toast visible";
+  if (type === "error") cls += " error";
+  else if (type === "warn") cls += " warn";
+  el.className = cls;
   setTimeout(() => el.classList.remove("visible"), 2500);
 }
 
