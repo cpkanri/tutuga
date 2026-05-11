@@ -3205,7 +3205,10 @@ function getWaterWeekDates(monthStr, week) {
   return { mon: offset(0), tue: offset(1), wed: offset(2), thu: offset(3), fri: offset(4) };
 }
 
-// 水質: その第N週・曜日が当月の対象範囲か（第5週は金曜が翌月以降なら対象外）
+// 水質: その第N週・曜日が当月の対象範囲か（第5週は対象曜日が翌月以降なら対象外）
+// Phase 15: 元コードは判定対象の曜日に関わらず dates.fri を見ていたため、
+// 月跨ぎ第5週で 月〜木 も含めて全曜日が inactive 扱いになり、金曜のデータが UI/save 双方から消えていた。
+// 判定は対象曜日 (target) の日付で行う。
 function isWaterDayActive(monthStr, week, dayKey) {
   const dates = getWaterWeekDates(monthStr, week);
   const target = dates[dayKey];
@@ -3213,7 +3216,7 @@ function isWaterDayActive(monthStr, week, dayKey) {
   if (week === 5) {
     const [y, m] = monthStr.split('-').map(Number);
     const nextMonthStart = new Date(y, m, 1);
-    if (dates.fri >= nextMonthStart) return false;
+    if (target >= nextMonthStart) return false;
   }
   return true;
 }
