@@ -3974,9 +3974,9 @@ async function downloadFromServer(month) {
   return data;
 }
 
-// Code.gs getAllData の応答 ({waterUsage, waterMeasure, equipment, electrical, mechanical, holidays})
+// Code.gs getAllData の応答 ({month, waterUsage, waterMeasure, equipment, electrical, mechanical, holidays})
 // を tutugaData にマージする。tutugaData の構造保持のため上書きではなく per-cell マージ。
-function mergeServerData(serverData) {
+function mergeServerData(serverData, expectedMonth) {
   const summary = {
     waterUsage_weeks: 0,
     waterMeasure_days: 0,
@@ -3986,6 +3986,19 @@ function mergeServerData(serverData) {
     holidays: 0
   };
   if (!serverData || typeof serverData !== 'object') return summary;
+
+  // Phase 14: 月キー流入防止
+  // (1) 同期開始時の対象月と現在の対象月が違う(同期中にユーザーが月切替) → abort
+  if (expectedMonth && expectedMonth !== tutugaData.targetMonth) {
+    console.warn('[Sync] Target month changed during sync (expected=' + expectedMonth + ', current=' + tutugaData.targetMonth + '). Aborting merge.');
+    return summary;
+  }
+  // (2) GAS は serverData.month を返している → 対象月と一致しない場合 abort
+  const responseMonth = serverData.month || serverData.targetMonth || null;
+  if (responseMonth && responseMonth !== tutugaData.targetMonth) {
+    console.warn('[Sync] Month mismatch (targetMonth=' + tutugaData.targetMonth + ', response.month=' + responseMonth + '). Aborting merge.');
+    return summary;
+  }
 
   // 水質: usage と measure は同じ tutugaData.weeks[w][d] セルにマージ
   if (!tutugaData.weeks || typeof tutugaData.weeks !== 'object') tutugaData.weeks = {};
@@ -4145,9 +4158,12 @@ async function syncAll() {
     const month = tutugaData.targetMonth;
     if (!month) throw new Error('対象年月が未設定です');
 
+    // Phase 14: 同期開始時の対象月をローカルに固定（同期中にユーザーが月切替しても保護）
+    const requestedMonth = month;
+
     // サーバーからダウンロードしてマージ
-    const serverData = await downloadFromServer(month);
-    const summary = mergeServerData(serverData);
+    const serverData = await downloadFromServer(requestedMonth);
+    const summary = mergeServerData(serverData, requestedMonth);
     saveToStorage();
 
     // 画面再描画
