@@ -3330,6 +3330,16 @@ function storageKey() {
 // Phase 5a 注: mech/elec の旧 days 形式は ensure 時に新形式に統合せず、サブタブ別に
 // data-mfield/data-efield を読み書きする際に「days[dk] か day_idx」両方をサポートする。
 
+// Phase 18-b: bikou タイムスタンプ混入の安全網
+function isISOTimestamp(v) {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v);
+}
+function sanitizeBikou(v) {
+  if (typeof v !== 'string') return '';
+  if (isISOTimestamp(v)) return '';
+  return v;
+}
+
 function emptyWaterDay() {
   const d = {};
   TUTUGA_FIELDS.water.measureFormFull.forEach(k => {
@@ -3712,7 +3722,9 @@ function _tutugaBuildWaterMeasurePayload() {
       const dayOut = {};
       let dayHas = false;
       measureKeys.forEach(function(key) {
-        const v = cell[key];
+        // Phase 18-b: 送信前に bikou を sanitize（ISO タイムスタンプの再循環を断つ）
+        let v = cell[key];
+        if (key === 'bikou') v = sanitizeBikou(v);
         if (!_tutugaIsEmptyValue(v)) {
           dayOut[key] = v;
           dayHas = true;
@@ -4014,6 +4026,8 @@ function mergeServerData(serverData, expectedMonth) {
       if (!weekIn) return;
       if (!tutugaData.weeks[w]) tutugaData.weeks[w] = {};
       Object.keys(weekIn).forEach(function(fieldKey) {
+        // Phase 18-b: 予約フィールドは skip
+        if (fieldKey === 'week' || fieldKey === 'day' || fieldKey === 'updatedAt') return;
         const perDay = weekIn[fieldKey];
         if (!perDay || typeof perDay !== 'object') return;
         Object.keys(perDay).forEach(function(dk) {
@@ -4022,6 +4036,8 @@ function mergeServerData(serverData, expectedMonth) {
           if (!tutugaData.weeks[w][dNum] || typeof tutugaData.weeks[w][dNum] !== 'object') {
             tutugaData.weeks[w][dNum] = {};
           }
+          // Phase 18-b: bikou は ISO タイムスタンプならスキップ
+          if (fieldKey === 'bikou' && isISOTimestamp(perDay[dk])) return;
           tutugaData.weeks[w][dNum][fieldKey] = perDay[dk];
         });
       });
@@ -4046,6 +4062,10 @@ function mergeServerData(serverData, expectedMonth) {
           tutugaData.weeks[w][dNum] = {};
         }
         Object.keys(dayIn).forEach(function(fieldKey) {
+          // Phase 18-b: 予約フィールドは skip
+          if (fieldKey === 'week' || fieldKey === 'day' || fieldKey === 'updatedAt') return;
+          // Phase 18-b: bikou は ISO タイムスタンプならスキップ
+          if (fieldKey === 'bikou' && isISOTimestamp(dayIn[fieldKey])) return;
           tutugaData.weeks[w][dNum][fieldKey] = dayIn[fieldKey];
         });
         summary.waterMeasure_days++;
@@ -4371,6 +4391,9 @@ function saveFormToData() {
       }
     } else if (el.type === "date") {
       cell[key] = el.value || null;
+    } else if (key === "bikou") {
+      // Phase 18-b: bikou に ISO タイムスタンプが入っていれば空に
+      cell[key] = sanitizeBikou(el.value);
     } else {
       cell[key] = el.value;
     }
