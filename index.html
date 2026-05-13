@@ -1083,6 +1083,71 @@ body.login-active { overflow: hidden; }
   font-size: 12px;
   font-style: italic;
 }
+
+/* Phase 17: ヘッダーボタン B デザイン（2 グループ統一） */
+.header-btn-area {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.header-btn-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.header-btn-group-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 4px;
+  padding-left: 2px;
+  letter-spacing: 0.05em;
+}
+.header-btn-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.header-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: white;
+  padding: 10px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: background 0.15s;
+  font-family: inherit;
+  min-width: 0;
+}
+.header-btn:hover,
+.header-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+}
+.header-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.header-btn:disabled:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.header-btn-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.header-btn-label {
+  font-size: 12px;
+  white-space: nowrap;
+}
 </style>
 </head>
 <body>
@@ -1115,11 +1180,35 @@ body.login-active { overflow: hidden; }
     <button type="button" class="logout-btn" id="btnLogout">ログアウト</button>
   </div>
   <div class="user-info" id="userInfo">
-    <button type="button" class="sync-btn" id="btnSync" title="サーバーから最新データを取得">🔄 同期</button>
-    <button type="button" class="sync-btn" id="btnForceRefresh" title="アプリを最新版に更新（キャッシュクリア）">⟳ 更新</button>
-    <!-- B-6: 履歴・月報Excelをここに移動 -->
-    <button type="button" class="sync-btn btn-history-header" id="btnHistory" title="保存履歴を表示">📋 履歴</button>
-    <button type="button" class="sync-btn btn-excel-header" id="btnExcel" title="月報Excelを出力">📥 月報Excel</button>
+    <!-- Phase 17 ヘッダー B デザイン: 2 グループ統一 -->
+    <div class="header-btn-area">
+      <div class="header-btn-col">
+        <div class="header-btn-group-label">データ</div>
+        <div class="header-btn-group">
+          <button type="button" id="btnForceRefresh" class="header-btn" title="アプリを最新版に更新（キャッシュクリア）">
+            <span class="header-btn-icon">🔄</span>
+            <span class="header-btn-label">更新</span>
+          </button>
+          <button type="button" id="btnSync" class="header-btn" title="サーバーから最新データを取得">
+            <span class="header-btn-icon">☁️</span>
+            <span class="header-btn-label">同期</span>
+          </button>
+        </div>
+      </div>
+      <div class="header-btn-col">
+        <div class="header-btn-group-label">出力</div>
+        <div class="header-btn-group">
+          <button type="button" id="btnHistory" class="header-btn" title="保存履歴を表示">
+            <span class="header-btn-icon">📋</span>
+            <span class="header-btn-label">履歴</span>
+          </button>
+          <button type="button" id="btnExcel" class="header-btn" title="月報Excelを出力">
+            <span class="header-btn-icon">📊</span>
+            <span class="header-btn-label">Excel</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -4170,7 +4259,7 @@ async function syncAll() {
   if (btn) {
     btn.disabled = true;
     btn.classList.remove('synced', 'error');
-    btn.textContent = '取得中...';
+    btn.querySelector('.header-btn-label').textContent = '取得中...';
   }
 
   try {
@@ -4194,10 +4283,10 @@ async function syncAll() {
     else if (typeof loadDataToForm === 'function') loadDataToForm();
 
     if (btn) {
-      btn.textContent = '✅ 取得済';
+      btn.querySelector('.header-btn-label').textContent = '取得済';
       btn.classList.add('synced');
       setTimeout(() => {
-        btn.textContent = '🔄 同期';
+        btn.querySelector('.header-btn-label').textContent = '同期';
         btn.classList.remove('synced');
         btn.disabled = false;
       }, 2000);
@@ -4223,10 +4312,10 @@ async function syncAll() {
     // ネットワーク起因のエラー時のみオフライン表示
     if (isNetworkError(e)) setConnectionStatus(false);
     if (btn) {
-      btn.textContent = '❌ エラー';
+      btn.querySelector('.header-btn-label').textContent = 'エラー';
       btn.classList.add('error');
       setTimeout(() => {
-        btn.textContent = '🔄 同期';
+        btn.querySelector('.header-btn-label').textContent = '同期';
         btn.classList.remove('error');
         btn.disabled = false;
       }, 3000);
@@ -4266,7 +4355,7 @@ async function forceRefresh() {
 
   if (btn) {
     btn.classList.add('refreshing');
-    btn.textContent = '更新中...';
+    btn.querySelector('.header-btn-label').textContent = '更新中...';
     btn.disabled = true;
   }
 
@@ -4298,7 +4387,7 @@ async function forceRefresh() {
     alert('更新に失敗しました: ' + (e.message || e) + '\n\nブラウザを閉じて再度開いてください。');
     if (btn) {
       btn.classList.remove('refreshing');
-      btn.textContent = '⟳ 更新';
+      btn.querySelector('.header-btn-label').textContent = '更新';
       btn.disabled = false;
     }
   }
@@ -5873,12 +5962,16 @@ async function buildAllDataForExport(month) {
 
 async function exportExcel() {
   const btn = document.getElementById("btnExcel");
-  const origText = btn ? btn.textContent : "";
-  if (btn) { btn.textContent = "生成中..."; btn.disabled = true; }
+  const lbl = btn ? btn.querySelector('.header-btn-label') : null;
+  const origText = lbl ? lbl.textContent : (btn ? btn.textContent : "");
+  if (btn) {
+    if (lbl) lbl.textContent = "生成中..."; else btn.textContent = "生成中...";
+    btn.disabled = true;
+  }
 
   try {
     if (typeof ExcelJS === "undefined") {
-      if (btn) btn.textContent = "ライブラリ読込中...";
+      if (lbl) lbl.textContent = "ライブラリ読込中..."; else if (btn) btn.textContent = "ライブラリ読込中...";
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js");
     }
     if (typeof window.buildTutugaWorkbook !== "function") {
@@ -5888,10 +5981,10 @@ async function exportExcel() {
     const ym = tutugaData.targetMonth || (document.getElementById("targetMonth") && document.getElementById("targetMonth").value);
     if (!ym) { showToast("対象年月を設定してください", "error"); return; }
 
-    if (btn) btn.textContent = "データ集計中...";
+    if (lbl) lbl.textContent = "データ集計中..."; else if (btn) btn.textContent = "データ集計中...";
     const allData = await buildAllDataForExport(ym);
 
-    if (btn) btn.textContent = "テンプレート処理中...";
+    if (lbl) lbl.textContent = "テンプレート処理中..."; else if (btn) btn.textContent = "テンプレート処理中...";
     const wb = await window.buildTutugaWorkbook(allData);
 
     const buf = await wb.xlsx.writeBuffer();
@@ -5910,7 +6003,10 @@ async function exportExcel() {
     console.error("Excel出力エラー:", e);
     showToast("Excel出力に失敗: " + (e.message || e), "error");
   } finally {
-    if (btn) { btn.textContent = origText; btn.disabled = false; }
+    if (btn) {
+      if (lbl) lbl.textContent = origText; else btn.textContent = origText;
+      btn.disabled = false;
+    }
   }
 }
 
