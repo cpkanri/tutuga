@@ -1109,7 +1109,6 @@ body.login-active { overflow: hidden; }
       <span>対象年月</span>
       <input type="month" id="targetMonth">
     </label>
-    <input type="hidden" id="startDate">
     <!-- B-6: 接続中・ログアウトを対象年月の右に配置 -->
     <span class="conn-status" id="connStatus" title="接続状態">🟡 未接続</span>
     <span class="user-name" id="userName"></span>
@@ -3555,7 +3554,7 @@ function saveToStorage(silent) {
     // Note: targetMonth は tutugaData の現在値を信頼する（DOM入力値からは読まない）
     // change イベントで月切替する際、SELECT は既に新月に変わっているため
     // ここで読むと古い月のデータを新月のキーで保存してしまう
-    tutugaData.startDate = document.getElementById("startDate").value || tutugaData.startDate;
+    tutugaData.startDate = estimateStartDate(tutugaData.targetMonth);
     const mainRes = safeSetItem(storageKey(), JSON.stringify(tutugaData));
     if (!mainRes.ok) {
       if (silent) console.warn("saveToStorage (silent) failed:", mainRes);
@@ -5901,10 +5900,9 @@ function bindEvents() {
 
     const ym = e.target.value;
     tutugaData.targetMonth = ym;
-    // startDate は互換のため更新するが UI では非表示
+    // startDate は互換のため更新
     const auto = estimateStartDate(ym);
     if (auto) {
-      document.getElementById("startDate").value = auto;
       tutugaData.startDate = auto;
     }
     // 月切替時は tutugaData の各タブを完全クリア
@@ -6069,7 +6067,6 @@ async function continueInit() {
   if (!tutugaData.startDate) {
     tutugaData.startDate = estimateStartDate(storedMonth);
   }
-  document.getElementById("startDate").value = tutugaData.startDate || "";
 
   // カレンダー週構造を初回計算
   recomputeMonthWeeks();
