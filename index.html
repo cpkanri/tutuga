@@ -2854,7 +2854,8 @@ async function switchToUndoContext(entry) {
   if (entry.month && entry.month !== tutugaData.targetMonth) {
     tutugaData.targetMonth = entry.month;
     const sel = document.getElementById("targetMonth");
-    if (sel) sel.value = entry.month;
+    // Phase 19-D: entry.month に ISO タイムスタンプが混入していても YYYY-MM に正規化
+    if (sel) sel.value = String(entry.month).slice(0, 7);
     tutugaData.weeks = {};
     tutugaData.mech = {};
     tutugaData.elec = {};
@@ -6179,7 +6180,9 @@ async function continueInit() {
 
   const storedMonth = localStorage.getItem("tutuga_current_month") || currentYearMonth();
   tutugaData.targetMonth = storedMonth;
-  document.getElementById("targetMonth").value = storedMonth;
+  // Phase 19-D: localStorage 由来の値に ISO タイムスタンプが残存していても
+  // <input type="month"> がパースエラーを出さないよう YYYY-MM に正規化
+  document.getElementById("targetMonth").value = String(storedMonth).slice(0, 7);
 
   loadFromStorage();
 
