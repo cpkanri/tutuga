@@ -1328,7 +1328,7 @@ body.login-active { overflow: hidden; }
   <button type="button" class="btn-copy" id="btnCopy">前日コピー</button>
   <button type="button" class="btn-undo" id="btnUndo" title="直前の操作を元に戻す">↶ 元に戻す</button>
   <button type="button" class="btn-clear" id="btnClear">クリア</button>
-  <button type="button" class="btn-save" id="btnSave" title="現在のタブ・週のデータをサーバーに送信">保存</button>
+  <button type="button" class="btn-save" id="btnSave" title="全タブのデータをサーバーに送信">保存</button>
 </div>
 
 <!-- トースト -->
@@ -3980,96 +3980,6 @@ async function uploadAllTabs() {
     throw err;
   }
   return results;
-}
-
-// 現タブ + 現週 (per-day タブは現日も) のみ送信。
-async function uploadCurrentOnly() {
-  const month = tutugaData.targetMonth;
-  if (!month) throw new Error('対象年月が未設定です');
-
-  const results = { saved: 0, scope: '' };
-  const week = currentWeek;
-  const dayKey = TUTUGA_DAY_NUM_TO_KEY[currentDay];
-
-  if (currentSheet === 'water') {
-    if (currentWaterSub === 'usage') {
-      // 上段使用量: per-week (Code.gs saveWaterUsage は weeks={[w]: {...}} を取る)
-      results.scope = '水質上段 第' + week + '週';
-      const usagePayload = _tutugaBuildWaterUsagePayload();
-      const single = {};
-      if (usagePayload[week]) single[week] = usagePayload[week];
-      if (Object.keys(single).length > 0) {
-        const data = await _tutugaPost(
-          { action: 'saveWaterUsage', month: month, weeks: single },
-          30000
-        );
-        results.saved += (data.savedWeeks || 0);
-      }
-    } else {
-      // 下段水質測定: per-day
-      results.scope = '水質下段 第' + week + '週 ' + dayKey;
-      const measurePayload = _tutugaBuildWaterMeasurePayload();
-      const weekDays = (measurePayload[week] && measurePayload[week][dayKey])
-        ? { [dayKey]: measurePayload[week][dayKey] }
-        : null;
-      if (weekDays) {
-        const data = await _tutugaPost(
-          { action: 'saveWaterMeasure', month: month, week: week, days: weekDays },
-          30000
-        );
-        results.saved += (data.savedCount || 0);
-      }
-    }
-  } else if (currentSheet === 'equip') {
-    // 機器運転時間: per-week
-    results.scope = '機器運転時間 第' + week + '週';
-    const eqPayload = _tutugaBuildEquipmentPayload();
-    const single = {};
-    if (eqPayload[week]) single[week] = eqPayload[week];
-    if (Object.keys(single).length > 0) {
-      const data = await _tutugaPost(
-        { action: 'saveEquipment', month: month, equipment: single },
-        30000
-      );
-      results.saved += (data.savedCount || 0);
-    }
-  } else if (currentSheet === 'elec') {
-    // 電気設備: per-day (現週・現日のみ)
-    results.scope = '電気設備 第' + week + '週 ' + dayKey;
-    const elecPayload = _tutugaBuildElectricalPayload();
-    const single = {};
-    if (elecPayload[week] && elecPayload[week][dayKey]) {
-      single[week] = { [dayKey]: elecPayload[week][dayKey] };
-    }
-    if (Object.keys(single).length > 0) {
-      const data = await _tutugaPost(
-        { action: 'saveElectrical', month: month, electrical: single },
-        30000
-      );
-      results.saved += (data.savedCount || 0);
-    }
-  } else if (currentSheet === 'mech') {
-    // 機械設備: per-day (現週・現日のみ)
-    results.scope = '機械設備 第' + week + '週 ' + dayKey;
-    const mechPayload = _tutugaBuildMechanicalPayload();
-    const single = {};
-    if (mechPayload[week] && mechPayload[week][dayKey]) {
-      single[week] = { [dayKey]: mechPayload[week][dayKey] };
-    }
-    if (Object.keys(single).length > 0) {
-      const data = await _tutugaPost(
-        { action: 'saveMechanical', month: month, mechanical: single },
-        30000
-      );
-      results.saved += (data.savedCount || 0);
-    }
-  }
-  return results;
-}
-
-// 既存の wrapper は uploadAllTabs に委譲 (Phase 5a の単一 POST 動作はもう取らない)
-async function uploadToServer() {
-  return uploadAllTabs();
 }
 
 // サーバから getAllData を取得。
