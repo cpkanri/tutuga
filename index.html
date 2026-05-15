@@ -3409,6 +3409,13 @@ function storageKey() {
   return "tutuga_weekly_" + (tutugaData.targetMonth || "default");
 }
 
+// Phase 19-E': YYYY-MM 正規化。ISO タイムスタンプや YYYY-MM-DD から YYYY-MM を抽出する。
+// 純粋関数（DOM に触れない）。YYYY-MM 値には no-op、ISO 値は先頭 7 文字を切り出す。
+function normalizeMonthValue(v) {
+  var s = String(v == null ? '' : v);
+  return s.slice(0, 7);
+}
+
 // ===== TUTUGA データ構造保証 =====
 // tutugaData = {
 //   targetMonth, startDate,
@@ -4091,16 +4098,16 @@ function mergeServerData(serverData, expectedMonth) {
   };
   if (!serverData || typeof serverData !== 'object') return summary;
 
-  // Phase 14: 月キー流入防止
+  // Phase 14: 月キー流入防止 / Phase 19-E': 比較は両辺 YYYY-MM 正規化で寛容化
   // (1) 同期開始時の対象月と現在の対象月が違う(同期中にユーザーが月切替) → abort
-  if (expectedMonth && expectedMonth !== tutugaData.targetMonth) {
-    console.warn('[Sync] Target month changed during sync (expected=' + expectedMonth + ', current=' + tutugaData.targetMonth + '). Aborting merge.');
+  if (expectedMonth && normalizeMonthValue(expectedMonth) !== normalizeMonthValue(tutugaData.targetMonth)) {
+    console.debug('[Sync] Target month changed during sync (expected=' + expectedMonth + ', current=' + tutugaData.targetMonth + '). Aborting merge.');
     return summary;
   }
   // (2) GAS は serverData.month を返している → 対象月と一致しない場合 abort
   const responseMonth = serverData.month || serverData.targetMonth || null;
-  if (responseMonth && responseMonth !== tutugaData.targetMonth) {
-    console.warn('[Sync] Month mismatch (targetMonth=' + tutugaData.targetMonth + ', response.month=' + responseMonth + '). Aborting merge.');
+  if (responseMonth && normalizeMonthValue(responseMonth) !== normalizeMonthValue(tutugaData.targetMonth)) {
+    console.debug('[Sync] Month mismatch (targetMonth=' + tutugaData.targetMonth + ', response.month=' + responseMonth + '). Aborting merge.');
     return summary;
   }
 
@@ -4419,7 +4426,9 @@ function loadFromStorage() {
       const parsed = JSON.parse(raw);
       // 旧バグで「他の月のデータが今月のキーで保存されている」破損を検出
       // parsed.targetMonth が currentMonth と食い違うなら破損データとして破棄
-      if (parsed && parsed.targetMonth && currentMonth && parsed.targetMonth !== currentMonth) {
+      // Phase 19-E': ISO 汚染値による誤判定を防ぐため両辺を YYYY-MM 正規化して比較
+      if (parsed && parsed.targetMonth && currentMonth &&
+          normalizeMonthValue(parsed.targetMonth) !== normalizeMonthValue(currentMonth)) {
         console.warn('[loadFromStorage] 破損データ検出: key=' + storageKey() +
                      ' parsed.targetMonth=' + parsed.targetMonth +
                      ' (current=' + currentMonth + ') → 破棄してリセット');
@@ -4427,6 +4436,8 @@ function loadFromStorage() {
         tutugaData = emptyShape();
       } else {
         tutugaData = Object.assign(emptyShape(), parsed);
+        // Phase 19-E': localStorage 由来の ISO 汚染値を YYYY-MM に正規化
+        tutugaData.targetMonth = normalizeMonthValue(tutugaData.targetMonth);
       }
     } else {
       // 該当月のlocalStorageがない場合は完全リセット（前月のデータ流出を防ぐ）
@@ -6178,7 +6189,8 @@ async function continueInit() {
   hideLoginScreen();
   updateUserInfoUI();
 
-  const storedMonth = localStorage.getItem("tutuga_current_month") || currentYearMonth();
+  // Phase 19-E': localStorage 由来の ISO 汚染値を YYYY-MM に正規化してから代入
+  const storedMonth = normalizeMonthValue(localStorage.getItem("tutuga_current_month")) || currentYearMonth();
   tutugaData.targetMonth = storedMonth;
   // Phase 19-D: localStorage 由来の値に ISO タイムスタンプが残存していても
   // <input type="month"> がパースエラーを出さないよう YYYY-MM に正規化
