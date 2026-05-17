@@ -702,15 +702,19 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
   var rowMaps = [TUTUGA_MECH1_ROW_W1, TUTUGA_MECH2_ROW_W1, TUTUGA_MECH3_ROW_W1];
   // Phase 22: 数値型フィールドの未入力セルに「ー」を出力
   var numKeys = (typeof window !== 'undefined' && window.TUTUGA_MECH_NUMERIC_KEYS) ? window.TUTUGA_MECH_NUMERIC_KEYS : null;
+  // Phase 22 補追 3: 祝日 dayKey 集合を index.html 側で構築されたマップから取得
+  var mechHolidayDayKeys = allData.mechHolidayDayKeys || {};
 
   for (var w = 1; w <= 5; w++) {
     var weekDays = (allData.mechanical && allData.mechanical[w]) || null;
     if (!weekDays) continue;
     var weekOffset = WEEK_OFFSETS_MECH[w - 1];
+    var holidayDks = mechHolidayDayKeys[w] || [];
     DAYS5.forEach(function(dc) {
       var dayData = weekDays[dc];
       if (!dayData || typeof dayData !== 'object') return;
       var col = MECH_DAY_COL[dc];
+      var isHolidayCell = holidayDks.indexOf(dc) >= 0;
       rowMaps.forEach(function(rowMap) {
         Object.keys(rowMap).forEach(function(key) {
           var row = rowMap[key] + weekOffset;
@@ -721,7 +725,8 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
             // Phase 22: 数値型なら未入力ハイフンを文字列として書き込む。トグル系は既存どおり何も書かない。
             // Phase 22 補追: 元書式が数値書式 (0.0/0.00) のセルで表示崩れを防ぐため value 設定後に numFmt='@' を付与
             // Phase 22 補追 2: 出力文字を U+002D '-' に変更 (MS P明朝での U+30FC 表示崩れ回避)
-            if (numKeys && numKeys.has(key)) {
+            // Phase 22 補追 3: 祝日セルは「-」を出力せず空欄維持
+            if (!isHolidayCell && numKeys && numKeys.has(key)) {
               var cell = ws.getCell(row, col);
               cell.value = '-';
               try { cell.numFmt = '@'; } catch (e) {}

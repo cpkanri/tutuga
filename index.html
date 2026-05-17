@@ -5894,6 +5894,23 @@ async function buildAllDataForExport(month) {
     }
   }
 
+  // Phase 22 補追 3: 機械設備で祝日扱いの dayKey を週別に列挙
+  // template.js (_tutugaWriteMechanicalSheet) は日付情報を持たないため index.html 側で計算して受け渡す
+  // 祝日セルは Phase 22 の「-」自動出力を抑止し空欄維持する用途
+  allData.mechHolidayDayKeys = {};
+  try {
+    const _mechDks = ['mon','tue','wed','thu','fri'];
+    for (let w = 1; w <= 5; w++) {
+      allData.mechHolidayDayKeys[w] = [];
+      _mechDks.forEach(function(dk) {
+        const d = (typeof getActualDate === 'function') ? getActualDate(w, _mechDks.indexOf(dk) + 1) : null;
+        if (d && typeof isCompanyHoliday === 'function' && isCompanyHoliday(d)) {
+          allData.mechHolidayDayKeys[w].push(dk);
+        }
+      });
+    }
+  } catch (e) { /* 祝日列挙失敗時は空マップで既存挙動（"-"出力）にフォールバック */ }
+
   return allData;
 }
 
