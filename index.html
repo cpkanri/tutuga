@@ -2013,17 +2013,17 @@ const MECH_DAYS = ["mon", "tue", "wed", "thu", "fri"];
 // サブタブ1: 点検表 1/3（処理系前段, 56項目）
 const MECH_SECTIONS_1 = [
   { title: "ポンプ井", fields: [
-    { key: "ポンプ井__common1__内部状況確認", label: "内部状況確認", type: "toggle", options: ["○","―"] },
+    { key: "ポンプ井__common1__内部状況確認", label: "内部状況確認", type: "toggle", options: ["○","-"] },
   ]},
   { title: "汚水ポンプ No.1", fields: [
     { key: "汚水ポンプ__1__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
     { key: "汚水ポンプ__1__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
-    { key: "汚水ポンプ__1__異音、振動", label: "異音・振動", type: "toggle", options: ["○","―"] },
+    { key: "汚水ポンプ__1__異音、振動", label: "異音・振動", type: "toggle", options: ["○","-"] },
   ]},
   { title: "汚水ポンプ No.2", fields: [
     { key: "汚水ポンプ__2__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
     { key: "汚水ポンプ__2__吐出圧力",   label: "吐出圧力",   type: "number", step: "0.01", unit: "Mpa" },
-    { key: "汚水ポンプ__2__異音、振動", label: "異音・振動", type: "toggle", options: ["○","―"] },
+    { key: "汚水ポンプ__2__異音、振動", label: "異音・振動", type: "toggle", options: ["○","-"] },
   ]},
   { title: "汚水ポンプ 共通", fields: [
     { key: "汚水ポンプ__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
@@ -2031,7 +2031,7 @@ const MECH_SECTIONS_1 = [
   ]},
   { title: "自動除塵機", fields: [
     { key: "自動除塵機__油圧圧力",      label: "油圧圧力",   type: "number", step: "0.01", unit: "Mpa" },
-    { key: "自動除塵機__異音、振動",    label: "異音・振動", type: "toggle", options: ["○","△","×","―"] },
+    { key: "自動除塵機__異音、振動",    label: "異音・振動", type: "toggle", options: ["○","△","×","-"] },
     { key: "自動除塵機__し渣量の確認",  label: "し渣量",     type: "toggle", options: ["無","有"] },
     { key: "自動除塵機__運転動作",      label: "運転動作",   type: "toggle", options: ["○"] },
   ]},
@@ -2313,19 +2313,26 @@ const TUTUGA_MECH_SECTIONS_ALL = MECH_SECTIONS_1.concat(MECH_SECTIONS_2).concat(
 
 const ALL_MECH_KEYS = TUTUGA_MECH_SECTIONS_ALL.flatMap(s => s.fields.map(f => f.key));
 
-// Phase 22: 機械設備の数値型フィールドキー集合（3 サブタブ全体から type==="number" を抽出）
+// Phase 22: 機械設備で「-」自動出力する対象フィールドキー集合（3 サブタブ全体）
+// - 数値型 (type==="number"): 未入力時に「-」出力
+// - Phase 22 補追 4: options に「-」を含むトグル (異音/振動等) も未入力時に「-」出力
+//   モード確認・常用機選択など options にハイフン非含有のトグルは自動除外（空欄維持）
 // template.js (_tutugaWriteMechanicalSheet) から window 経由で参照する
-const TUTUGA_MECH_NUMERIC_KEYS = (function() {
+const TUTUGA_MECH_AUTO_DASH_KEYS = (function() {
   const set = new Set();
   TUTUGA_MECH_SECTIONS_ALL.forEach(function(sec) {
     sec.fields.forEach(function(f) {
-      if (f.type === "number") set.add(f.key);
+      if (f.type === "number") {
+        set.add(f.key);
+      } else if (f.type === "toggle" && Array.isArray(f.options) && f.options.indexOf("-") >= 0) {
+        set.add(f.key);
+      }
     });
   });
   return set;
 })();
 if (typeof window !== 'undefined') {
-  window.TUTUGA_MECH_NUMERIC_KEYS = TUTUGA_MECH_NUMERIC_KEYS;
+  window.TUTUGA_MECH_AUTO_DASH_KEYS = TUTUGA_MECH_AUTO_DASH_KEYS;
 }
 
 // =====================================================

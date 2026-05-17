@@ -700,8 +700,9 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
   var MECH_DAY_COL = _tutugaConst('MECH_DAY_COL', { mon:5, tue:6, wed:7, thu:8, fri:9 });
   var DAYS5 = ['mon','tue','wed','thu','fri'];
   var rowMaps = [TUTUGA_MECH1_ROW_W1, TUTUGA_MECH2_ROW_W1, TUTUGA_MECH3_ROW_W1];
-  // Phase 22: 数値型フィールドの未入力セルに「ー」を出力
-  var numKeys = (typeof window !== 'undefined' && window.TUTUGA_MECH_NUMERIC_KEYS) ? window.TUTUGA_MECH_NUMERIC_KEYS : null;
+  // Phase 22: 機械設備フィールドの未入力セルに「-」を出力する対象集合
+  // Phase 22 補追 4: 対象を数値型 + 「-」含むトグル に拡張 (TUTUGA_MECH_AUTO_DASH_KEYS)
+  var autoDashKeys = (typeof window !== 'undefined' && window.TUTUGA_MECH_AUTO_DASH_KEYS) ? window.TUTUGA_MECH_AUTO_DASH_KEYS : null;
   // Phase 22 補追 3: 祝日 dayKey 集合を index.html 側で構築されたマップから取得
   var mechHolidayDayKeys = allData.mechHolidayDayKeys || {};
 
@@ -726,7 +727,7 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
             // Phase 22 補追: 元書式が数値書式 (0.0/0.00) のセルで表示崩れを防ぐため value 設定後に numFmt='@' を付与
             // Phase 22 補追 2: 出力文字を U+002D '-' に変更 (MS P明朝での U+30FC 表示崩れ回避)
             // Phase 22 補追 3: 祝日セルは「-」を出力せず空欄維持
-            if (!isHolidayCell && numKeys && numKeys.has(key)) {
+            if (!isHolidayCell && autoDashKeys && autoDashKeys.has(key)) {
               var cell = ws.getCell(row, col);
               cell.value = '-';
               try { cell.numFmt = '@'; } catch (e) {}
