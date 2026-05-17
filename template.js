@@ -394,11 +394,12 @@ function _tutugaIsEmpty(v) {
 function _tutugaWriteCell(ws, row, col, value) {
   if (_tutugaIsEmpty(value)) return;
   var cell = ws.getCell(row, col);
-  // Phase 12 補追: ハイフン類を「ー」(U+30FC) に統一
+  // Phase 12 補追: ハイフン類を統一
+  // Phase 22 補追 2: MS P明朝での U+30FC 表示崩れのため "-" (U+002D) に変更
   if (typeof value === 'string' && /^[-－ー−–—―]$/.test(value)) {
-    value = 'ー';
+    value = '-';
   }
-  if (value === 'ー') {
+  if (value === '-') {
     try { cell.numFmt = '@'; } catch (e) {}
   }
   cell.value = value;
@@ -717,11 +718,12 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
           var val = has ? dayData[key] : undefined;
           var isEmpty = (val === null || val === undefined || val === '');
           if (isEmpty) {
-            // Phase 22: 数値型なら「ー」(U+30FC) を文字列として書き込む。トグル系は既存どおり何も書かない。
+            // Phase 22: 数値型なら未入力ハイフンを文字列として書き込む。トグル系は既存どおり何も書かない。
             // Phase 22 補追: 元書式が数値書式 (0.0/0.00) のセルで表示崩れを防ぐため value 設定後に numFmt='@' を付与
+            // Phase 22 補追 2: 出力文字を U+002D '-' に変更 (MS P明朝での U+30FC 表示崩れ回避)
             if (numKeys && numKeys.has(key)) {
               var cell = ws.getCell(row, col);
-              cell.value = 'ー';
+              cell.value = '-';
               try { cell.numFmt = '@'; } catch (e) {}
             }
             return;
