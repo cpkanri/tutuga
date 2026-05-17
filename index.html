@@ -2313,6 +2313,21 @@ const TUTUGA_MECH_SECTIONS_ALL = MECH_SECTIONS_1.concat(MECH_SECTIONS_2).concat(
 
 const ALL_MECH_KEYS = TUTUGA_MECH_SECTIONS_ALL.flatMap(s => s.fields.map(f => f.key));
 
+// Phase 22: 機械設備の数値型フィールドキー集合（3 サブタブ全体から type==="number" を抽出）
+// template.js (_tutugaWriteMechanicalSheet) から window 経由で参照する
+const TUTUGA_MECH_NUMERIC_KEYS = (function() {
+  const set = new Set();
+  TUTUGA_MECH_SECTIONS_ALL.forEach(function(sec) {
+    sec.fields.forEach(function(f) {
+      if (f.type === "number") set.add(f.key);
+    });
+  });
+  return set;
+})();
+if (typeof window !== 'undefined') {
+  window.TUTUGA_MECH_NUMERIC_KEYS = TUTUGA_MECH_NUMERIC_KEYS;
+}
+
 // =====================================================
 // TUTUGA_FIELDS: Phase 2-3 集約定義（Phase 2-4 検証用）
 // usage 9 / measure 28 / equip 22 / elec 29+26+12 / mech 56+50+49

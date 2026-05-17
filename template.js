@@ -699,6 +699,8 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
   var MECH_DAY_COL = _tutugaConst('MECH_DAY_COL', { mon:5, tue:6, wed:7, thu:8, fri:9 });
   var DAYS5 = ['mon','tue','wed','thu','fri'];
   var rowMaps = [TUTUGA_MECH1_ROW_W1, TUTUGA_MECH2_ROW_W1, TUTUGA_MECH3_ROW_W1];
+  // Phase 22: 数値型フィールドの未入力セルに「ー」を出力
+  var numKeys = (typeof window !== 'undefined' && window.TUTUGA_MECH_NUMERIC_KEYS) ? window.TUTUGA_MECH_NUMERIC_KEYS : null;
 
   for (var w = 1; w <= 5; w++) {
     var weekDays = (allData.mechanical && allData.mechanical[w]) || null;
@@ -710,9 +712,20 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
       var col = MECH_DAY_COL[dc];
       rowMaps.forEach(function(rowMap) {
         Object.keys(rowMap).forEach(function(key) {
-          if (!Object.prototype.hasOwnProperty.call(dayData, key)) return;
           var row = rowMap[key] + weekOffset;
-          _tutugaWriteCell(ws, row, col, dayData[key]);
+          var has = Object.prototype.hasOwnProperty.call(dayData, key);
+          var val = has ? dayData[key] : undefined;
+          var isEmpty = (val === null || val === undefined || val === '');
+          if (isEmpty) {
+            // Phase 22: 数値型なら「ー」(U+30FC) を文字列として書き込む。トグル系は既存どおり何も書かない。
+            if (numKeys && numKeys.has(key)) {
+              var cell = ws.getCell(row, col);
+              try { cell.numFmt = '@'; } catch (e) {}
+              cell.value = 'ー';
+            }
+            return;
+          }
+          _tutugaWriteCell(ws, row, col, val);
         });
       });
     });
