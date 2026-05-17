@@ -718,10 +718,11 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
           var isEmpty = (val === null || val === undefined || val === '');
           if (isEmpty) {
             // Phase 22: 数値型なら「ー」(U+30FC) を文字列として書き込む。トグル系は既存どおり何も書かない。
+            // Phase 22 補追: 元書式が数値書式 (0.0/0.00) のセルで表示崩れを防ぐため value 設定後に numFmt='@' を付与
             if (numKeys && numKeys.has(key)) {
               var cell = ws.getCell(row, col);
-              try { cell.numFmt = '@'; } catch (e) {}
               cell.value = 'ー';
+              try { cell.numFmt = '@'; } catch (e) {}
             }
             return;
           }
