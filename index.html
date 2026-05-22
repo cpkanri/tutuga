@@ -5752,6 +5752,49 @@ function loadScript(src) {
   });
 }
 
+// Phase 29-b: シート XML から不正な数式キャッシュ値 <v>NaN</v> 等を除去する。
+// ExcelJS は t="str" 形式の数式キャッシュ（例: <f>O3</f><v>平均</v>）を読込時に
+// 取りこぼし、書出時に <v>NaN</v> を出力する不具合があり、Excel が
+// 「修復されたレコード: セル情報」ログを出す原因になる。数式 <f> 自体は残すので
+// Excel は開封時に再計算する（fullCalcOnLoad も設定済み）。
+function sanitizeSheetXml(xml) {
+  return xml
+    .replace(/<v>NaN<\/v>/g, '')
+    .replace(/<v>-?Infinity<\/v>/g, '')
+    .replace(/<v>undefined<\/v>/g, '');
+}
+
+// Phase 29-b: ExcelJS が書き出した xlsx バッファ（ZIP）を開き、各シート XML を
+// sanitize して詰め直す。出力の最終バイト列に対する確実な防御層。
+// 不正値が 1 件も無ければ元バッファをそのまま返す（再 ZIP しない）。
+async function sanitizeXlsxBuffer(buf) {
+  try {
+    if (typeof JSZip === "undefined") {
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
+    }
+    const zip = await JSZip.loadAsync(buf);
+    const sheetNames = Object.keys(zip.files).filter(function(n) {
+      return /^xl\/worksheets\/sheet\d+\.xml$/.test(n);
+    });
+    let removed = 0;
+    for (const name of sheetNames) {
+      const xml = await zip.file(name).async("string");
+      const bad = (xml.match(/<v>NaN<\/v>|<v>-?Infinity<\/v>|<v>undefined<\/v>/g) || []).length;
+      if (bad > 0) {
+        zip.file(name, sanitizeSheetXml(xml));
+        removed += bad;
+      }
+    }
+    if (removed === 0) return buf;
+    console.log("Phase 29-b sanitize: 不正な <v> を " + removed + " 件除去");
+    return await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
+  } catch (e) {
+    // sanitize 失敗時は元バッファで続行（出力が止まるよりは良い）
+    console.warn("Phase 29-b sanitize 失敗（元バッファで続行）:", e);
+    return buf;
+  }
+}
+
 // =====================================================
 // B-3 追加: シート複製ヘルパー
 // 機械・電気設備テンプレを5週分シートコピーするため
@@ -5948,7 +5991,8 @@ async function exportExcel() {
     if (lbl) lbl.textContent = "テンプレート処理中..."; else if (btn) btn.textContent = "テンプレート処理中...";
     const wb = await window.buildTutugaWorkbook(allData);
 
-    const buf = await wb.xlsx.writeBuffer();
+    let buf = await wb.xlsx.writeBuffer();
+    buf = await sanitizeXlsxBuffer(buf);
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
