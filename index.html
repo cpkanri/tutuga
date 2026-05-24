@@ -4099,6 +4099,14 @@ function mergeServerData(serverData, expectedMonth) {
           if (fieldKey === 'week' || fieldKey === 'day' || fieldKey === 'updatedAt') return;
           // Phase 18-b / 19-B: bikou・phFinal は ISO タイムスタンプならスキップ
           if ((fieldKey === 'bikou' || fieldKey === 'phFinal1' || fieldKey === 'phFinal2') && isISOTimestamp(dayIn[fieldKey])) return;
+          // Phase 23-B-3 (kamitono fe178b9 / kake 1a89628 横展開):
+          // 終沈6キー (1系/2系) は水質管理報告タブの直書き専用フィールドで
+          // 日次タブに対応行が無いため、サーバから null/空が返ると
+          // ローカル正値が消失する。サーバー値が空ならローカルを保持する防御
+          if ((fieldKey === 'tempFinal1' || fieldKey === 'tempFinal2' ||
+               fieldKey === 'transFinal1' || fieldKey === 'transFinal2' ||
+               fieldKey === 'phFinal1' || fieldKey === 'phFinal2') &&
+              (dayIn[fieldKey] === null || dayIn[fieldKey] === undefined || dayIn[fieldKey] === '')) return;
           tutugaData.weeks[w][dNum][fieldKey] = dayIn[fieldKey];
         });
         summary.waterMeasure_days++;
