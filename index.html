@@ -4035,6 +4035,11 @@ function mergeServerData(serverData, expectedMonth) {
   };
   if (!serverData || typeof serverData !== 'object') return summary;
 
+  // Phase 38-b5+ Step 1: hardcoded → 動的化 (window.NULL_SKIP_KEYS_DIRECT 参照、fallback 付き)
+  var _NULL_SKIP_KEYS = (window.NULL_SKIP_KEYS_DIRECT && window.NULL_SKIP_KEYS_DIRECT.length)
+    ? window.NULL_SKIP_KEYS_DIRECT
+    : ['tempFinal1', 'tempFinal2', 'transFinal1', 'transFinal2', 'phFinal1', 'phFinal2'];  // fallback (Phase 23-B-3 原型 6 keys)
+
   // Phase 14: 月キー流入防止 / Phase 19-E': 比較は両辺 YYYY-MM 正規化で寛容化
   // (1) 同期開始時の対象月と現在の対象月が違う(同期中にユーザーが月切替) → abort
   if (expectedMonth && normalizeMonthValue(expectedMonth) !== normalizeMonthValue(tutugaData.targetMonth)) {
@@ -4104,9 +4109,7 @@ function mergeServerData(serverData, expectedMonth) {
           // 終沈6キー (1系/2系) は水質管理報告タブの直書き専用フィールドで
           // 日次タブに対応行が無いため、サーバから null/空が返ると
           // ローカル正値が消失する。サーバー値が空ならローカルを保持する防御
-          if ((fieldKey === 'tempFinal1' || fieldKey === 'tempFinal2' ||
-               fieldKey === 'transFinal1' || fieldKey === 'transFinal2' ||
-               fieldKey === 'phFinal1' || fieldKey === 'phFinal2') &&
+          if (_NULL_SKIP_KEYS.indexOf(fieldKey) >= 0 &&
               (dayIn[fieldKey] === null || dayIn[fieldKey] === undefined || dayIn[fieldKey] === '')) return;
           tutugaData.weeks[w][dNum][fieldKey] = dayIn[fieldKey];
         });
