@@ -3519,6 +3519,8 @@ function emptyElecWeek() {
 }
 
 function ensureStructure() {
+  // 測定者UI横展開: 月単位測定者（A方式・UIだけ月単位、保存は per-day inspector へ展開）
+  if (typeof tutugaData.monthInspector !== "string") tutugaData.monthInspector = "";
   // 水質
   if (!tutugaData.weeks || typeof tutugaData.weeks !== "object") tutugaData.weeks = {};
   for (let w = 1; w <= 5; w++) {
@@ -3689,14 +3691,16 @@ function saveToStorage(silent) {
     // change イベントで月切替する際、SELECT は既に新月に変わっているため
     // ここで読むと古い月のデータを新月のキーで保存してしまう
     tutugaData.startDate = estimateStartDate(tutugaData.targetMonth);
+
+    // 測定者UI横展開: 月単位測定者を実測日の per-day inspector へ展開（tutugaData のみ参照・DOM 直読みなし）
+    applyMonthInspectorToAllDays();
+
     const mainRes = safeSetItem(storageKey(), JSON.stringify(tutugaData));
     if (!mainRes.ok) {
       if (silent) console.warn("saveToStorage (silent) failed:", mainRes);
       else handleStorageSaveFailure(mainRes);
       return false;
     }
-    const insp = findLastInspector();
-    if (insp) safeSetItem("tutuga_last_inspector", insp);
     if (tutugaData.targetMonth) safeSetItem("tutuga_current_month", tutugaData.targetMonth);
     return true;
   } catch (e) {
@@ -3735,16 +3739,7 @@ function handleStorageSaveFailure(res) {
   }
 }
 
-function findLastInspector() {
-  for (let w = 5; w >= 1; w--) {
-    if (!tutugaData.weeks[w]) continue;
-    for (let d = 5; d >= 1; d--) {
-      const v = tutugaData.weeks[w][d] && tutugaData.weeks[w][d].inspector;
-      if (v) return v;
-    }
-  }
-  return "";
-}
+// 測定者UI横展開: findLastInspector は撤去（tutuga_last_inspector 書込廃止により未使用）
 
 // ===== GAS 同期機能 (Phase 5b) =====
 // 5 シート構成 (Code.gs Phase 3) に対応:
@@ -4235,6 +4230,7 @@ async function syncAll() {
 
     // 画面再描画
     // B-6: 全タブを再描画して、サーバー新データを確実に反映
+    syncMonthInspectorFromDays(); // 測定者UI横展開: 同期後の代表値を月単位欄へ反映（renderForm 前）
     if (typeof renderAll === 'function') renderAll();
     else if (typeof loadDataToForm === 'function') loadDataToForm();
 
@@ -4473,17 +4469,7 @@ function loadDataToForm() {
     }
   });
 
-  // 測定者デフォルト補完（measure サブタブで意味がある）
-  if (currentWaterSub === "measure") {
-    const inspEl = document.querySelector('#formWrap [data-field="inspector"]');
-    if (inspEl && !inspEl.value) {
-      const last = localStorage.getItem("tutuga_last_inspector") || "";
-      if (last) {
-        inspEl.value = last;
-        cell.inspector = last;
-      }
-    }
-  }
+  // 測定者UI横展開: tutuga_last_inspector の autofill は撤去（A方式へ一本化・月単位欄は renderForm が復元）
 }
 
 // ===== オートアドバンス機能（Phase 8 修正06: 全タブ対応） =====
@@ -4696,16 +4682,63 @@ function renderDayTabs() {
 }
 
 // 水質: 指定日の指定サブタブ (usage/measure) に1つでも値があるか
-function isDayFilledForSub(w, d, sub) {
-  const cell = tutugaData.weeks[w] && tutugaData.weeks[w][d];
-  if (!cell) return false;
-  const keys = (sub === "usage")
-    ? TUTUGA_FIELDS.water.usage.concat(TUTUGA_FIELDS.water.usageFormExtras)
-    : TUTUGA_FIELDS.water.measureFormFull;
-  return keys.some(k => {
+// 測定者UI横展開: その日に「実測データ」があるか（測定者 inspector・備考 bikou は実測に数えない）。
+// ✓表示(isDayFilledForSub の measure)と月単位測定者の展開ガード(applyMonthInspectorToAllDays)で共用。
+function dayHasMeasurement(cell) {
+  if (!cell || typeof cell !== "object") return false;
+  return MEASURE_FIELDS.some(k => {
+    if (k === "inspector" || k === "bikou") return false;
     const v = cell[k];
     return v !== null && v !== undefined && v !== "";
   });
+}
+
+function isDayFilledForSub(w, d, sub) {
+  const cell = tutugaData.weeks[w] && tutugaData.weeks[w][d];
+  if (!cell) return false;
+  if (sub === "usage") {
+    const keys = TUTUGA_FIELDS.water.usage.concat(TUTUGA_FIELDS.water.usageFormExtras);
+    return keys.some(k => { const v = cell[k]; return v !== null && v !== undefined && v !== ""; });
+  }
+  // measure サブ: inspector/bikou は数えない
+  return dayHasMeasurement(cell);
+}
+
+// 測定者UI横展開 (A方式): 月単位測定者(tutugaData.monthInspector)を per-day inspector へ展開。
+// 判定は共有述語 dayHasMeasurement(cell)＝「実測データがある日」のみ。
+// ensureStructure が全日の空セルを生成し inspector/bikou は cell に含まれるため、
+// 無条件展開や bikou を実測扱いすると未実施日にも inspector が入り誤✓を生む。実測ベースで根絶。
+function applyMonthInspectorToAllDays() {
+  const name = (tutugaData.monthInspector || "").trim();
+  const weeks = tutugaData.weeks || {};
+  Object.keys(weeks).forEach(w => {
+    const week = weeks[w] || {};
+    Object.keys(week).forEach(dk => {
+      const cell = week[dk];
+      if (dayHasMeasurement(cell)) {
+        if (name) cell.inspector = name;            // 実測がある日のみ展開
+      } else if (cell && typeof cell === "object" && cell.inspector) {
+        cell.inspector = "";                        // 実測なし日の誤伝播 inspector を剥がす
+      }
+    });
+  });
+}
+
+// 測定者UI横展開: per-day inspector の代表値(最初の非空)を月単位欄へ反映。初期/月切替/同期後に呼ぶ。
+function syncMonthInspectorFromDays() {
+  let found = "";
+  const weeks = tutugaData.weeks || {};
+  outer:
+  for (const w of Object.keys(weeks)) {
+    const week = weeks[w] || {};
+    for (const dk of Object.keys(week)) {
+      const v = week[dk] && week[dk].inspector;
+      if (v != null && String(v).trim() !== "") { found = String(v).trim(); break outer; }
+    }
+  }
+  tutugaData.monthInspector = found;
+  const el = document.getElementById("monthInspector");
+  if (el) el.value = found;
 }
 
 // 指定週(1-based)内の Mon-Fri のうち、祝日・年末年始に該当する日を列挙する。
@@ -4786,7 +4819,7 @@ const MEASURE_FORM_GROUPS = [
   { title: "MLSS", keys: ["mlss1", "mlss2"] },
   { title: "汚泥界面", keys: ["sludge1", "sludge2"] },
   { title: "塩素", keys: ["chlorine", "chlorineDose"] },
-  { title: "備考", keys: ["inspector", "bikou"] }
+  { title: "備考", keys: ["bikou"] }
 ];
 
 // フィールドメタ情報 (label/unit/step/type)
@@ -4843,7 +4876,11 @@ function renderForm() {
     });
     html += `</div>`;
   } else {
-    // 下段水質測定: グループごとにセクション
+    // 下段水質測定: 月単位測定者（最上部）+ グループごとにセクション
+    // 測定者UI横展開 (A方式): id=monthInspector・data-field 無し（[data-field] 収集/復元の対象外）
+    html += `<div class="section"><div class="section-header">測定者（今月）</div>`;
+    html += `<div class="field"><span class="label">測定者名</span><span class="unit"></span><input type="text" id="monthInspector" placeholder="今月の測定者名"></div>`;
+    html += `</div>`;
     MEASURE_FORM_GROUPS.forEach(g => {
       html += `<div class="section"><div class="section-header">${escapeHtml(g.title)}</div>`;
       g.keys.forEach(key => {
@@ -4868,6 +4905,16 @@ function renderForm() {
   }
 
   wrap.innerHTML = html;
+
+  // 測定者UI横展開: 月単位測定者欄（data-field 無し）の値復元 + 同期リスナー（再描画ごとに新要素へ再配線）
+  const monthInspectorEl = document.getElementById("monthInspector");
+  if (monthInspectorEl) {
+    monthInspectorEl.value = (tutugaData.monthInspector || "");
+    monthInspectorEl.addEventListener("input", () => {
+      tutugaData.monthInspector = monthInspectorEl.value;
+      markDirty();
+    });
+  }
 
   wrap.querySelectorAll("input[data-field]").forEach(el => {
     el.addEventListener("input", () => markDirty());
@@ -6064,6 +6111,7 @@ function bindEvents() {
     if (ws0 && !ws0[currentDay]) {
       for (let d = 1; d <= 5; d++) if (ws0[d]) { currentDay = d; break; }
     }
+    syncMonthInspectorFromDays(); // 測定者UI横展開: 切替先の月の代表値を月単位欄へ反映（前月混入防止・renderForm 前）
     renderAll();
     markClean();  // B-6: 月切替直後はdirtyではない（古い月のサーバーへ誤送信防止）
 
@@ -6224,6 +6272,7 @@ async function continueInit() {
     window.__mainEventsBound = true;
     bindEvents();
   }
+  syncMonthInspectorFromDays(); // 測定者UI横展開: 初期描画前に月単位欄へ代表値を反映
   renderAll();
 
   // 接続状態を起動時にチェック & 2分おきに定期確認
