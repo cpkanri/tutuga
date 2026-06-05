@@ -131,7 +131,31 @@ function getOrCreateSheet(name, headers) {
   return sh;
 }
 
+// 連続する行を 1 回の setValues にまとめて batched 書込する (N+1 根絶用)。
+// shiwagi Phase 25-c-γ / kamitono 25-c-β の flushRowUpdates と同手法。
+// updates = [{ r: 絶対行番号(1始まり), v: [列値...] }]。startCol は書込開始列(1始まり)。
+// 非連続行・幅違いは別レンジに分割し、gap/未対象行には一切触れない。
+function flushRowUpdates(sheet, updates, startCol) {
+  if (!updates || updates.length === 0) return;
+  updates.sort(function(a, b) { return a.r - b.r; });
+  var i = 0;
+  while (i < updates.length) {
+    var runStart = i;
+    var width = updates[i].v.length;
+    while (i + 1 < updates.length &&
+           updates[i + 1].r === updates[i].r + 1 &&
+           updates[i + 1].v.length === width) {
+      i++;
+    }
+    var block = [];
+    for (var k = runStart; k <= i; k++) block.push(updates[k].v);
+    sheet.getRange(updates[runStart].r, startCol, block.length, width).setValues(block);
+    i++;
+  }
+}
+
 // 月列が一致する行を探す (per-week)。見つからなければ -1。
+// [Phase A/B で N+1 解消につき呼出は廃止。Phase B 完了時に削除予定]
 function findRowByMonthWeek(sheet, month, week) {
   var lr = sheet.getLastRow();
   if (lr <= 1) return -1;
@@ -436,23 +460,50 @@ function mergeIntoElectricalDay(sheet, month, week, dayKey, transcribe, now) {
 }
 
 // 下段水質測定 (per-day, JSON)
+// Phase A: N+1 根絶。全週 payload (data.weeks = { [week]: { [dayCode]: {...} } }) を
+// 受領し、索引マップ 1 回読み + flushRowUpdates で batched 書込。
+// 旧 single-week 形式 (data.week + data.days) も後方互換で受付 (saveEverything 経由)。
 function saveWaterMeasure(data) {
   var month = normalizeMonth(data.month);
-  var week = data.week;
-  var days = data.days;
-  if (!month || !week || !days) return jsonResponse({ error: 'パラメータ不足' });
+  var weeks = data.weeks;
+  if (!weeks && data.week != null && data.days) {
+    weeks = {}; weeks[data.week] = data.days;   // 後方互換: 単一週 → 全週形へラップ
+  }
+  if (!month || !weeks) return jsonResponse({ error: 'パラメータ不足' });
 
   var sh = getOrCreateSheet(SHEET_WATER_MEASURE, HEADERS_WATER_MEASURE);
   var now = new Date();
-  var cnt = 0;
-  for (var dc in days) {
-    var dd = days[dc]; if (!dd) continue;
-    var dn = DAY_NAMES[dc]; if (!dn) continue;
-    var ri = findRowByMonthWeekDay(sh, month, week, dn);
-    var rv = [month, parseInt(week, 10), dn, JSON.stringify(dd), now];
-    if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
-    else sh.appendRow(rv);
-    cnt++;
+
+  // 索引マップ: 'week|曜日' → 絶対行 (当月のみ・先勝ち)
+  var lr = sh.getLastRow();
+  var rowByKey = {};
+  if (lr > 1) {
+    var grid = sh.getRange(2, 1, lr - 1, 3).getValues();
+    for (var i = 0; i < grid.length; i++) {
+      if (!matchMonth(grid[i][0], month)) continue;
+      var gw = parseInt(grid[i][1], 10); if (!gw) continue;
+      var gkey = gw + '|' + String(grid[i][2]);
+      if (rowByKey[gkey] === undefined) rowByKey[gkey] = i + 2;
+    }
+  }
+
+  var updates = [], appends = [], cnt = 0;
+  for (var wn in weeks) {
+    var days = weeks[wn]; if (!days) continue;
+    var w = parseInt(wn, 10); if (!w) continue;
+    for (var dc in days) {
+      var dd = days[dc]; if (!dd) continue;
+      var dn = DAY_NAMES[dc]; if (!dn) continue;
+      var rv = [month, w, dn, JSON.stringify(dd), now];
+      var key = w + '|' + dn;
+      if (rowByKey[key] !== undefined) updates.push({ r: rowByKey[key], v: rv });
+      else appends.push(rv);
+      cnt++;
+    }
+  }
+  flushRowUpdates(sh, updates, 1);
+  if (appends.length > 0) {
+    sh.getRange(sh.getLastRow() + 1, 1, appends.length, 5).setValues(appends);
   }
   return jsonResponse({ status: 'ok', message: '水質下段 ' + cnt + ' 日保存', savedCount: cnt });
 }
@@ -466,15 +517,31 @@ function saveEquipment(data) {
 
   var sh = getOrCreateSheet(SHEET_EQUIPMENT, HEADERS_EQUIPMENT);
   var now = new Date();
-  var cnt = 0;
+
+  // 索引マップ: week → 絶対行 (当月のみ・先勝ち)
+  var lr = sh.getLastRow();
+  var rowByWeek = {};
+  if (lr > 1) {
+    var grid = sh.getRange(2, 1, lr - 1, 2).getValues();
+    for (var i = 0; i < grid.length; i++) {
+      if (!matchMonth(grid[i][0], month)) continue;
+      var gw = parseInt(grid[i][1], 10); if (!gw) continue;
+      if (rowByWeek[gw] === undefined) rowByWeek[gw] = i + 2;
+    }
+  }
+
+  var updates = [], appends = [], cnt = 0;
   for (var wn in eq) {
     var wd = eq[wn]; if (!wd) continue;
     var w = parseInt(wn, 10); if (!w) continue;
-    var ri = findRowByMonthWeek(sh, month, w);
     var rv = [month, w, JSON.stringify(wd), now];
-    if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
-    else sh.appendRow(rv);
+    if (rowByWeek[w] !== undefined) updates.push({ r: rowByWeek[w], v: rv });
+    else appends.push(rv);
     cnt++;
+  }
+  flushRowUpdates(sh, updates, 1);
+  if (appends.length > 0) {
+    sh.getRange(sh.getLastRow() + 1, 1, appends.length, 4).setValues(appends);
   }
   return jsonResponse({ status: 'ok', message: '機器運転時間 ' + cnt + ' 週保存', savedCount: cnt });
 }
@@ -488,26 +555,50 @@ function saveElectrical(data) {
 
   var sh = getOrCreateSheet(SHEET_ELECTRICAL, HEADERS_ELECTRICAL);
   var now = new Date();
-  var cnt = 0;
+
+  // 索引マップ: 'week|曜日' → { r: 絶対行, json: 既存data(col4) } (当月のみ・先勝ち)
+  // 既存の自動転記値 (saveWaterUsage 由来) を破壊しないよう既存 JSON とマージするため、
+  // col4(data) も索引構築時に同時取得し per-row getValue を全廃。
+  var lr = sh.getLastRow();
+  var idx = {};
+  if (lr > 1) {
+    var grid = sh.getRange(2, 1, lr - 1, 4).getValues();
+    for (var i = 0; i < grid.length; i++) {
+      if (!matchMonth(grid[i][0], month)) continue;
+      var gw = parseInt(grid[i][1], 10); if (!gw) continue;
+      var gkey = gw + '|' + String(grid[i][2]);
+      if (idx[gkey] === undefined) {
+        var gex = {};
+        try { gex = JSON.parse(grid[i][3] || '{}'); } catch (e) { gex = {}; }
+        idx[gkey] = { r: i + 2, json: gex };
+      }
+    }
+  }
+
+  var updates = [], appends = [], cnt = 0;
   for (var wn in el) {
     var wd = el[wn]; if (!wd) continue;
     var w = parseInt(wn, 10); if (!w) continue;
     for (var dc in wd) {
       var dd = wd[dc]; if (!dd) continue;
       var dn = DAY_NAMES[dc]; if (!dn) continue;
-      // 既存の自動転記値 (saveWaterUsage 由来) を破壊しないよう既存 JSON とマージ
-      var ri = findRowByMonthWeekDay(sh, month, w, dn);
-      var existing = {};
-      if (ri > 0) {
-        try { existing = JSON.parse(sh.getRange(ri, 4).getValue() || '{}'); }
-        catch (e) { existing = {}; }
+      var key = w + '|' + dn;
+      var merged;
+      if (idx[key] !== undefined) {
+        merged = idx[key].json;
+        for (var k in dd) merged[k] = dd[k];
+        updates.push({ r: idx[key].r, v: [month, w, dn, JSON.stringify(merged), now] });
+      } else {
+        merged = {};
+        for (var k2 in dd) merged[k2] = dd[k2];
+        appends.push([month, w, dn, JSON.stringify(merged), now]);
       }
-      for (var k in dd) existing[k] = dd[k];
-      var rv = [month, w, dn, JSON.stringify(existing), now];
-      if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
-      else sh.appendRow(rv);
       cnt++;
     }
+  }
+  flushRowUpdates(sh, updates, 1);
+  if (appends.length > 0) {
+    sh.getRange(sh.getLastRow() + 1, 1, appends.length, 5).setValues(appends);
   }
   return jsonResponse({ status: 'ok', message: '電気 ' + cnt + ' 日保存', savedCount: cnt });
 }
@@ -521,19 +612,37 @@ function saveMechanical(data) {
 
   var sh = getOrCreateSheet(SHEET_MECHANICAL, HEADERS_MECHANICAL);
   var now = new Date();
-  var cnt = 0;
+
+  // 索引マップ: 'week|曜日' → 絶対行 (当月のみ・先勝ち)
+  var lr = sh.getLastRow();
+  var rowByKey = {};
+  if (lr > 1) {
+    var grid = sh.getRange(2, 1, lr - 1, 3).getValues();
+    for (var i = 0; i < grid.length; i++) {
+      if (!matchMonth(grid[i][0], month)) continue;
+      var gw = parseInt(grid[i][1], 10); if (!gw) continue;
+      var gkey = gw + '|' + String(grid[i][2]);
+      if (rowByKey[gkey] === undefined) rowByKey[gkey] = i + 2;
+    }
+  }
+
+  var updates = [], appends = [], cnt = 0;
   for (var wn in mech) {
     var wd = mech[wn]; if (!wd) continue;
     var w = parseInt(wn, 10); if (!w) continue;
     for (var dc in wd) {
       var dd = wd[dc]; if (!dd) continue;
       var dn = DAY_NAMES[dc]; if (!dn) continue;
-      var ri = findRowByMonthWeekDay(sh, month, w, dn);
       var rv = [month, w, dn, JSON.stringify(dd), now];
-      if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
-      else sh.appendRow(rv);
+      var key = w + '|' + dn;
+      if (rowByKey[key] !== undefined) updates.push({ r: rowByKey[key], v: rv });
+      else appends.push(rv);
       cnt++;
     }
+  }
+  flushRowUpdates(sh, updates, 1);
+  if (appends.length > 0) {
+    sh.getRange(sh.getLastRow() + 1, 1, appends.length, 5).setValues(appends);
   }
   return jsonResponse({ status: 'ok', message: '機械 ' + cnt + ' 日保存', savedCount: cnt });
 }

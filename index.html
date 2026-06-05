@@ -3952,12 +3952,11 @@ async function uploadAllTabs() {
   }
 
   const waterMeasure = _tutugaBuildWaterMeasurePayload();
-  Object.keys(waterMeasure).forEach(function(w) {
-    tasks.push({
-      scope: '水質下段 第' + w + '週',
-      body: { action: 'saveWaterMeasure', month: month, week: parseInt(w, 10), days: waterMeasure[w] }
-    });
-  });
+  if (Object.keys(waterMeasure).length > 0) {
+    // Phase A: 週ごとの分割リクエストを廃止し、全週を 1 リクエストにまとめる
+    // (GAS 側 saveWaterMeasure が weeks payload を索引1回読み + batched 書込で処理)。
+    tasks.push({ scope: '水質下段', body: { action: 'saveWaterMeasure', month: month, weeks: waterMeasure } });
+  }
 
   const equipment = _tutugaBuildEquipmentPayload();
   if (Object.keys(equipment).length > 0) {
