@@ -46,7 +46,11 @@
     };
   }
 
-  // ===== 書込マップ本体 (37 entries: MEASURE 28 + USAGE 9) =====
+  // ===== 書込マップ本体 (40 entries: MEASURE 30 + USAGE 10) =====
+  // Phase 2: solidChlorine (USAGE) / do1・do2 (MEASURE) を追加。
+  //   いずれも日常水質シート (daily_water) には書込まず、報告書 (運転管理月報 / 水質管理報告)
+  //   専用 → daily=null。実 write 経路 (template.js) の reportDayMap 駆動が source of truth。
+  //   null_skip ではない (日次タブに実入力欄を持ち save→GAS→load→merge で往復するため)。
   const EXCEL_WRITE_MAP = {
     // ====================================================
     // USAGE_KEYS (上段使用量、ws=0 daily_water, mon_col=9)
@@ -61,6 +65,8 @@
     returnSludge1:  _entry(_daily(9,  9), null),
     returnSludge2:  _entry(_daily(10, 9), null),
     discharge:      _entry(_daily(11, 9), null),
+    // Phase 2: 固形塩素使用量 → 運転管理月報 (ws=1) G 列。daily_water 書込なし。
+    solidChlorine:  _entry(null, { sheet: SHEETS.OPERATION_MONTHLY, col: 7 }),
 
     // ====================================================
     // MEASURE_FIELDS (下段水質測定、ws=0 daily_water, mon_col=10)
@@ -92,6 +98,10 @@
     phFinal1:       _entry(null, null, true),  // null_skip 対象
     phFinal2:       _entry(null, null, true),  // null_skip 対象
 
+    // --- DO (ディッチ 1/2、Phase 2 新規) → 水質管理報告 2/2 (ws=2) I/J 列。daily_water 書込なし。 ---
+    do1:            _entry(null, { sheet: SHEETS.WATER_REPORT, col: 9 }),
+    do2:            _entry(null, { sheet: SHEETS.WATER_REPORT, col: 10 }),
+
     // --- SV (1 系 / 2 系 並列処理場の特徴) ---
     sv1_30:         _entry(_daily(33, 10), null),
     sv1_24h:        _entry(_daily(34, 10), null),
@@ -120,22 +130,24 @@
     .filter(function (k) { return EXCEL_WRITE_MAP[k].null_skip; });
 
   // ===== 期待値 (index.html L1805-1834 と整合) =====
-  // MEASURE_FIELDS (28 件、metadata 含む)
+  // MEASURE_FIELDS (30 件、metadata 含む。Phase 2: do1/do2 追加)
   const MEASURE_FIELDS_EXPECTED = [
     'tempIn', 'tempD1', 'tempD2', 'tempOut', 'tempFinal1', 'tempFinal2',
     'transIn', 'transOut', 'transFinal1', 'transFinal2',
     'phIn', 'phD1', 'phD2', 'phOut', 'phFinal1', 'phFinal2',
+    'do1', 'do2',
     'sv1_30', 'sv1_24h', 'sv2_30', 'sv2_24h',
     'mlss1', 'mlss2',
     'sludge1', 'sludge2',
     'chlorine', 'chlorineDose',
     'inspector', 'bikou'
   ];
-  // USAGE_KEYS (11 件、ただし excessSludge1/2 は MAP 対象外)
+  // USAGE_KEYS (12 件、ただし excessSludge1/2 は MAP 対象外。Phase 2: solidChlorine 追加)
   const USAGE_KEYS_EXPECTED = [
     'powerAllDay', 'powerMeasure', 'powerReactive', 'demand',
     'water', 'diesel',
     'returnSludge1', 'returnSludge2', 'discharge',
+    'solidChlorine',
     'excessSludge1', 'excessSludge2'  // 別シート転記、MAP には含めない
   ];
   // MAP に含めるべき keys = MEASURE 全件 + USAGE 9 件 (excessSludge1/2 除外)
@@ -150,12 +162,12 @@
     const issues = [];
     const mapKeys = Object.keys(EXCEL_WRITE_MAP);
 
-    // Verify 1: MAP entries 数 = 37
-    if (mapKeys.length !== 37) {
-      issues.push('MAP entries count mismatch: expected 37, got ' + mapKeys.length);
+    // Verify 1: MAP entries 数 = 40 (Phase 2: +do1/do2/solidChlorine)
+    if (mapKeys.length !== 40) {
+      issues.push('MAP entries count mismatch: expected 40, got ' + mapKeys.length);
     }
 
-    // Verify 2: MAP keys ↔ EXPECTED_MAP_KEYS 双方向 (37 件、MEASURE 28 + USAGE 9)
+    // Verify 2: MAP keys ↔ EXPECTED_MAP_KEYS 双方向 (40 件、MEASURE 30 + USAGE 10)
     const missingInMap = EXPECTED_MAP_KEYS.filter(function (k) { return mapKeys.indexOf(k) < 0; });
     const extraInMap   = mapKeys.filter(function (k) { return EXPECTED_MAP_KEYS.indexOf(k) < 0; });
     if (missingInMap.length) issues.push('MAP missing keys: ' + missingInMap.join(','));
@@ -199,7 +211,7 @@
       issues.forEach(function (msg) { console.error('  - ' + msg); });
       return false;
     }
-    console.log('[excel-write-map.js] verify OK (37 entries, 6 null_skip, 6 sheets, mon_col groups {9,10})');
+    console.log('[excel-write-map.js] verify OK (40 entries, 6 null_skip, 6 sheets, mon_col groups {9,10})');
     return true;
   }
 

@@ -1810,6 +1810,8 @@ const MEASURE_FIELDS = [
   "transIn", "transOut", "transFinal1", "transFinal2",
   // PH（4 + 終沈2）
   "phIn", "phD1", "phD2", "phOut", "phFinal1", "phFinal2",
+  // DO（ディッチ1/2、Phase 2 新規・測定DO・5回週/測定日ゲート）→ 水質管理報告2/2 I/J 列
+  "do1", "do2",
   // SV（1系・2系 SV30/SV24h）
   "sv1_30", "sv1_24h", "sv2_30", "sv2_24h",
   // MLSS（1系/2系）
@@ -1831,6 +1833,7 @@ const USAGE_KEYS = [
   "powerAllDay", "powerMeasure", "powerReactive", "demand",
   "water", "diesel",
   "returnSludge1", "returnSludge2", "discharge",
+  "solidChlorine",                       // Phase 2: 固形塩素使用量 (kg/日次) → 運転管理月報 G 列
   "excessSludge1", "excessSludge2"
 ];
 const USAGE_LABELS = {
@@ -1843,6 +1846,7 @@ const USAGE_LABELS = {
   returnSludge1: { label: "返送汚泥流量（№1）", unit: "㎥" },
   returnSludge2: { label: "返送汚泥流量（№2）", unit: "㎥" },
   discharge:     { label: "放流流量",          unit: "㎥" },
+  solidChlorine: { label: "固形塩素使用量",     unit: "kg" },
   excessSludge1: { label: "余剰汚泥流量（No.1）", unit: "㎥" },
   excessSludge2: { label: "余剰汚泥流量（No.2）", unit: "㎥" }
 };
@@ -4813,6 +4817,7 @@ const MEASURE_FORM_GROUPS = [
   { title: "水温", keys: ["tempIn", "tempD1", "tempD2", "tempOut", "tempFinal1", "tempFinal2"] },
   { title: "透視度", keys: ["transIn", "transOut", "transFinal1", "transFinal2"] },
   { title: "PH", keys: ["phIn", "phD1", "phD2", "phOut", "phFinal1", "phFinal2"] },
+  { title: "DO（ディッチ）", keys: ["do1", "do2"] },
   { title: "SV (1系)", keys: ["sv1_30", "sv1_24h"] },
   { title: "SV (2系)", keys: ["sv2_30", "sv2_24h"] },
   { title: "MLSS", keys: ["mlss1", "mlss2"] },
@@ -4839,6 +4844,8 @@ const MEASURE_FIELD_META = {
   phOut:       { label: "PH（放流）",        unit: "",    step: "0.01", type: "number" },
   phFinal1:    { label: "PH（1系終沈）",     unit: "",    step: "0.01", type: "number" },
   phFinal2:    { label: "PH（2系終沈）",     unit: "",    step: "0.01", type: "number" },
+  do1:         { label: "DO（No.1ディッチ）", unit: "㎎/ℓ", step: "0.1",  type: "number" },
+  do2:         { label: "DO（No.2ディッチ）", unit: "㎎/ℓ", step: "0.1",  type: "number" },
   sv1_30:      { label: "SV30 (1系)",        unit: "%",   step: "1",    type: "number" },
   sv1_24h:     { label: "SV24h (1系)",       unit: "%",   step: "1",    type: "number" },
   sv2_30:      { label: "SV30 (2系)",        unit: "%",   step: "1",    type: "number" },
