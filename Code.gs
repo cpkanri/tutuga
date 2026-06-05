@@ -154,33 +154,9 @@ function flushRowUpdates(sheet, updates, startCol) {
   }
 }
 
-// 月列が一致する行を探す (per-week)。見つからなければ -1。
-// [Phase A/B で N+1 解消につき呼出は廃止。Phase B 完了時に削除予定]
-function findRowByMonthWeek(sheet, month, week) {
-  var lr = sheet.getLastRow();
-  if (lr <= 1) return -1;
-  var data = sheet.getRange(2, 1, lr - 1, 2).getValues();
-  var w = parseInt(week, 10);
-  for (var i = 0; i < data.length; i++) {
-    if (!matchMonth(data[i][0], month)) continue;
-    if (parseInt(data[i][1], 10) === w) return i + 2;
-  }
-  return -1;
-}
-
-// 月+週+曜日が一致する行を探す (per-day)。曜日は日本語 ('月'…'金')。
-function findRowByMonthWeekDay(sheet, month, week, dayName) {
-  var lr = sheet.getLastRow();
-  if (lr <= 1) return -1;
-  var data = sheet.getRange(2, 1, lr - 1, 3).getValues();
-  var w = parseInt(week, 10);
-  for (var i = 0; i < data.length; i++) {
-    if (!matchMonth(data[i][0], month)) continue;
-    if (parseInt(data[i][1], 10) !== w) continue;
-    if (String(data[i][2]) === dayName) return i + 2;
-  }
-  return -1;
-}
+// [Phase A/B] 旧 findRowByMonthWeek / findRowByMonthWeekDay は N+1 の元凶 (毎行
+// フルシート読み) のため全廃。行特定は各保存ハンドラ内で getValues 1 回 +
+// 索引マップ ('week' / 'week|曜日' → 絶対行) に置換済み。
 
 
 // =====================================================================
@@ -382,6 +358,38 @@ function saveWaterUsage(data) {
   var savedWeeks = 0;
   var transcribedDays = 0;
 
+  // --- Phase B: 索引マップを各シート 1 回ずつ構築 (当月のみ・先勝ち) ---
+  // 水質上段: week → 絶対行
+  var wuRowByWeek = {};
+  var wuLr = sh.getLastRow();
+  if (wuLr > 1) {
+    var wuGrid = sh.getRange(2, 1, wuLr - 1, 2).getValues();
+    for (var i = 0; i < wuGrid.length; i++) {
+      if (!matchMonth(wuGrid[i][0], month)) continue;
+      var gw = parseInt(wuGrid[i][1], 10); if (!gw) continue;
+      if (wuRowByWeek[gw] === undefined) wuRowByWeek[gw] = i + 2;
+    }
+  }
+  // 電気: 'week|曜日' → { r:絶対行, json:既存data(col4), dirty } (col4 を同時取得し getValue 全廃)
+  var elecIdx = {};
+  var elLr = elecSh.getLastRow();
+  if (elLr > 1) {
+    var elGrid = elecSh.getRange(2, 1, elLr - 1, 4).getValues();
+    for (var j = 0; j < elGrid.length; j++) {
+      if (!matchMonth(elGrid[j][0], month)) continue;
+      var ew = parseInt(elGrid[j][1], 10); if (!ew) continue;
+      var ekey0 = ew + '|' + String(elGrid[j][2]);
+      if (elecIdx[ekey0] === undefined) {
+        var ej = {};
+        try { ej = JSON.parse(elGrid[j][3] || '{}'); } catch (e) { ej = {}; }
+        elecIdx[ekey0] = { r: j + 2, w: ew, dayName: String(elGrid[j][2]), json: ej, dirty: false };
+      }
+    }
+  }
+
+  var wuUpdates = [], wuAppends = [];
+  var elecNew = {}, elecNewOrder = [];   // 新規電気行 (key → {w, dayName, json}), 出現順
+
   for (var wn in weeks) {
     var weekData = weeks[wn]; if (!weekData) continue;
     var w = parseInt(wn, 10);
@@ -393,13 +401,12 @@ function saveWaterUsage(data) {
       if (k === 'excessSludge1' || k === 'excessSludge2') continue;
       sheetCopy[k] = weekData[k];
     }
-    var ri = findRowByMonthWeek(sh, month, w);
     var rv = [month, w, JSON.stringify(sheetCopy), now];
-    if (ri > 0) sh.getRange(ri, 1, 1, rv.length).setValues([rv]);
-    else sh.appendRow(rv);
+    if (wuRowByWeek[w] !== undefined) wuUpdates.push({ r: wuRowByWeek[w], v: rv });
+    else wuAppends.push(rv);
     savedWeeks++;
 
-    // 2) 日常電気設備 への自動転記 (per-day マージ)
+    // 2) 日常電気設備 への自動転記 (per-day マージ, in-memory 累積)
     for (var di = 0; di < DAYS.length; di++) {
       var dayKey = DAYS[di];
       var transcribe = {};
@@ -421,9 +428,48 @@ function saveWaterUsage(data) {
 
       if (!picked) continue;
 
-      mergeIntoElectricalDay(elecSh, month, w, dayKey, transcribe, now);
+      // 旧 mergeIntoElectricalDay 相当: dayName 無しは書込スキップ (カウンタは加算)。
+      // 自動転記フィールドのみ既存 JSON にマージし、他フィールドは保全。
+      var dayName = DAY_NAMES[dayKey];
+      if (dayName) {
+        var ekey = w + '|' + dayName;
+        if (elecIdx[ekey] !== undefined) {
+          for (var tk in transcribe) elecIdx[ekey].json[tk] = transcribe[tk];
+          elecIdx[ekey].dirty = true;
+        } else if (elecNew[ekey] !== undefined) {
+          for (var tk2 in transcribe) elecNew[ekey].json[tk2] = transcribe[tk2];
+        } else {
+          var nj = {};
+          for (var tk3 in transcribe) nj[tk3] = transcribe[tk3];
+          elecNew[ekey] = { w: w, dayName: dayName, json: nj };
+          elecNewOrder.push(ekey);
+        }
+      }
       transcribedDays++;
     }
+  }
+
+  // --- batched 書込 ---
+  // 水質上段
+  flushRowUpdates(sh, wuUpdates, 1);
+  if (wuAppends.length > 0) {
+    sh.getRange(sh.getLastRow() + 1, 1, wuAppends.length, 4).setValues(wuAppends);
+  }
+  // 電気: 既存行更新 (dirty のみ) + 新規行一括追加 (出現順)
+  var elecUpdates = [];
+  for (var ukey in elecIdx) {
+    if (elecIdx[ukey].dirty) {
+      var e = elecIdx[ukey];
+      elecUpdates.push({ r: e.r, v: [month, e.w, e.dayName, JSON.stringify(e.json), now] });
+    }
+  }
+  flushRowUpdates(elecSh, elecUpdates, 1);
+  if (elecNewOrder.length > 0) {
+    var elecAppends = elecNewOrder.map(function (key) {
+      var n = elecNew[key];
+      return [month, n.w, n.dayName, JSON.stringify(n.json), now];
+    });
+    elecSh.getRange(elecSh.getLastRow() + 1, 1, elecAppends.length, 5).setValues(elecAppends);
   }
 
   return jsonResponse({
@@ -443,21 +489,9 @@ function pickDayValue(obj, dayKey) {
   return v;
 }
 
-// 日常電気設備 sheet の (month, week, day) 行を読み出し、transcribe を JSON にマージ
-// して書き戻す。既存値は保護され、transcribe で上書きされる。
-function mergeIntoElectricalDay(sheet, month, week, dayKey, transcribe, now) {
-  var dayName = DAY_NAMES[dayKey]; if (!dayName) return;
-  var ri = findRowByMonthWeekDay(sheet, month, week, dayName);
-  var existing = {};
-  if (ri > 0) {
-    try { existing = JSON.parse(sheet.getRange(ri, 4).getValue() || '{}'); }
-    catch (e) { existing = {}; }
-  }
-  for (var k in transcribe) existing[k] = transcribe[k];
-  var rv = [month, parseInt(week, 10), dayName, JSON.stringify(existing), now];
-  if (ri > 0) sheet.getRange(ri, 1, 1, rv.length).setValues([rv]);
-  else sheet.appendRow(rv);
-}
+// [Phase B] 旧 mergeIntoElectricalDay は saveWaterUsage 内にインライン化。
+// 電気シートの索引を 1 回構築し (col4 JSON 同時取得)、自動転記フィールドのみ
+// in-memory でマージ → batched 書込。per-row getValue / appendRow を全廃。
 
 // 下段水質測定 (per-day, JSON)
 // Phase A: N+1 根絶。全週 payload (data.weeks = { [week]: { [dayCode]: {...} } }) を
