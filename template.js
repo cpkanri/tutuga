@@ -844,6 +844,104 @@ function _tutugaApplyMonthHeaders(wb, yyyymm) {
 }
 
 // =====================================================================
+// Phase 2-B: 報告書2帳票 (運転管理月報 / 水質管理報告) の日次値書込
+// =====================================================================
+// 報告書シートは「日付行」(行 = 月内日数 1..31) レイアウト。
+// 一方 source データ (waterUsage/waterMeasure) は (週 1-5, 曜日 mon-fri) キー。
+// template.js は日付ロジックを持たないため、index.html (buildAllDataForExport) が
+// allData.reportDayMap = { [月内日(1-31)]: { w: 週, dk: 曜日キー } } を構築して渡す。
+//   - 前月跨ぎ (第1週月初前) / 翌月跨ぎ (第5週月末後) の日は map から除外済み。
+//   - 土日は water 週日付に含まれないため map に無く、報告書の該当行は未書込 (空のまま)。
+// 集計行 (最大/平均/最小/合計) と返送汚泥日次流量 K/M・脱水ケーキ H/I はテンプレ数式 →
+// 触らない (fullCalcOnLoad=true で再計算)。
+
+// 運転管理月報 (ws=1) 日次行 R6–R36 : USAGE 系の列マップ
+// C=全日電力量 D=力測 E=無効 F=上水 G=固形塩素(新) N=放流 / J=返送汚泥No.1読み L=No.2読み
+// H/I(脱水ケーキ)・K/M(返送汚泥日次流量) は書かない (テンプレ数式 or 空欄維持)
+var TUTUGA_OPER_USAGE_COL = {
+  powerAllDay: 3, powerMeasure: 4, powerReactive: 5, water: 6,
+  solidChlorine: 7, returnSludge1: 10, returnSludge2: 12, discharge: 14
+};
+
+// 水質管理報告 (ws=2) 1/2 日次行 R8–R38 : 水温 C–H + 透視度 O–R
+// I–N(外観) は固定値書込 (_tutugaWriteSuikanFixed) → 触らない
+var TUTUGA_SUIKAN_FRONT_COL = {
+  tempIn: 3, tempD1: 4, tempD2: 5, tempFinal1: 6, tempFinal2: 7, tempOut: 8,
+  transIn: 15, transFinal1: 16, transFinal2: 17, transOut: 18
+};
+
+// 水質管理報告 (ws=2) 2/2 日次行 R49–R79 : DO I/J(新) + PH K–P + 残留塩素 Q + SV30 R/S
+// C–H(臭気) は固定値書込 → 触らない
+var TUTUGA_SUIKAN_BACK_COL = {
+  do1: 9, do2: 10,
+  phIn: 11, phD1: 12, phD2: 13, phFinal1: 14, phFinal2: 15, phOut: 16,
+  chlorine: 17, sv1_30: 18, sv2_30: 19
+};
+
+function _tutugaWriteOperationDaily(ws, allData) {
+  if (!ws) return;
+  var map = allData.reportDayMap || {};
+  Object.keys(map).forEach(function(domStr) {
+    var dom = parseInt(domStr, 10);
+    if (!dom) return;
+    var loc = map[domStr];
+    if (!loc) return;
+    var weekData = (allData.waterUsage && allData.waterUsage[loc.w]) || null;
+    if (!weekData) return;
+    var row = 6 + (dom - 1);  // R6 = 月内1日
+    Object.keys(TUTUGA_OPER_USAGE_COL).forEach(function(key) {
+      var perDay = weekData[key];
+      if (!perDay || typeof perDay !== 'object') return;
+      _tutugaWriteCell(ws, row, TUTUGA_OPER_USAGE_COL[key], perDay[loc.dk]);
+    });
+  });
+}
+
+function _tutugaWriteSuikanDaily(ws, allData) {
+  if (!ws) return;
+  var map = allData.reportDayMap || {};
+  Object.keys(map).forEach(function(domStr) {
+    var dom = parseInt(domStr, 10);
+    if (!dom) return;
+    var loc = map[domStr];
+    if (!loc) return;
+    var weekDays = (allData.waterMeasure && allData.waterMeasure[loc.w]) || null;
+    if (!weekDays) return;
+    var dayData = weekDays[loc.dk];
+    if (!dayData || typeof dayData !== 'object') return;
+    var frontRow = 8  + (dom - 1);  // R8  = 月内1日 (前半)
+    var backRow  = 49 + (dom - 1);  // R49 = 月内1日 (後半)
+    Object.keys(TUTUGA_SUIKAN_FRONT_COL).forEach(function(key) {
+      _tutugaWriteCell(ws, frontRow, TUTUGA_SUIKAN_FRONT_COL[key], dayData[key]);
+    });
+    Object.keys(TUTUGA_SUIKAN_BACK_COL).forEach(function(key) {
+      _tutugaWriteCell(ws, backRow, TUTUGA_SUIKAN_BACK_COL[key], dayData[key]);
+    });
+  });
+}
+
+// 運転管理月報 (ws=1) の旧「吉和」レガシーブロック (R44 以降) を物理クリア。
+// 筒賀フォームは R1–43。R44="吉和水質管理センター運転管理月報" を起点に複数月分の
+// サンプルデータが埋め込まれており、K49=J49-#REF! 等が #REF! エラーの発生源。
+// テンプレ base64 は触らず、生成時に該当行のセル値を null 化する (full-resave 回避)。
+// 結合セルは先に解除してから値クリア (結合スレーブセルへの書込エラー回避)。
+function _tutugaClearOperationLegacy(ws) {
+  if (!ws) return;
+  var merges = (ws.model && ws.model.merges) ? ws.model.merges.slice() : [];
+  for (var i = 0; i < merges.length; i++) {
+    var mm = String(merges[i]).match(/^[A-Za-z]+(\d+):[A-Za-z]+(\d+)$/);
+    if (mm && parseInt(mm[1], 10) >= 44) {
+      try { ws.unMergeCells(merges[i]); } catch (e) {}
+    }
+  }
+  var lastRow = ws.rowCount || 0;
+  for (var r = 44; r <= lastRow; r++) {
+    var row = ws.getRow(r);
+    row.eachCell({ includeEmpty: false }, function(cell) { cell.value = null; });
+  }
+}
+
+// =====================================================================
 // 公開 API: buildTutugaWorkbook(allData) → Promise<ExcelJS.Workbook>
 // =====================================================================
 async function buildTutugaWorkbook(allData) {
@@ -867,6 +965,7 @@ async function buildTutugaWorkbook(allData) {
   _tutugaApplyMonthHeaders(wb, data.month);
 
   var wsWater  = wb.worksheets[TUTUGA_SHEET_IDX.daily_water];
+  var wsOper   = wb.worksheets[TUTUGA_SHEET_IDX.operation_monthly];
   var wsSuikan = wb.worksheets[TUTUGA_SHEET_IDX.water_report];
   var wsEquip  = wb.worksheets[TUTUGA_SHEET_IDX.equipment_hours];
   var wsElec   = wb.worksheets[TUTUGA_SHEET_IDX.daily_elec];
@@ -876,7 +975,16 @@ async function buildTutugaWorkbook(allData) {
     _tutugaWriteWaterSheet(wsWater, data);
     _tutugaWriteNichijoFixed(wsWater);
   }
-  if (wsSuikan) _tutugaWriteSuikanFixed(wsSuikan, data.month);
+  // Phase 2-B: 運転管理月報 — 旧吉和レガシー除去 → 日次 USAGE 値書込
+  if (wsOper) {
+    _tutugaClearOperationLegacy(wsOper);
+    _tutugaWriteOperationDaily(wsOper, data);
+  }
+  // Phase 2-B: 水質管理報告 — 固定値(外観/臭気) → 日次 MEASURE 値書込
+  if (wsSuikan) {
+    _tutugaWriteSuikanFixed(wsSuikan, data.month);
+    _tutugaWriteSuikanDaily(wsSuikan, data);
+  }
   if (wsEquip) {
     _tutugaWriteEquipmentSheet(wsEquip, data);
     _tutugaWriteEquipmentDates(wsEquip, data.month);
@@ -884,7 +992,6 @@ async function buildTutugaWorkbook(allData) {
   if (wsElec)   _tutugaWriteElectricalSheet(wsElec, data);
   if (wsMech)   _tutugaWriteMechanicalSheet(wsMech, data);
 
-  // 運転管理月報 は Phase 5+ で実装予定
   return wb;
 }
 

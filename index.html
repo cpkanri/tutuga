@@ -6030,6 +6030,27 @@ async function buildAllDataForExport(month) {
     }
   } catch (e) { /* 祝日列挙失敗時は空マップで既存挙動（"-"出力）にフォールバック */ }
 
+  // Phase 2-B: 報告書 (運転管理月報 / 水質管理報告) は日付行レイアウト。
+  // template.js は日付ロジックを持たないため、(月内日 → {週, 曜日}) マップを構築して渡す。
+  // 水質週日付 (getWaterWeekDates) 基準。前月跨ぎ/翌月跨ぎの日は対象月外として除外。
+  allData.reportDayMap = {};
+  try {
+    const _ym = allData.month;
+    if (_ym && /^\d{4}-\d{2}$/.test(_ym)) {
+      const [_ry, _rm] = _ym.split('-').map(Number);
+      const _rdks = ['mon', 'tue', 'wed', 'thu', 'fri'];
+      for (let w = 1; w <= 5; w++) {
+        const _dates = getWaterWeekDates(_ym, w);
+        _rdks.forEach(function(dk) {
+          const d = _dates[dk];
+          if (d && d.getFullYear() === _ry && (d.getMonth() + 1) === _rm) {
+            allData.reportDayMap[d.getDate()] = { w: w, dk: dk };
+          }
+        });
+      }
+    }
+  } catch (e) { /* 失敗時は空マップ → 報告書日次値は未書込 (既存固定値/集計のみ) */ }
+
   return allData;
 }
 
