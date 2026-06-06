@@ -6081,6 +6081,35 @@ async function exportExcel() {
     if (lbl) lbl.textContent = "テンプレート処理中..."; else if (btn) btn.textContent = "テンプレート処理中...";
     const wb = await window.buildTutugaWorkbook(allData);
 
+    // ===== フォント統一 (2026-06-06 横展開, kake 0327be1): 全シート・全セルを ＭＳ Ｐ明朝 に統一 =====
+    // 機器運転時間シート等のゴシック混在を解消。name のみ上書きし size/bold/color は保持。テンプレ既存の
+    // 明朝セルを動的検出（全/半角取り違え防止）、検出不可時のみ「ＭＳ Ｐ明朝」へフォールバック。
+    try {
+      let minchoName = null;
+      wb.eachSheet((sheet) => {
+        if (minchoName) return;
+        sheet.eachRow({ includeEmpty: false }, (row) => {
+          if (minchoName) return;
+          row.eachCell({ includeEmpty: false }, (cell) => {
+            if (!minchoName && cell.font && cell.font.name && cell.font.name.indexOf('明朝') >= 0) {
+              minchoName = cell.font.name;
+            }
+          });
+        });
+      });
+      if (!minchoName) minchoName = 'ＭＳ Ｐ明朝';
+      wb.eachSheet((sheet) => {
+        sheet.eachRow({ includeEmpty: false }, (row) => {
+          row.eachCell({ includeEmpty: false }, (cell) => {
+            const f = cell.font || {};
+            if (f.name !== minchoName) {
+              cell.font = Object.assign({}, f, { name: minchoName });
+            }
+          });
+        });
+      });
+    } catch (e) { console.error("フォント統一:", e); }
+
     let buf = await wb.xlsx.writeBuffer();
     buf = await sanitizeXlsxBuffer(buf);
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
