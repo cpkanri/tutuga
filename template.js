@@ -679,12 +679,16 @@ function _tutugaWriteElectricalSheet(ws, allData) {
     { offsets: WEEK_OFFSETS_ELEC.sub3, rowMap: TUTUGA_ELEC3_ROW_W1 }
   ];
 
-  // 横展開② B1: 祝日は電気sub2の余剰汚泥流量計「読み」セル(No.1/No.2)を空欄化。
-  // データキーは日本語複合キー（excessSludge1/2 は水質スペック上の別名で elec data には存在しない）。
-  // 取り違え防止のため rowMap から動的特定: 「余剰汚泥流量計」始まり かつ 「読み」を含む(外観/指示状況は除外)。
+  // 横展開② B1: 祝日は電気sub2の累積メーターを空欄化。データキーは日本語複合キーのため rowMap から動的特定。
+  //  - 余剰汚泥流量計の「読み」(No.1/No.2, ㎥/ｈ): 横展開②で祝日ブランク（現状維持）。
+  //  - 返送汚泥/放流流量計の「積算」(㎥): 追補(2026-06-06)。水側(returnSludge1/2・discharge=同一source/autoFrom)
+  //    と出力整合させるため祝日ブランク。瞬時値「流量計の読み__㎥/ｈ」は対象外（積算のみ）。外観/指示状況も除外。
+  //  - B2は追加不要: 返送/放流積算は waterUsage.returnSludge1/2・discharge の自動転記＝水側②B2で strip 済。
   var holidayDayKeys = allData.holidayDayKeys || {};
   var ELEC_HOL_KEYS = Object.keys(TUTUGA_ELEC2_ROW_W1).filter(function(k){
-    return k.indexOf('余剰汚泥流量計') === 0 && k.indexOf('読み') >= 0;
+    if (k.indexOf('余剰汚泥流量計') === 0 && k.indexOf('読み') >= 0) return true;      // 余剰汚泥 読み (②既存)
+    if (k.indexOf('積算') >= 0 && (k.indexOf('返送汚泥流量計') >= 0 || k.indexOf('放流流量計') >= 0)) return true; // 返送/放流 積算 (追補)
+    return false;
   });
   for (var w = 1; w <= 5; w++) {
     var weekDays = (allData.electrical && allData.electrical[w]) || null;
