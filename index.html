@@ -2544,6 +2544,21 @@ function getHolidayName(date) {
   return COMPANY_HOLIDAYS[formatDateYMD(date)] || null;
 }
 
+// 横展開②(2026-06-06): 筒賀の累積メーター祝日ブランク。
+// 水(使用量タブ)の累積データキー = returnSludge1/2・discharge（B1+B2 で使用）。
+// 電気 sub2 の余剰汚泥(excessSludge1/2 のスペック別名)は data 上は日本語複合キーのため、
+// template.js 側で rowMap から動的特定して B1 ブランクする（ここでは列挙しない）。
+const TUTUGA_HOLIDAY_BLANK_KEYS_WATER = ['returnSludge1', 'returnSludge2', 'discharge'];
+// (週w, 曜日番号d=1..5) が会社休日(祝日)か。既存 getActualDate/isCompanyHoliday を再利用。
+// 失敗時は false=従来挙動フォールバックで悪化させない。
+function _tutugaIsHolidayWD(w, d) {
+  try {
+    if (typeof getActualDate !== 'function' || typeof isCompanyHoliday !== 'function') return false;
+    const dt = getActualDate(w, d);
+    return !!(dt && isCompanyHoliday(dt));
+  } catch (e) { return false; }
+}
+
 // ===== 年報用データ定義 =====
 
 // ===== グローバル状態 =====
@@ -3785,7 +3800,10 @@ async function _tutugaPost(body, timeoutMs) {
 // Code.gs saveWaterUsage が期待する per-week per-fieldKey per-dayKey 形式へ変換。
 //   { [week]: { [fieldKey]: { mon, tue, wed, thu, fri, nextMon } } }
 // nextMon は週 w+1 の月曜セル (tutugaData.weeks[w+1][1]) から拾う。
-function _tutugaBuildWaterUsagePayload() {
+// 横展開② B2: stripHoliday=true (保存経路) のとき、祝日の累積メーター(返送1/2・放流)を
+// payload から除外する。export 経路 (stripHoliday 省略=false) は B1 が出力空欄を担保するため
+// 二重 strip しない（共用ビルダーを壊さない）。
+function _tutugaBuildWaterUsagePayload(stripHoliday) {
   const usageKeys = (TUTUGA_FIELDS && TUTUGA_FIELDS.water)
     ? TUTUGA_FIELDS.water.usage.concat(TUTUGA_FIELDS.water.usageFormExtras)
     : [];
@@ -3796,6 +3814,7 @@ function _tutugaBuildWaterUsagePayload() {
     const weekOut = {};
     let hasAny = false;
     usageKeys.forEach(function(key) {
+      const isBlankKey = TUTUGA_HOLIDAY_BLANK_KEYS_WATER.indexOf(key) >= 0;
       const dayObj = {};
       let keyHas = false;
       for (let d = 1; d <= 5; d++) {
@@ -3803,6 +3822,7 @@ function _tutugaBuildWaterUsagePayload() {
         const cell = week[d];
         const v = cell ? cell[key] : null;
         if (!_tutugaIsEmptyValue(v)) {
+          if (stripHoliday && isBlankKey && _tutugaIsHolidayWD(w, d)) continue; // 祝日: 累積を保存除外
           dayObj[dk] = v;
           keyHas = true;
         }
@@ -3950,7 +3970,7 @@ async function uploadAllTabs() {
   const results = { saved: 0, scopes: [] };
   const tasks = [];
 
-  const waterUsage = _tutugaBuildWaterUsagePayload();
+  const waterUsage = _tutugaBuildWaterUsagePayload(true); // 横展開② B2: 保存時のみ祝日の累積メーターを strip
   if (Object.keys(waterUsage).length > 0) {
     tasks.push({ scope: '水質上段', body: { action: 'saveWaterUsage', month: month, weeks: waterUsage } });
   }
@@ -6029,6 +6049,24 @@ async function buildAllDataForExport(month) {
       });
     }
   } catch (e) { /* 祝日列挙失敗時は空マップで既存挙動（"-"出力）にフォールバック */ }
+
+  // 横展開② B1: 水質/電気シートの累積メーター祝日ブランク用に、週別の祝日 dayKey を列挙して渡す。
+  // mechHolidayDayKeys は機械シート専用(ダッシュ抑止)なので流用せず別マップを用意。判定ロジックは同一。
+  allData.holidayDayKeys = {};
+  try {
+    const _dks = ['mon','tue','wed','thu','fri'];
+    for (let w = 1; w <= 5; w++) {
+      allData.holidayDayKeys[w] = [];
+      _dks.forEach(function(dk, di) {
+        const d = (typeof getActualDate === 'function') ? getActualDate(w, di + 1) : null;
+        if (d && typeof isCompanyHoliday === 'function' && isCompanyHoliday(d)) {
+          allData.holidayDayKeys[w].push(dk);
+        }
+      });
+    }
+  } catch (e) { /* 失敗時は空マップ=従来挙動(祝日も書込)にフォールバック */ }
+  allData.holidayBlankKeysWater = (typeof TUTUGA_HOLIDAY_BLANK_KEYS_WATER !== 'undefined') ? TUTUGA_HOLIDAY_BLANK_KEYS_WATER : ['returnSludge1','returnSludge2','discharge'];
+  // 電気 sub2 の余剰汚泥ブランクキーは template.js 側で TUTUGA_ELEC2_ROW_W1 から動的特定（日本語複合キーのため）。
 
   // Phase 2-B: 報告書 (運転管理月報 / 水質管理報告) は日付行レイアウト。
   // template.js は日付ロジックを持たないため、(月内日 → {週, 曜日}) マップを構築して渡す。

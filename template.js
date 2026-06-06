@@ -421,16 +421,22 @@ function _tutugaWriteWaterSheet(ws, allData) {
   var DAYS5 = ['mon','tue','wed','thu','fri'];
 
   // 上段使用量 (per-week, 9 項目, 6 セル mon-fri+nextMon)
+  // 横展開② B1: 祝日は累積メーター(返送1/2・放流)列を空欄化（holidayDayKeys は mon-fri のみ→nextMon は対象外）。
+  var holidayDayKeys = allData.holidayDayKeys || {};
+  var WATER_HOL_KEYS = allData.holidayBlankKeysWater || ['returnSludge1', 'returnSludge2', 'discharge'];
   for (var w = 1; w <= 5; w++) {
     var weekData = (allData.waterUsage && allData.waterUsage[w]) || null;
     if (!weekData) continue;
     var blockRow = WATER_BLOCK_ROW[w];
     if (!blockRow) continue;
+    var holDksW = holidayDayKeys[w] || [];
     Object.keys(TUTUGA_USAGE_ROW_OFFSET).forEach(function(key) {
       var rowOff = TUTUGA_USAGE_ROW_OFFSET[key];
       var perDay = weekData[key];
       if (!perDay || typeof perDay !== 'object') return;
+      var isBlankKey = WATER_HOL_KEYS.indexOf(key) >= 0;
       USAGE_CELLS.forEach(function(dc) {
+        if (isBlankKey && holDksW.indexOf(dc) >= 0) return; // 祝日: 累積メーター列は空欄維持
         _tutugaWriteCell(ws, blockRow + rowOff, USAGE_DAY_COL[dc], perDay[dc]);
       });
     });
@@ -673,19 +679,29 @@ function _tutugaWriteElectricalSheet(ws, allData) {
     { offsets: WEEK_OFFSETS_ELEC.sub3, rowMap: TUTUGA_ELEC3_ROW_W1 }
   ];
 
+  // 横展開② B1: 祝日は電気sub2の余剰汚泥流量計「読み」セル(No.1/No.2)を空欄化。
+  // データキーは日本語複合キー（excessSludge1/2 は水質スペック上の別名で elec data には存在しない）。
+  // 取り違え防止のため rowMap から動的特定: 「余剰汚泥流量計」始まり かつ 「読み」を含む(外観/指示状況は除外)。
+  var holidayDayKeys = allData.holidayDayKeys || {};
+  var ELEC_HOL_KEYS = Object.keys(TUTUGA_ELEC2_ROW_W1).filter(function(k){
+    return k.indexOf('余剰汚泥流量計') === 0 && k.indexOf('読み') >= 0;
+  });
   for (var w = 1; w <= 5; w++) {
     var weekDays = (allData.electrical && allData.electrical[w]) || null;
     if (!weekDays) continue;
+    var holDksE = holidayDayKeys[w] || [];
     DAYS5.forEach(function(dc) {
       var dayData = weekDays[dc];
       if (!dayData || typeof dayData !== 'object') return;
       var col = ELEC_DAY_COL[dc];
+      var isHolCell = holDksE.indexOf(dc) >= 0;
       // 1 つの per-day JSON に sub1/sub2/sub3 のキーが混在しているため、
       // 全 sub の rowMap を試して該当キーがあれば書き込む
       subMaps.forEach(function(s) {
         var weekOffset = s.offsets[w - 1];
         Object.keys(s.rowMap).forEach(function(key) {
           if (!Object.prototype.hasOwnProperty.call(dayData, key)) return;
+          if (isHolCell && ELEC_HOL_KEYS.indexOf(key) >= 0) return; // 祝日: 余剰汚泥累積は空欄維持
           var row = s.rowMap[key] + weekOffset;
           _tutugaWriteCell(ws, row, col, dayData[key]);
         });
