@@ -939,9 +939,10 @@ body.login-active { overflow: hidden; }
   box-sizing: border-box;
 }
 /* Phase 28 横展開: 機器運転時間タブ モバイル横スクロール対応 (kamitono b9834d6 逐語) */
-#equipTable { min-width: 640px; }
-#equipTable input[type="number"],
-#equipTable input[type="text"] { min-width: 80px; }
+/* フェーズ1 (2026-06-08): 機械設備も週グリッド(.equip-table)化したため #equipTable → .equip-table へ一般化。 */
+.equip-table { min-width: 640px; }
+.equip-table input[type="number"],
+.equip-table input[type="text"] { min-width: 80px; }
 .equip-table input:disabled,
 .equip-table button:disabled {
   background: #f0f0f0;
@@ -3312,6 +3313,12 @@ function getCurrentFormFields(dayOverride) {
   if (currentSheet === 'equip') {
     const dk = dayOverride || DAY_NUM_TO_STR[currentDay];
     all = all.filter(el => el.dataset.eday === dk);
+  } else if (currentSheet === 'mech') {
+    // フェーズ1 (2026-06-08): 機械は週グリッド化で5曜日分の data-mfield が同時に存在する。
+    // 曜日（data-day）で絞らないと、列単位の前日コピー/クリアが5日全部に効いて誤爆する。
+    // equip の data-eday フィルタと対になる data-day フィルタ。（elec/water は従来どおり絞らない）
+    const dk = dayOverride || DAY_NUM_TO_STR[currentDay];
+    all = all.filter(el => el.dataset.day === dk);
   }
   return all.filter(el => !el.disabled);
 }
@@ -4792,7 +4799,25 @@ function getNavigableFields() {
   if (currentSheet === 'equip') {
     return _getEquipNavigableFields();
   }
+  // フェーズ1 (2026-06-08): 機械は週グリッド＝equip 同様に列優先（mon→tue→...→fri）ナビ
+  if (currentSheet === 'mech') {
+    return _getMechWeekNavigableFields();
+  }
   return _getPerDayNavigableFields();
+}
+
+// 機械週グリッド: 列優先（mon→tue→wed→thu→fri）、各列内は行順（DOM 順）
+function _getMechWeekNavigableFields() {
+  const container = document.getElementById('mechFormWrap');
+  if (!container) return [];
+  const dayOrder = ['mon','tue','wed','thu','fri'];
+  const result = [];
+  dayOrder.forEach(dk => {
+    container.querySelectorAll('input[data-mfield][data-day="' + dk + '"]').forEach(el => {
+      if (_isFieldEnterNavigable(el)) result.push(el);
+    });
+  });
+  return result;
 }
 
 function _getPerDayNavigableFields() {
@@ -4876,7 +4901,9 @@ function advanceToNextField(currentEl) {
 function advanceToNextDay() {
   const month = tutugaData.targetMonth || '';
   if (!month) return false;
-  if (currentSheet === 'equip') {
+  // フェーズ1 (2026-06-08): 機械は週グリッド＝全曜日が同時表示。最終フィールドの次は
+  //   equip と同じく「次週へ切替」（renderAll が currentSheet=mech のグリッドを再描画）。
+  if (currentSheet === 'equip' || currentSheet === 'mech') {
     return _advanceToNextEquipWeek(month);
   }
   return _advanceToNextPerDayDay(month);
@@ -5501,9 +5528,10 @@ function renderAll() {
   // Phase 8 修正04C/04D: 共通の「前日コピー」「クリア」は equip タブで非表示
   // （equip タブには各日の日付ラベル右隣に個別ボタンを配置するため）
   // 「保存」「元に戻す」は全タブ共通で表示維持。
-  const isEquip = (currentSheet === "equip");
-  if (btnCopy)  btnCopy.style.display  = isEquip ? "none" : "";
-  if (btnClear) btnClear.style.display = isEquip ? "none" : "";
+  // フェーズ1 (2026-06-08): 機械も週グリッド化で列見出しに個別ボタンを持つため非表示対象に追加。
+  const usesPerColumnDayBtns = (currentSheet === "equip" || currentSheet === "mech");
+  if (btnCopy)  btnCopy.style.display  = usesPerColumnDayBtns ? "none" : "";
+  if (btnClear) btnClear.style.display = usesPerColumnDayBtns ? "none" : "";
 
   if (currentSheet === "water") {
     if (waterPanel) waterPanel.style.display = "";
@@ -5682,6 +5710,14 @@ function getElecSectionsForSub(sub) {
 // kind: "mech" | "elec"
 // 表示は currentDay (1-5) の曜日のみ。フォームは縦リスト
 function buildEquipFormHtml(kind, sub, weekIdx, dayIdx) {
+  // フェーズ1 (2026-06-08): 機械設備は「月〜金5日を1画面の週グリッド」表示へ移行。
+  //   雛形＝機器運転時間グリッド（.equip-table）。データモデル・保存/読込は無改修
+  //   （tutugaData.mech[w].days[dk][key] が日別独立・全日プリアロケート済のため、
+  //    各入力に正しい data-day を付ければ saveMechElecFormToData/loadMechElecDataToForm が多日対応する）。
+  //   電気は従来どおり currentDay 1日分の縦リスト（次フェーズで autoCalc 多日化と併せ対応）。
+  if (kind === "mech") {
+    return buildMechWeekGridHtml(sub, weekIdx);
+  }
   const sections = (kind === "mech") ? getMechSectionsForSub(sub) : getElecSectionsForSub(sub);
   const dataAttr = (kind === "mech") ? "data-mfield" : "data-efield";
   const dayKey = DAY_NUM_TO_STR[dayIdx] || "mon";
@@ -5728,6 +5764,82 @@ function buildEquipFormHtml(kind, sub, weekIdx, dayIdx) {
     html += `</div>`;
   });
   return html;
+}
+
+// =====================================================
+// フェーズ1 (2026-06-08): 機械設備 週グリッド HTML 生成
+//   行＝セクション見出し（sec.title）＋項目（f.label）、列＝項目ラベル＋月〜金5列。
+//   各セルは data-mfield + data-day を持つ <input>/<button.toggle-btn>。
+//   月外日＝disabled+day-disabled、祝日＝col-holiday/cell-holiday シェーディング
+//   （機器運転時間グリッド renderEquipPanel と同一の enabled/isHol ロジックを踏襲）。
+//   ※ 祝日列も入力可能（シェーディングのみ）。保存除外は水質 usage 累積のみで機械は対象外。
+// =====================================================
+function buildMechWeekGridHtml(sub, weekIdx) {
+  const sections = getMechSectionsForSub(sub);
+  const dayLabels = { mon: "月", tue: "火", wed: "水", thu: "木", fri: "金" };
+
+  // 列メタ（曜日キー・日付・活性・祝日）
+  const cols = EQUIP_DAYS.map(dk => {
+    const date = getDateForDayKey(weekIdx, dk);
+    const enabled = !!date;
+    const isHol = enabled && _tutugaIsHolidayWD(weekIdx, DAY_STR_TO_NUM[dk]);
+    return { dk, date, enabled, isHol };
+  });
+
+  // ヘッダ（項目列 + 月〜金。月内列には日付・祝バッジ・個別 前日コピー/クリア ボタン）
+  let headHtml = '<th>項目</th>';
+  cols.forEach(c => {
+    const holBadge = c.isHol ? `<span class="tutuga-holiday-badge">祝</span>` : "";
+    const dateStr = c.date
+      ? `<br><span style="font-size:10px;font-weight:normal;opacity:.7;">${c.date.getMonth() + 1}/${c.date.getDate()}${holBadge}</span>`
+      : "";
+    const dayActions = c.date
+      ? `<div class="equip-day-actions"><button type="button" class="btn-equip-day-copy" data-day="${c.dk}" title="${dayLabels[c.dk]}曜日に前日コピー">前日コピー</button><button type="button" class="btn-equip-day-clear" data-day="${c.dk}" title="${dayLabels[c.dk]}曜日をクリア">クリア</button></div>`
+      : "";
+    headHtml += `<th class="col-${c.dk}${c.isHol ? ' col-holiday' : ''}">${dayLabels[c.dk]}${dateStr}${dayActions}</th>`;
+  });
+
+  // 本体（セクション見出し行 + 項目行 × 5曜日列）
+  let bodyHtml = "";
+  sections.forEach(sec => {
+    // Phase 8 修正04B と同様: auto/autoCalc のみのセクションは見出しごと省略（機械は通常該当なし）
+    const visibleFields = (sec.fields || []).filter(f => f.type !== 'auto' && f.type !== 'autoCalc');
+    if (visibleFields.length === 0) return;
+    bodyHtml += `<tr class="section-header"><td colspan="6">${escapeHtml(sec.title)}</td></tr>`;
+    visibleFields.forEach(f => {
+      const unit = f.unit ? `<span class="item-unit">${escapeHtml(f.unit)}</span>` : "";
+      bodyHtml += `<tr><td><span class="item-label">${escapeHtml(f.label)}</span>${unit}</td>`;
+      cols.forEach(c => {
+        const tdCls = ((c.enabled ? "" : "day-disabled") + (c.isHol ? " cell-holiday" : "")).trim();
+        const tdClsAttr = tdCls ? ` class="${tdCls}"` : "";
+        const disabledAttr = c.enabled ? "" : " disabled";
+        bodyHtml += `<td${tdClsAttr}>${buildMechCellHtml(f, c.dk, disabledAttr)}</td>`;
+      });
+      bodyHtml += `</tr>`;
+    });
+  });
+
+  return `<div class="equip-table-wrap"><table class="equip-table" id="mechTable">`
+       + `<thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+}
+
+// 機械週グリッドの1セル（型別入力）。buildEquipFormHtml の型別ロジックと逐語一致させ、
+// 数値テキストのバリデーション (data-elec-mech-numeric) とトグルの '-' 拡張を踏襲する。
+function buildMechCellHtml(f, dayKey, disabledAttr) {
+  const keyEsc = escapeHtml(f.key);
+  if (f.type === "number") {
+    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-mfield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
+  } else if (f.type === "text") {
+    return `<input type="text" inputmode="${f.inputmode || 'decimal'}" data-mfield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
+  } else if (f.type === "numdash") {
+    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-mfield="${keyEsc}" data-day="${dayKey}" placeholder="-"${disabledAttr}>`;
+  } else if (f.type === "toggle") {
+    const baseOpts = Array.isArray(f.options) ? f.options : [];
+    const augmented = baseOpts.indexOf('-') >= 0 ? baseOpts : baseOpts.concat(['-']);
+    const opts = JSON.stringify(augmented).replace(/"/g, '&quot;');
+    return `<button type="button" class="toggle-btn" data-mfield="${keyEsc}" data-day="${dayKey}" data-options="${opts}"${disabledAttr}>―</button>`;
+  }
+  return `<span style="color:#999;">―</span>`;
 }
 
 // 機械/電気の日タブを描画（mon-fri）
@@ -5794,13 +5906,29 @@ function renderMechPanel() {
     }
   });
 
-  renderMechElecDayTabs("mech");
+  // フェーズ1 (2026-06-08): 機械は週グリッド化＝日は列。日タブは使わないので非表示。
+  const mechDayTabs = document.getElementById("mechDayTabs");
+  if (mechDayTabs) { mechDayTabs.innerHTML = ""; mechDayTabs.style.display = "none"; }
 
   const wrap = document.getElementById("mechFormWrap");
   if (wrap) {
+    // .equip-table-wrap が自前の左右マージンを持つため、form-wrap の padding は外して
+    // 機器運転時間グリッドと同じ余白に揃える。
+    wrap.style.padding = "0";
     wrap.innerHTML = buildEquipFormHtml("mech", currentMechSub, currentWeek, currentDay);
     bindEquipInputEvents("mech");
     loadMechDataToForm();
+
+    // フェーズ1: 列見出しの個別「前日コピー」「クリア」を配線（機器運転時間グリッドと同方式）。
+    //   再描画ごとに head が作り直されるため毎回 attach。dayOverride により列（曜日）単位で作用。
+    //   getCurrentFormFields は mech を data-day でフィルタするので、他曜日へは波及しない。
+    wrap.querySelectorAll('.btn-equip-day-copy').forEach(btn => {
+      btn.addEventListener('click', () => { copyPreviousDayToCurrent(btn.dataset.day); });
+    });
+    wrap.querySelectorAll('.btn-equip-day-clear').forEach(btn => {
+      btn.addEventListener('click', () => { clearCurrentForm(btn.dataset.day); });
+    });
+
     // Phase 8 修正06: モバイルキーボードに「次へ」キーを表示
     applyEnterKeyHintNext(wrap);
   }
