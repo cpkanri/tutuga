@@ -335,7 +335,7 @@ input[type="number"] {
 .btn-undo { background: #fff3e0; color: #e65100; border: 1px solid #ffb74d; }
 .btn-undo:disabled { cursor: not-allowed; }
 .btn-history { background: #e3f2fd; color: #1565c0; border: 1px solid #64b5f6; }
-.btn-save { background: #1a4f8a; color: #fff; box-shadow: 0 2px 6px rgba(26,79,138,0.25); transition: background 0.2s; }
+.btn-save { background: #1a4f8a; color: #fff; box-shadow: 0 2px 6px rgba(26,79,138,0.25); transition: background 0.2s; flex: 1.5; white-space: nowrap; }
 .btn-save.unsaved {
   background: #f57c00;  /* B-6: 未保存時はオレンジで強調 */
   box-shadow: 0 2px 6px rgba(245,124,0,0.4);
@@ -1152,6 +1152,58 @@ body.login-active { overflow: hidden; }
   font-size: 12px;
   white-space: nowrap;
 }
+/* ===== 手順2: 使いやすさ層（祝日視覚化 / 空欄ハイライト / 整合スキャン） ===== */
+/* 2-2 空欄ハイライト: 非祝日の稼働日/測定日に「埋まっているべき空欄」を強調 */
+.tutuga-gap {
+  background: #fff7e6 !important;
+  border-color: #f0a020 !important;
+  box-shadow: inset 3px 0 0 #f0a020;
+}
+/* 2-1 祝日視覚化: 日タブ / 機器グリッド列・セル */
+#dayTabs button.day-holiday,
+#mechDayTabs button.day-holiday,
+#elecDayTabs button.day-holiday {
+  background: #fdeef0;
+  color: #a83a5b;
+}
+.tutuga-holiday-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: #c2587a;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-left: 3px;
+  vertical-align: middle;
+}
+.equip-table thead th.col-holiday { background: #fdeef0; }
+.equip-table tbody td.cell-holiday { background: #fdf4f6; }
+.equip-table tbody td.cell-holiday input { background: #fdf4f6; }
+.tutuga-holiday-note {
+  margin: 8px 0;
+  padding: 7px 11px;
+  background: #fdeef0;
+  border-left: 4px solid #c2587a;
+  border-radius: 4px;
+  color: #8f2c4b;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+/* 整合スキャン モーダル内の小物 */
+.tutuga-scan-section { margin: 0 0 16px; }
+.tutuga-scan-section h4 {
+  margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px;
+}
+.tutuga-scan-count {
+  font-size: 12px; font-weight: 700; color: #fff; border-radius: 10px; padding: 1px 9px;
+}
+.tutuga-scan-count.ok { background: #2e7d32; }
+.tutuga-scan-count.warn { background: #e8800c; }
+.tutuga-scan-list { margin: 0; padding: 0 0 0 2px; list-style: none; font-size: 13px; }
+.tutuga-scan-list li { padding: 4px 8px; border-bottom: 1px solid #eee; }
+.tutuga-scan-list li .loc { color: #1a4f8a; font-weight: 600; }
+.tutuga-scan-empty { color: #2e7d32; font-weight: 600; padding: 8px; }
 </style>
 </head>
 <body>
@@ -1193,9 +1245,9 @@ body.login-active { overflow: hidden; }
             <span class="header-btn-icon">🔄</span>
             <span class="header-btn-label">更新</span>
           </button>
-          <button type="button" id="btnSync" class="header-btn" title="サーバーから最新データを取得">
+          <button type="button" id="btnSync" class="header-btn" title="クラウドから取得（サーバーの最新データで画面を更新）">
             <span class="header-btn-icon">☁️</span>
-            <span class="header-btn-label">同期</span>
+            <span class="header-btn-label">取得</span>
           </button>
         </div>
       </div>
@@ -1212,13 +1264,22 @@ body.login-active { overflow: hidden; }
           </button>
         </div>
       </div>
+      <div class="header-btn-col">
+        <div class="header-btn-group-label">点検</div>
+        <div class="header-btn-group">
+          <button type="button" id="btnScan" class="header-btn" title="入力もれ・機器名未マッピング・重複を点検（祝日の積算空欄・非測定日は除外）">
+            <span class="header-btn-icon">🔍</span>
+            <span class="header-btn-label">整合</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </header>
 
 <!-- オフライン警告バナー -->
 <div class="offline-banner" id="offlineBanner">
-  ⚠️ オフラインです。データは端末に保存されますが、サーバー同期は行われません。接続回復後に「🔄 同期」を押してください。
+  ⚠️ オフラインです。データは端末に保存されますが、サーバー同期は行われません。接続回復後に「☁️ 取得」を押してください。
 </div>
 
 <!-- メインタブ (4 シート: 水質 / 機器運転時間 / 電気設備 / 機械設備) -->
@@ -1332,7 +1393,7 @@ body.login-active { overflow: hidden; }
   <button type="button" class="btn-copy" id="btnCopy">前日コピー</button>
   <button type="button" class="btn-undo" id="btnUndo" title="直前の操作を元に戻す">↶ 元に戻す</button>
   <button type="button" class="btn-clear" id="btnClear">クリア</button>
-  <button type="button" class="btn-save" id="btnSave" title="全タブのデータをサーバーに送信">保存</button>
+  <button type="button" class="btn-save" id="btnSave" title="クラウドへ保存（全タブのデータをサーバーに送信）">クラウドへ保存</button>
 </div>
 
 <!-- トースト -->
@@ -1890,6 +1951,56 @@ const EQUIP_LABELS = [
   "臭気ガス吸引装置",
   "発電機"
 ];
+
+// =====================================================
+// 手順1 (2026-06-06): 機器名 正規化フォールバック移植（kake 方式・予防 hardening）
+// 目的: サーバが機器名を内部キー(mainPump1Hr 等)ではなく表示ラベル(「NO.1主ポンプ」「№1…」等)
+//       で返すケースや、全角№↔半角No.・全半角・空白の表記ゆれによって、同期データが
+//       内部キーに解決できず黙って画面から落ちる事故を構造的に防ぐ。
+// 解決順: ① 内部キー完全一致 → ② ラベル完全一致 → ③ 正規化一致 → 解決不可は null。
+//         tutuga のキー体系（位置=EQUIP_KEYS[i] / ラベル=EQUIP_LABELS[i]）へ移植。
+// =====================================================
+// 内部キー集合（完全一致判定用）
+const EQUIP_KEY_SET = (function () {
+  const s = {};
+  EQUIP_KEYS.forEach(function (k) { if (k) s[k] = true; });
+  return s;
+})();
+// ラベル → 内部キー（EQUIP_LABELS から自動生成）
+const EQUIP_NAME_TO_KEY = {};
+EQUIP_LABELS.forEach(function (lbl, i) {
+  if (lbl && EQUIP_KEYS[i]) EQUIP_NAME_TO_KEY[lbl] = EQUIP_KEYS[i];
+});
+// 表記ゆれ正規化: NFKC で全半角統一（№→No・全角英数→半角）/ 空白除去 / ピリオド除去 / 小文字化。
+// kake の _normEquipName（空白除去・№→No.統一）を tutuga 用に拡張（全半角・大小無視を追加）。
+function _normEquipName(s) {
+  return String(s == null ? '' : s)
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+    .replace(/[.．]/g, '')
+    .toLowerCase();
+}
+// 正規化キー → 内部キー
+const EQUIP_NAME_TO_KEY_NORM = {};
+Object.keys(EQUIP_NAME_TO_KEY).forEach(function (k) {
+  EQUIP_NAME_TO_KEY_NORM[_normEquipName(k)] = EQUIP_NAME_TO_KEY[k];
+});
+// 内部キー自身も正規化マップに登録（サーバが内部キーを返す通常ケースの保険）
+EQUIP_KEYS.forEach(function (k) {
+  if (k && !(_normEquipName(k) in EQUIP_NAME_TO_KEY_NORM)) EQUIP_NAME_TO_KEY_NORM[_normEquipName(k)] = k;
+});
+// 機器名/キー → 内部キー解決。解決不可は null（呼び出し側で未マッピングとして扱う）。
+function _resolveEquipKey(nameOrKey) {
+  if (nameOrKey == null || nameOrKey === '') return null;
+  if (EQUIP_KEY_SET[nameOrKey]) return nameOrKey;                    // ① 内部キー完全一致
+  if (EQUIP_NAME_TO_KEY[nameOrKey]) return EQUIP_NAME_TO_KEY[nameOrKey]; // ② ラベル完全一致
+  const norm = EQUIP_NAME_TO_KEY_NORM[_normEquipName(nameOrKey)];     // ③ 正規化一致
+  return norm || null;
+}
+if (typeof window !== 'undefined') {
+  window._resolveEquipKey = _resolveEquipKey;
+  window.EQUIP_NAME_TO_KEY = EQUIP_NAME_TO_KEY;
+}
 
 // ===== 筒賀: 日常電気設備（3サブタブ構成、仕様 §5.4、計67項目） =====
 // 注意: field.key は GAS 側 ELEC{1,2,3}_ROW_W1 のキーと一致させる必要あり
@@ -2557,6 +2668,69 @@ function _tutugaIsHolidayWD(w, d) {
     const dt = getActualDate(w, d);
     return !!(dt && isCompanyHoliday(dt));
   } catch (e) { return false; }
+}
+
+// =====================================================
+// 手順2 (2026-06-06): 使いやすさ層ヘルパー（②祝日ブランク・Phase2フィールドと整合）
+// 判定は②と同一の既存関数を流用: 祝日=_tutugaIsHolidayWD/isCompanyHoliday、測定日=dayHasMeasurement。
+// 「空欄ハイライト(2-2)」と「整合スキャン(2-3)」は必ず同じ述語 _tutugaIsGapCell を通すことで、
+// 視覚・スキャン・②ブランクが食い違わないようにする（plan 整合の肝）。
+// =====================================================
+// 水・使用量タブで「非祝日の稼働日に埋まっているべき」累積/使用量キー。
+//   = ②祝日ブランク対象の日次累積メーター(返送汚泥1/2・放流) + Phase2 の日次使用量(固形塩素)。
+//   ※ excessSludge1/2(余剰) は電気タブ入力のため水フォームには無い → ここでは対象外。
+//   ※ power/water/diesel/demand 等は日次必須が保証できないため誤検知回避で対象外。
+const TUTUGA_USAGE_EXPECTED_KEYS = (function () {
+  const base = (typeof TUTUGA_HOLIDAY_BLANK_KEYS_WATER !== 'undefined' && TUTUGA_HOLIDAY_BLANK_KEYS_WATER.length)
+    ? TUTUGA_HOLIDAY_BLANK_KEYS_WATER.slice()
+    : ['returnSludge1', 'returnSludge2', 'discharge'];
+  if (base.indexOf('solidChlorine') < 0) base.push('solidChlorine'); // Phase 2 日次使用量
+  return base;
+})();
+// 水・測定タブで「測定日に埋まっているべき」測定キー集合（do1/do2 含む。inspector/bikou・終沈直書6キーは除外）。
+const TUTUGA_MEASURE_EXPECTED_SET = (function () {
+  const s = {};
+  const keys = (typeof TUTUGA_MEASURE_SHEET_KEYS !== 'undefined')
+    ? TUTUGA_MEASURE_SHEET_KEYS
+    : MEASURE_FIELDS.filter(function (k) { return k !== 'inspector' && k !== 'bikou'; });
+  keys.forEach(function (k) { s[k] = true; });
+  return s;
+})();
+// 空判定（前後空白も空扱い）
+function _tutugaIsEmptyCellValue(v) {
+  return v === null || v === undefined || String(v).trim() === '';
+}
+// (week,day) セルに usage 入力が1つでもあるか（＝作業中の日。手付かずの日は誤検知しないためのゲート）
+function _tutugaDayHasAnyUsage(cell) {
+  if (!cell || typeof cell !== 'object') return false;
+  let keys;
+  try { keys = TUTUGA_FIELDS.water.usage.concat(TUTUGA_FIELDS.water.usageFormExtras || []); }
+  catch (e) { keys = TUTUGA_USAGE_EXPECTED_KEYS; }
+  return keys.some(function (k) { return !_tutugaIsEmptyCellValue(cell[k]); });
+}
+// 単一の真偽述語: (week,day,key) が「埋めるべきなのに空」か。2-2/2-3 が共用。
+//   祝日       → 常に false（②祝日ブランク＝正常な空を欠損扱いしない）
+//   usage(累積) → 当日に usage 入力がある日のみ、対象キーの空を検出（手付かずの日は除外）
+//   measure    → dayHasMeasurement(cell) が真の日のみ、対象キーの空を検出（非測定日は除外）
+//   その他キー → 対象外
+function _tutugaIsGapCell(week, day, key) {
+  if (_tutugaIsHolidayWD(week, day)) return false;
+  const cell = (tutugaData.weeks && tutugaData.weeks[week] && tutugaData.weeks[week][day]) || null;
+  if (TUTUGA_USAGE_EXPECTED_KEYS.indexOf(key) >= 0) {
+    if (!_tutugaDayHasAnyUsage(cell)) return false;
+    return _tutugaIsEmptyCellValue(cell ? cell[key] : null);
+  }
+  if (TUTUGA_MEASURE_EXPECTED_SET[key]) {
+    if (typeof dayHasMeasurement === 'function' && !dayHasMeasurement(cell)) return false;
+    return _tutugaIsEmptyCellValue(cell ? cell[key] : null);
+  }
+  return false;
+}
+// フィールドキー → 表示ラベル（スキャン結果表示用）
+function _tutugaFieldLabel(key) {
+  if (typeof USAGE_LABELS !== 'undefined' && USAGE_LABELS[key]) return USAGE_LABELS[key].label || key;
+  if (typeof MEASURE_FIELD_META !== 'undefined' && MEASURE_FIELD_META[key]) return MEASURE_FIELD_META[key].label || key;
+  return key;
 }
 
 // ===== 年報用データ定義 =====
@@ -4145,9 +4319,12 @@ function mergeServerData(serverData, expectedMonth) {
       const weekIn = serverData.equipment[wRaw];
       if (!weekIn) return;
       if (!tutugaData.equip[w] || typeof tutugaData.equip[w] !== 'object') tutugaData.equip[w] = {};
-      Object.keys(weekIn).forEach(function(equipKey) {
-        const perDay = weekIn[equipKey];
+      Object.keys(weekIn).forEach(function(rawKey) {
+        const perDay = weekIn[rawKey];
         if (!perDay || typeof perDay !== 'object') return;
+        // 手順1: 機器名解決（完全一致 → 正規化一致）。解決不可は生キーのまま取り込み（データ消失防止）、
+        //        整合スキャン(b) ラベル未マッピングが後段で検出する。
+        const equipKey = (typeof _resolveEquipKey === 'function' ? _resolveEquipKey(rawKey) : null) || rawKey;
         if (!tutugaData.equip[w][equipKey] || typeof tutugaData.equip[w][equipKey] !== 'object') {
           tutugaData.equip[w][equipKey] = {};
         }
@@ -4223,9 +4400,9 @@ async function syncAll() {
   if (typeof isDirty !== 'undefined' && isDirty) {
     const ok = confirm(
       '未保存のデータがあります。\n\n' +
-      '同期するとサーバーのデータで上書きされ、未保存分は失われる可能性があります。\n\n' +
+      'クラウドから取得すると、サーバーのデータで画面が上書きされ、未保存分は失われる可能性があります。\n\n' +
       '続行しますか？\n\n' +
-      '（中止 → 先に「保存」ボタンを押してから「同期」してください）'
+      '（中止 → 先に「クラウドへ保存」ボタンを押してから「取得」してください）'
     );
     if (!ok) return false;
   }
@@ -4261,7 +4438,7 @@ async function syncAll() {
       btn.querySelector('.header-btn-label').textContent = '取得済';
       btn.classList.add('synced');
       setTimeout(() => {
-        btn.querySelector('.header-btn-label').textContent = '同期';
+        btn.querySelector('.header-btn-label').textContent = '取得';
         btn.classList.remove('synced');
         btn.disabled = false;
       }, 2000);
@@ -4290,7 +4467,7 @@ async function syncAll() {
       btn.querySelector('.header-btn-label').textContent = 'エラー';
       btn.classList.add('error');
       setTimeout(() => {
-        btn.querySelector('.header-btn-label').textContent = '同期';
+        btn.querySelector('.header-btn-label').textContent = '取得';
         btn.classList.remove('error');
         btn.disabled = false;
       }, 3000);
@@ -4688,10 +4865,12 @@ function renderDayTabs() {
   for (let d = 1; d <= 5; d++) {
     const dateObj = weekSlots[d];
     if (!dateObj) continue;
-    const active = d === currentDay ? "active" : "";
+    const isHol = _tutugaIsHolidayWD(currentWeek, d);
+    const cls = (d === currentDay ? "active" : "") + (isHol ? " day-holiday" : "");
     const dateStr = formatDateShort(dateObj) + "(" + labelMap[d] + ")";
     const filled = isDayFilledForSub(currentWeek, d, currentWaterSub) ? "✓" : "";
-    html += `<button type="button" data-day="${d}" class="${active}"><span class="check">${filled}</span>${dateStr}</button>`;
+    const holBadge = isHol ? `<span class="tutuga-holiday-badge">祝</span>` : "";
+    html += `<button type="button" data-day="${d}" class="${cls.trim()}"><span class="check">${filled}</span>${dateStr}${holBadge}</button>`;
   }
   container.innerHTML = html;
   container.querySelectorAll("button").forEach(btn => {
@@ -4995,6 +5174,151 @@ function renderForm() {
   applyEnterKeyHintNext(wrap);
 
   loadDataToForm();
+  applyWaterFormUsabilityCues();   // 手順2: 祝日ノート(2-1) + 空欄ハイライト(2-2)
+}
+
+// 手順2-1/2-2: 水フォームに祝日ノートと「埋まっているべき空欄」ハイライトを反映。
+// 判定は _tutugaIsGapCell（②祝日ブランク・dayHasMeasurement と整合）を通すため、
+// 祝日の積算空欄・非測定日の do1/do2 を誤検知しない。
+function applyWaterFormUsabilityCues() {
+  if (currentSheet !== 'water') return;
+  const wrap = document.getElementById('formWrap');
+  if (!wrap) return;
+  const isHol = _tutugaIsHolidayWD(currentWeek, currentDay);
+
+  // 2-1 祝日ノート
+  let note = document.getElementById('tutugaHolidayNote');
+  if (isHol) {
+    if (!note) {
+      note = document.createElement('div');
+      note.id = 'tutugaHolidayNote';
+      note.className = 'tutuga-holiday-note';
+      wrap.insertBefore(note, wrap.firstChild);
+    }
+    let hname = '会社休日';
+    try {
+      const d = getDateForDay(currentWeek, currentDay);
+      if (typeof getHolidayName === 'function') hname = getHolidayName(d) || '会社休日';
+    } catch (e) {}
+    note.innerHTML = '🟣 <b>祝日（' + escapeHtml(hname) + '）</b> ― 積算メーター（返送汚泥・放流・固形塩素 等）は空欄が正常です。';
+  } else if (note) {
+    note.remove();
+  }
+
+  // 2-2 空欄ハイライト（種別・祝日・測定日ロジックは _tutugaIsGapCell に集約）
+  wrap.querySelectorAll('[data-field]').forEach(function (el) {
+    const key = el.dataset.field;
+    el.classList.toggle('tutuga-gap', _tutugaIsGapCell(currentWeek, currentDay, key));
+  });
+}
+
+// =====================================================
+// 手順2-3: 整合スキャン。2-2 と同一述語 _tutugaIsGapCell で空欄を判定し、
+//   (a) 入力もれ（非祝日・要入力の空欄）/ (b) 機器名 未マッピング / (c) 機器名 重複 を集計。
+//   祝日の積算空欄・非測定日の measure は _tutugaIsGapCell が除外 → 誤検知しない。
+// =====================================================
+function runIntegrityScan() {
+  const result = { gaps: [], unmapped: [], duplicates: [] };
+
+  // (a) 埋めるべき空欄（水タブ: usage 累積/使用量 + measure 測定値、週×日×キー）
+  const usageKeys = TUTUGA_USAGE_EXPECTED_KEYS;
+  const measureKeys = Object.keys(TUTUGA_MEASURE_EXPECTED_SET);
+  const allKeys = usageKeys.concat(measureKeys);
+  for (let w = 1; w <= 5; w++) {
+    for (let d = 1; d <= 5; d++) {
+      const date = (typeof getDateForDay === 'function') ? getDateForDay(w, d) : null;
+      if (!date) continue;                          // 月内日のみ
+      allKeys.forEach(function (key) {
+        if (_tutugaIsGapCell(w, d, key)) {
+          result.gaps.push({
+            week: w, day: d,
+            dateLabel: formatDateShort(date) + '(' + WEEKDAY_JP[date.getDay()] + ')',
+            label: _tutugaFieldLabel(key),
+            kind: (usageKeys.indexOf(key) >= 0) ? 'usage' : 'measure'
+          });
+        }
+      });
+    }
+  }
+
+  // (b)(c) 機器名: ローカル equip データを監査（手順1 解決後も非内部キーが残れば検出。リロード後も現状から再導出）
+  const eq = (tutugaData && tutugaData.equip) || {};
+  Object.keys(eq).forEach(function (wRaw) {
+    const w = parseInt(wRaw, 10);
+    const week = eq[wRaw];
+    if (!week || typeof week !== 'object') return;
+    Object.keys(week).forEach(function (k) {
+      if (EQUIP_KEY_SET[k]) return;                 // 内部キー = 正常
+      const resolved = (typeof _resolveEquipKey === 'function') ? _resolveEquipKey(k) : null;
+      if (resolved) {
+        // 非内部キーだが内部キーに解決可能 = 表記ゆれ/重複ソース（render は内部キーで読むため要再同期）
+        result.duplicates.push({ week: w, key: resolved, names: [k, resolved] });
+      } else {
+        // 内部キーに解決できない = 未マッピングのラベル
+        result.unmapped.push({ week: w, name: k });
+      }
+    });
+  });
+
+  return result;
+}
+
+function _scanSection(title, count, itemsHtml) {
+  const cls = count === 0 ? 'ok' : 'warn';
+  let h = '<div class="tutuga-scan-section"><h4>' + escapeHtml(title) + ' <span class="tutuga-scan-count ' + cls + '">' + count + '</span></h4>';
+  if (count === 0) {
+    h += '<div style="color:#2e7d32;font-size:12.5px;padding:2px 8px;">問題なし</div>';
+  } else {
+    h += '<ul class="tutuga-scan-list">' + itemsHtml.join('') + '</ul>';
+  }
+  return h + '</div>';
+}
+function _scanScopeNote() {
+  return '<div style="margin-top:8px;padding:8px 10px;background:#f4f7fb;border-radius:6px;color:#555;font-size:11.5px;line-height:1.6;">'
+       + '対象: 水質タブの日次累積/使用量（返送汚泥・放流・固形塩素）と測定値（DO 等）。<br>'
+       + '除外: 祝日の積算空欄（②ブランク＝正常）・非測定日の測定値・手付かずの日・機器運転/電気/機械タブ。</div>';
+}
+function _buildScanHtml(r, total) {
+  if (total === 0) {
+    return '<div class="tutuga-scan-empty">✅ 問題は見つかりませんでした（祝日の積算空欄・非測定日の測定値は対象外）。</div>' + _scanScopeNote();
+  }
+  let h = '';
+  h += _scanSection('① 入力もれ（非祝日・要入力の空欄）', r.gaps.length, r.gaps.map(function (g) {
+    const kindLabel = g.kind === 'usage' ? '使用量' : '測定値';
+    return '<li><span class="loc">第' + g.week + '週 ' + escapeHtml(g.dateLabel) + '</span> ／ ' + escapeHtml(g.label) + '（' + kindLabel + '）</li>';
+  }));
+  h += _scanSection('② 機器名 未マッピング（同期データが内部キーに解決できず）', r.unmapped.length, r.unmapped.map(function (u) {
+    return '<li><span class="loc">第' + u.week + '週</span> ／ ' + escapeHtml(u.name) + '</li>';
+  }));
+  h += _scanSection('③ 機器名 重複（複数表記が同一機器を指す）', r.duplicates.length, r.duplicates.map(function (d) {
+    return '<li><span class="loc">第' + d.week + '週</span> ／ ' + escapeHtml(d.names[0]) + ' → ' + escapeHtml(d.key) + '</li>';
+  }));
+  return h + _scanScopeNote();
+}
+
+function showScanDialog() {
+  const r = runIntegrityScan();
+  const total = r.gaps.length + r.unmapped.length + r.duplicates.length;
+
+  let dialog = document.getElementById('scanDialog');
+  if (!dialog) {
+    dialog = document.createElement('div');
+    dialog.id = 'scanDialog';
+    dialog.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;';
+    dialog.innerHTML = `
+      <div style="background:#fff;width:92%;max-width:680px;max-height:85vh;border-radius:12px;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+        <div style="padding:16px 20px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;background:#1a4f8a;color:#fff;border-radius:12px 12px 0 0;">
+          <h3 style="margin:0;font-size:17px;">🔍 整合スキャン</h3>
+          <button type="button" id="closeScanBtn" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.5);padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;">閉じる</button>
+        </div>
+        <div class="scan-body" style="flex:1;overflow:auto;padding:16px 20px;"></div>
+      </div>`;
+    document.body.appendChild(dialog);
+    document.getElementById('closeScanBtn').addEventListener('click', function () { dialog.style.display = 'none'; });
+    dialog.addEventListener('click', function (e) { if (e.target === dialog) dialog.style.display = 'none'; });
+  }
+  dialog.querySelector('.scan-body').innerHTML = _buildScanHtml(r, total);
+  dialog.style.display = 'flex';
 }
 
 function renderWeekTabs() {
@@ -5121,12 +5445,14 @@ function renderEquipPanel() {
   let headHtml = '<th>機器</th>';
   EQUIP_DAYS.forEach((dk, i) => {
     const date = getDateForDayKey(currentWeek, dk);
-    const dateStr = date ? `<br><span style="font-size:10px;font-weight:normal;opacity:.7;">${date.getMonth()+1}/${date.getDate()}</span>` : "";
+    const isHol = !!date && _tutugaIsHolidayWD(currentWeek, DAY_STR_TO_NUM[dk]);
+    const holBadge = isHol ? `<span class="tutuga-holiday-badge">祝</span>` : "";
+    const dateStr = date ? `<br><span style="font-size:10px;font-weight:normal;opacity:.7;">${date.getMonth()+1}/${date.getDate()}${holBadge}</span>` : "";
     // Phase 8 修正04D: 月内日のみ個別ボタン（クリア・前日コピー）を表示
     const dayActions = date
       ? `<div class="equip-day-actions"><button type="button" class="btn-equip-day-copy" data-day="${dk}" title="${dayLabels[i]}曜日に前日コピー">前日コピー</button><button type="button" class="btn-equip-day-clear" data-day="${dk}" title="${dayLabels[i]}曜日をクリア">クリア</button></div>`
       : '';
-    headHtml += `<th class="col-${dk}">${dayLabels[i]}${dateStr}${dayActions}</th>`;
+    headHtml += `<th class="col-${dk}${isHol ? ' col-holiday' : ''}">${dayLabels[i]}${dateStr}${dayActions}</th>`;
   });
   head.innerHTML = headHtml;
 
@@ -5151,7 +5477,9 @@ function renderEquipPanel() {
     EQUIP_DAYS.forEach(dk => {
       const date = getDateForDayKey(currentWeek, dk);
       const enabled = !!date;
-      const tdCls = enabled ? "" : ' class="day-disabled"';
+      const isHol = enabled && _tutugaIsHolidayWD(currentWeek, DAY_STR_TO_NUM[dk]);
+      const clsList = (enabled ? "" : "day-disabled") + (isHol ? " cell-holiday" : "");
+      const tdCls = clsList.trim() ? ` class="${clsList.trim()}"` : "";
       const disabledAttr = enabled ? "" : ' disabled';
       bodyHtml += `<td${tdCls}><input type="number" inputmode="decimal" step="0.1" data-equip="${key}" data-eday="${dk}"${disabledAttr}></td>`;
     });
@@ -5310,9 +5638,11 @@ function renderMechElecDayTabs(kind) {
   for (let d = 1; d <= 5; d++) {
     const dateObj = weekSlots[d];
     if (!dateObj) continue;
-    const active = d === currentDay ? "active" : "";
+    const isHol = _tutugaIsHolidayWD(currentWeek, d);
+    const cls = (d === currentDay ? "active" : "") + (isHol ? " day-holiday" : "");
     const dateStr = formatDateShort(dateObj) + "(" + labelMap[d] + ")";
-    html += `<button type="button" data-day="${d}" class="${active}">${dateStr}</button>`;
+    const holBadge = isHol ? `<span class="tutuga-holiday-badge">祝</span>` : "";
+    html += `<button type="button" data-day="${d}" class="${cls.trim()}">${dateStr}${holBadge}</button>`;
   }
   container.innerHTML = html;
   container.querySelectorAll("button").forEach(btn => {
@@ -6300,6 +6630,14 @@ function bindEvents() {
   const btnHistory = document.getElementById("btnHistory");
   if (btnHistory) {
     btnHistory.addEventListener("click", () => showSaveHistoryDialog());
+  }
+  // 手順2-3: 整合スキャン
+  const btnScan = document.getElementById("btnScan");
+  if (btnScan) {
+    btnScan.addEventListener("click", () => {
+      try { if (typeof saveCurrentFormToData === 'function') saveCurrentFormToData(); } catch (e) {}
+      showScanDialog();
+    });
   }
   document.getElementById("btnExcel").addEventListener("click", exportExcel);
 
