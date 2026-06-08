@@ -823,8 +823,11 @@ body.login-active { overflow: hidden; }
 
 .equip-table-wrap {
   margin: 0 12px 12px;
-  overflow: auto;
-  max-height: 70vh;
+  /* フェーズ2追補 (2026-06-09): 内側の縦スクロールを撤去。max-height を外し全行を自然な高さで表示、
+     縦はページ側でスクロール。横スクロール（5日幅対応）は overflow-x:auto + .equip-table{min-width:640px} で維持。
+     機器運転時間/機械/電気の3グリッド共通（この1箇所で3グリッド同時に効く）。 */
+  overflow-x: auto;
+  overflow-y: visible;
   border: 1px solid #c9d7e5;
   border-radius: 6px;
   background: #fff;
@@ -976,7 +979,10 @@ body.login-active { overflow: hidden; }
   background: #ececec;
   color: #999;
 }
-/* フェーズ2 (2026-06-08): 電気週グリッドの autoCalc(使用量) 編集不可の自動計算表示セル。 */
+/* 追補① (2026-06-09): 電気週グリッドの autoCalc(使用量) 行を非表示にする（計算・保存・出力は継続）。
+   行内の data-autocalc-display セルは DOM に残り recompute の書き戻し先になる。 */
+.equip-table tr.hidden-autocalc { display: none; }
+/* フェーズ2 (2026-06-08): 電気週グリッドの autoCalc(使用量) 編集不可の自動計算表示セル（現在は hidden-autocalc で非表示）。 */
 .equip-table td .autocalc-cell {
   display: block;
   width: 100%;
@@ -5922,13 +5928,19 @@ function buildElecWeekGridHtml(sub, weekIdx) {
 
   let bodyHtml = "";
   sections.forEach(sec => {
-    // type:'auto'（転記読み）のみ非表示。autoCalc(__使用量) は表示（編集不可）。
-    const visibleFields = (sec.fields || []).filter(f => f.type !== 'auto');
-    if (visibleFields.length === 0) return;
+    // 追補① (2026-06-09): autoCalc(__使用量) の「表示」を消す（方式B）。
+    //   使用量の行は data-autocalc-display セルを DOM に残したまま hidden-autocalc で非表示にする。
+    //   → recomputeElecAutoCalc の表示書き戻し・計算/保存/Excel 経路は一切変えない（計算・保存は継続）。
+    //   見える項目をフェーズ2以前の単日フォームと一致させるため、編集欄が無いセクション
+    //   （type:'auto'/'autoCalc' しか持たない）は見出しごと省略する。
+    const rows = (sec.fields || []).filter(f => f.type !== 'auto');   // 編集欄 + autoCalc(非表示で残す)
+    const editable = rows.filter(f => f.type !== 'autoCalc');         // 編集欄のみ
+    if (editable.length === 0) return;                               // 編集欄が無ければ見出しごと省略
     bodyHtml += `<tr class="section-header"><td colspan="6">${escapeHtml(sec.title)}</td></tr>`;
-    visibleFields.forEach(f => {
+    rows.forEach(f => {
+      const rowCls = (f.type === 'autoCalc') ? ' class="hidden-autocalc"' : '';  // 使用量行=非表示（セルは残置）
       const unit = f.unit ? `<span class="item-unit">${escapeHtml(f.unit)}</span>` : "";
-      bodyHtml += `<tr><td><span class="item-label">${escapeHtml(f.label)}</span>${unit}</td>`;
+      bodyHtml += `<tr${rowCls}><td><span class="item-label">${escapeHtml(f.label)}</span>${unit}</td>`;
       cols.forEach(c => {
         const tdCls = ((c.enabled ? "" : "day-disabled") + (c.isHol ? " cell-holiday" : "")).trim();
         const tdClsAttr = tdCls ? ` class="${tdCls}"` : "";
