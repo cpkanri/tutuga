@@ -27,10 +27,9 @@ body {
 }
 
 /* ===== ヘッダー ===== */
+/* C: 追従(sticky)解消 — 上殿等と同じ通常フローでスクロールアウトし、入力欄を覆わない。 */
 header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  position: relative;
   background: linear-gradient(135deg, #1a4f8a, #2a6bb0);
   color: #fff;
   padding: 12px 16px;
@@ -1093,12 +1092,19 @@ body.login-active { overflow: hidden; }
   display: flex;
   gap: 10px;
   margin-top: 12px;
+  flex-wrap: wrap;          /* B: 5ボタン3グループ→窮屈時はグループ単位で折り返し（縮めない） */
 }
 .header-btn-col {
-  flex: 1;
+  flex: 1 1 auto;          /* B: ボタンを縮めず、横幅不足なら次行へ折り返す */
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: 150px;        /* B: これ未満になる前に点検グループが次行へ回る */
+}
+.header-btn-col-single {   /* 点検(1ボタン)グループ: 伸長させず単独行でも通常幅 */
+  flex: 0 1 auto;
+}
+.header-btn-group-single {
+  grid-template-columns: 1fr;   /* 1ボタンなので1カラム（半幅化を防ぐ） */
 }
 .header-btn-group-label {
   font-size: 11px;
@@ -1120,15 +1126,15 @@ body.login-active { overflow: hidden; }
   background: rgba(255, 255, 255, 0.06);
   border: none;
   color: white;
-  padding: 10px 4px;
-  font-size: 12px;
+  padding: 13px 6px;       /* B: 上殿同等＋やや拡大して押しやすく (was 10px 4px) */
+  font-size: 13px;         /* B: was 12px */
   font-weight: 600;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 5px;                /* B: was 4px */
   transition: background 0.15s;
   font-family: inherit;
   min-width: 0;
@@ -1145,11 +1151,11 @@ body.login-active { overflow: hidden; }
   background: rgba(255, 255, 255, 0.06);
 }
 .header-btn-icon {
-  font-size: 18px;
+  font-size: 20px;         /* B: was 18px */
   line-height: 1;
 }
 .header-btn-label {
-  font-size: 12px;
+  font-size: 13px;         /* B: was 12px */
   white-space: nowrap;
 }
 /* ===== 手順2: 使いやすさ層（祝日視覚化 / 空欄ハイライト / 整合スキャン） ===== */
@@ -1204,6 +1210,92 @@ body.login-active { overflow: hidden; }
 .tutuga-scan-list li { padding: 4px 8px; border-bottom: 1px solid #eee; }
 .tutuga-scan-list li .loc { color: #1a4f8a; font-weight: 600; }
 .tutuga-scan-empty { color: #2e7d32; font-weight: 600; padding: 8px; }
+/* ===== 対象年月カスタムモーダル (上殿 Phase 17d 流用・クラスは衝突回避で tmm- 接頭辞) ===== */
+/* ネイティブ <input type="month"> のクリックでフォーカスが次の tabbable へ飛ぶ Chromium バグ回避 */
+.tmm-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+.tmm-overlay[hidden] {
+  display: none !important;
+}
+.tmm-box {
+  background: #fff;
+  padding: 24px;
+  border-radius: 8px;
+  min-width: 280px;
+  max-width: 90vw;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+.tmm-title {
+  margin: 0 0 16px 0;
+  font-size: 1.1em;
+  color: #333;
+}
+.tmm-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin: 16px 0 24px 0;
+}
+.tmm-select {
+  font-size: 1em;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  min-width: 80px;
+}
+.tmm-unit {
+  font-size: 1em;
+  color: #555;
+}
+.tmm-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.tmm-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 4px;
+  font-size: 1em;
+  cursor: pointer;
+}
+.tmm-btn-cancel {
+  background: #eee;
+  color: #333;
+}
+.tmm-btn-confirm {
+  background: #1a4f8a;
+  color: #fff;
+}
+/* 対象年月トリガーボタン (上殿 .btn-header-action 流用) */
+.btn-header-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.15);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.2;
+}
+.btn-header-action:hover { background: rgba(255,255,255,0.25); }
+.btn-header-action:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -1228,7 +1320,8 @@ body.login-active { overflow: hidden; }
   <div class="header-controls">
     <label>
       <span>対象年月</span>
-      <input type="month" id="targetMonth">
+      <input type="month" id="targetMonth" style="display:none">
+      <button type="button" id="btnTargetMonth" class="btn-header-action">📅 ----</button>
     </label>
     <!-- B-6: 接続中・ログアウトを対象年月の右に配置 -->
     <span class="conn-status" id="connStatus" title="接続状態">🟡 未接続</span>
@@ -1264,9 +1357,9 @@ body.login-active { overflow: hidden; }
           </button>
         </div>
       </div>
-      <div class="header-btn-col">
+      <div class="header-btn-col header-btn-col-single">
         <div class="header-btn-group-label">点検</div>
-        <div class="header-btn-group">
+        <div class="header-btn-group header-btn-group-single">
           <button type="button" id="btnScan" class="header-btn" title="入力もれ・機器名未マッピング・重複を点検（祝日の積算空欄・非測定日は除外）">
             <span class="header-btn-icon">🔍</span>
             <span class="header-btn-label">整合</span>
@@ -1276,6 +1369,23 @@ body.login-active { overflow: hidden; }
     </div>
   </div>
 </header>
+
+<!-- 対象年月カスタムモーダル (上殿 Phase 17d 流用) -->
+<div id="targetMonthModal" class="tmm-overlay" hidden>
+  <div class="tmm-box">
+    <h3 class="tmm-title">対象年月を選択</h3>
+    <div class="tmm-row">
+      <select id="modalYear" class="tmm-select"></select>
+      <span class="tmm-unit">年</span>
+      <select id="modalMonth" class="tmm-select"></select>
+      <span class="tmm-unit">月</span>
+    </div>
+    <div class="tmm-buttons">
+      <button type="button" id="modalCancel" class="tmm-btn tmm-btn-cancel">キャンセル</button>
+      <button type="button" id="modalConfirm" class="tmm-btn tmm-btn-confirm">変更</button>
+    </div>
+  </div>
+</div>
 
 <!-- オフライン警告バナー -->
 <div class="offline-banner" id="offlineBanner">
@@ -6502,6 +6612,117 @@ async function exportExcel() {
   }
 }
 
+// === 対象年月カスタムモーダル (上殿 Phase 17d 流用・名前付き関数化) ===
+// 非表示の <input type="month" id="targetMonth"> を値ホルダーとして残し、📅ボタン→モーダルで年月選択。
+// 「変更」確定時に input.value をセットして change を手動 dispatch → 既存の月切替ハンドラを無変更で発火。
+// continueInit の __mainEventsBound ブロック（DOM 構築後・value セット後・once 保証）から呼ぶ。
+function setupTargetMonthModal() {
+  const targetMonthEl = document.getElementById("targetMonth");
+  const btnTargetMonth = document.getElementById("btnTargetMonth");
+  const modal = document.getElementById("targetMonthModal");
+  const selectYear = document.getElementById("modalYear");
+  const selectMonth = document.getElementById("modalMonth");
+  const btnCancel = document.getElementById("modalCancel");
+  const btnConfirm = document.getElementById("modalConfirm");
+
+  if (!targetMonthEl || !btnTargetMonth || !modal) return;
+  if (btnTargetMonth._tmmBound) return;   // 二重バインド防止
+  btnTargetMonth._tmmBound = true;
+
+  // 年の選択肢を生成（現在年の前後で範囲を決める）
+  function populateYearOptions() {
+    const currentYear = new Date().getFullYear();
+    const yearRange = [];
+    for (let y = currentYear - 3; y <= currentYear + 2; y++) {
+      yearRange.push(y);
+    }
+    selectYear.innerHTML = '';
+    yearRange.forEach(y => {
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      selectYear.appendChild(opt);
+    });
+  }
+
+  // 月の選択肢を生成（01〜12）
+  function populateMonthOptions() {
+    selectMonth.innerHTML = '';
+    for (let m = 1; m <= 12; m++) {
+      const opt = document.createElement('option');
+      opt.value = String(m).padStart(2, '0');
+      opt.textContent = m;
+      selectMonth.appendChild(opt);
+    }
+  }
+
+  populateYearOptions();
+  populateMonthOptions();
+
+  // ボタン表示を targetMonth.value から更新
+  function updateButtonLabel() {
+    const v = targetMonthEl.value || '';
+    btnTargetMonth.textContent = '📅 ' + (v || '----');
+  }
+  updateButtonLabel();
+
+  // targetMonth.value が変わったらボタン表示も更新（value の set 操作にも対応）
+  const observer = new MutationObserver(updateButtonLabel);
+  observer.observe(targetMonthEl, { attributes: true, attributeFilter: ['value'] });
+  targetMonthEl.addEventListener('change', updateButtonLabel);
+
+  // ボタンクリックでモーダル開く
+  btnTargetMonth.addEventListener('click', () => {
+    const v = targetMonthEl.value || '';
+    const m = v.match(/^(\d{4})-(\d{2})$/);
+    if (m) {
+      // 既存の年が選択肢にない場合（範囲外）は動的に追加
+      if (!Array.from(selectYear.options).some(o => o.value === m[1])) {
+        const opt = document.createElement('option');
+        opt.value = m[1];
+        opt.textContent = m[1];
+        selectYear.appendChild(opt);
+      }
+      selectYear.value = m[1];
+      selectMonth.value = m[2];
+    } else {
+      // 未設定なら現在年月を初期表示
+      const now = new Date();
+      selectYear.value = now.getFullYear();
+      selectMonth.value = String(now.getMonth() + 1).padStart(2, '0');
+    }
+    modal.hidden = false;
+  });
+
+  // キャンセルでモーダル閉じる
+  btnCancel.addEventListener('click', () => {
+    modal.hidden = true;
+  });
+
+  // 背景クリックでもキャンセル扱い
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.hidden = true;
+  });
+
+  // ESC キーでもキャンセル扱い
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) {
+      modal.hidden = true;
+    }
+  });
+
+  // 「変更」で value 反映 + change イベント手動 dispatch（既存の月切替ハンドラを無変更で発火）
+  btnConfirm.addEventListener('click', () => {
+    const newValue = selectYear.value + '-' + selectMonth.value;
+    modal.hidden = true;
+    if (targetMonthEl.value === newValue) {
+      return;   // 同じ値なら何もしない
+    }
+    targetMonthEl.value = newValue;
+    targetMonthEl.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+
 // ===== イベントハンドラ =====
 function bindEvents() {
   document.getElementById("targetMonth").addEventListener("change", async (e) => {
@@ -6703,6 +6924,7 @@ async function continueInit() {
   if (!window.__mainEventsBound) {
     window.__mainEventsBound = true;
     bindEvents();
+    if (typeof setupTargetMonthModal === 'function') setupTargetMonthModal();  // 対象年月モーダル初期化（DOM・value セット後・once）
   }
   syncMonthInspectorFromDays(); // 測定者UI横展開: 初期描画前に月単位欄へ代表値を反映
   renderAll();
