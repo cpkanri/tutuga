@@ -976,6 +976,26 @@ body.login-active { overflow: hidden; }
   background: #ececec;
   color: #999;
 }
+/* フェーズ2 (2026-06-08): 電気週グリッドの autoCalc(使用量) 編集不可の自動計算表示セル。 */
+.equip-table td .autocalc-cell {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: right;
+  color: #555;
+  background: #eef3f8;
+  border: 1px dashed #b9c7d7;
+  border-radius: 4px;
+  box-sizing: border-box;
+  line-height: 20px;
+}
+.equip-table td.day-disabled .autocalc-cell {
+  background: #ececec;
+  border-color: #d8d8d8;
+  color: #aaa;
+}
 
 /* ===== B-2 追加: 祝日マーカー・振替UI ===== */
 .equip-table thead th .col-marker {
@@ -3313,10 +3333,10 @@ function getCurrentFormFields(dayOverride) {
   if (currentSheet === 'equip') {
     const dk = dayOverride || DAY_NUM_TO_STR[currentDay];
     all = all.filter(el => el.dataset.eday === dk);
-  } else if (currentSheet === 'mech') {
-    // フェーズ1 (2026-06-08): 機械は週グリッド化で5曜日分の data-mfield が同時に存在する。
-    // 曜日（data-day）で絞らないと、列単位の前日コピー/クリアが5日全部に効いて誤爆する。
-    // equip の data-eday フィルタと対になる data-day フィルタ。（elec/water は従来どおり絞らない）
+  } else if (currentSheet === 'mech' || currentSheet === 'elec') {
+    // フェーズ1/2 (2026-06-08): 機械・電気は週グリッド化で5曜日分の data-mfield/data-efield が
+    // 同時に存在する。曜日（data-day）で絞らないと、列単位の前日コピー/クリアが5日全部に
+    // 効いて誤爆する。equip の data-eday フィルタと対になる data-day フィルタ。（water は絞らない）
     const dk = dayOverride || DAY_NUM_TO_STR[currentDay];
     all = all.filter(el => el.dataset.day === dk);
   }
@@ -3378,8 +3398,9 @@ function clearCurrentForm(dayOverride) {
   try { saveCurrentFormToData(); } catch (_) {}
 
   // elec の autocalc 連動（読み値クリアにより使用量も再計算される）
+  // フェーズ2: クリアした曜日を起点に fri まで連鎖再計算。
   if (currentSheet === 'elec') {
-    try { recomputeElecAutoCalc(); } catch (_) {}
+    try { recomputeElecAutoCalc(dayOverride || DAY_NUM_TO_STR[currentDay]); } catch (_) {}
   }
 
   // Undo bulk エントリ（dayOverride を反映）
@@ -3589,8 +3610,9 @@ function copyPreviousDayToCurrent(dayOverride) {
   // データ層に反映
   try { saveCurrentFormToData(); } catch (_) {}
   // elec autocalc 連動（読み値がコピーされたら使用量も再計算）
+  // フェーズ2: コピー先の曜日を起点に fri まで連鎖再計算。
   if (currentSheet === 'elec') {
-    try { recomputeElecAutoCalc(); } catch (_) {}
+    try { recomputeElecAutoCalc(dayOverride || DAY_NUM_TO_STR[currentDay]); } catch (_) {}
   }
 
   // Undo bulk エントリ（コピー前の値を一括で記録、dayOverride を反映）
@@ -4803,6 +4825,10 @@ function getNavigableFields() {
   if (currentSheet === 'mech') {
     return _getMechWeekNavigableFields();
   }
+  // フェーズ2 (2026-06-08): 電気も週グリッド＝列優先ナビ（autoCalc 表示セルは data-efield 無しで除外）
+  if (currentSheet === 'elec') {
+    return _getElecWeekNavigableFields();
+  }
   return _getPerDayNavigableFields();
 }
 
@@ -4814,6 +4840,20 @@ function _getMechWeekNavigableFields() {
   const result = [];
   dayOrder.forEach(dk => {
     container.querySelectorAll('input[data-mfield][data-day="' + dk + '"]').forEach(el => {
+      if (_isFieldEnterNavigable(el)) result.push(el);
+    });
+  });
+  return result;
+}
+
+// 電気週グリッド: 列優先。data-efield を持つ編集可能 input のみ（autoCalc 表示セルは除外）。
+function _getElecWeekNavigableFields() {
+  const container = document.getElementById('elecFormWrap');
+  if (!container) return [];
+  const dayOrder = ['mon','tue','wed','thu','fri'];
+  const result = [];
+  dayOrder.forEach(dk => {
+    container.querySelectorAll('input[data-efield][data-day="' + dk + '"]').forEach(el => {
       if (_isFieldEnterNavigable(el)) result.push(el);
     });
   });
@@ -4901,9 +4941,9 @@ function advanceToNextField(currentEl) {
 function advanceToNextDay() {
   const month = tutugaData.targetMonth || '';
   if (!month) return false;
-  // フェーズ1 (2026-06-08): 機械は週グリッド＝全曜日が同時表示。最終フィールドの次は
-  //   equip と同じく「次週へ切替」（renderAll が currentSheet=mech のグリッドを再描画）。
-  if (currentSheet === 'equip' || currentSheet === 'mech') {
+  // フェーズ1/2 (2026-06-08): 機械・電気は週グリッド＝全曜日が同時表示。最終フィールドの次は
+  //   equip と同じく「次週へ切替」（renderAll が当該グリッドを再描画）。
+  if (currentSheet === 'equip' || currentSheet === 'mech' || currentSheet === 'elec') {
     return _advanceToNextEquipWeek(month);
   }
   return _advanceToNextPerDayDay(month);
@@ -5528,8 +5568,8 @@ function renderAll() {
   // Phase 8 修正04C/04D: 共通の「前日コピー」「クリア」は equip タブで非表示
   // （equip タブには各日の日付ラベル右隣に個別ボタンを配置するため）
   // 「保存」「元に戻す」は全タブ共通で表示維持。
-  // フェーズ1 (2026-06-08): 機械も週グリッド化で列見出しに個別ボタンを持つため非表示対象に追加。
-  const usesPerColumnDayBtns = (currentSheet === "equip" || currentSheet === "mech");
+  // フェーズ1/2 (2026-06-08): 機械・電気も週グリッド化で列見出しに個別ボタンを持つため非表示対象に追加。
+  const usesPerColumnDayBtns = (currentSheet === "equip" || currentSheet === "mech" || currentSheet === "elec");
   if (btnCopy)  btnCopy.style.display  = usesPerColumnDayBtns ? "none" : "";
   if (btnClear) btnClear.style.display = usesPerColumnDayBtns ? "none" : "";
 
@@ -5718,6 +5758,12 @@ function buildEquipFormHtml(kind, sub, weekIdx, dayIdx) {
   if (kind === "mech") {
     return buildMechWeekGridHtml(sub, weekIdx);
   }
+  // フェーズ2 (2026-06-08): 電気設備も週グリッド化（機械と同方式）。
+  //   差分: autoCalc(=__使用量, 読み−前回) は編集不可の表示セルとして各列に出す
+  //   （type:'auto' の転記読みは現行単日どおり非表示）。recomputeElecAutoCalc が値を書き込む。
+  if (kind === "elec") {
+    return buildElecWeekGridHtml(sub, weekIdx);
+  }
   const sections = (kind === "mech") ? getMechSectionsForSub(sub) : getElecSectionsForSub(sub);
   const dataAttr = (kind === "mech") ? "data-mfield" : "data-efield";
   const dayKey = DAY_NUM_TO_STR[dayIdx] || "mon";
@@ -5842,6 +5888,84 @@ function buildMechCellHtml(f, dayKey, disabledAttr) {
   return `<span style="color:#999;">―</span>`;
 }
 
+// =====================================================
+// フェーズ2 (2026-06-08): 電気設備 週グリッド HTML 生成
+//   buildMechWeekGridHtml と同構造。差分2点:
+//   (1) 行フィルタは type!=='auto' のみ（autoCalc=__使用量 は残して表示する）。
+//       type:'auto'（返送/放流/燃料の積算読み転記）は現行単日どおり非表示。
+//   (2) autoCalc セルは編集不可の表示セル（buildElecCellHtml）。
+//       recomputeElecAutoCalc が data-autocalc-display 経由で値を書き込む。
+// =====================================================
+function buildElecWeekGridHtml(sub, weekIdx) {
+  const sections = getElecSectionsForSub(sub);
+  const dayLabels = { mon: "月", tue: "火", wed: "水", thu: "木", fri: "金" };
+
+  const cols = EQUIP_DAYS.map(dk => {
+    const date = getDateForDayKey(weekIdx, dk);
+    const enabled = !!date;
+    const isHol = enabled && _tutugaIsHolidayWD(weekIdx, DAY_STR_TO_NUM[dk]);
+    return { dk, date, enabled, isHol };
+  });
+
+  // ヘッダ（機械グリッドと同一: 日付・祝バッジ・個別 前日コピー/クリア）
+  let headHtml = '<th>項目</th>';
+  cols.forEach(c => {
+    const holBadge = c.isHol ? `<span class="tutuga-holiday-badge">祝</span>` : "";
+    const dateStr = c.date
+      ? `<br><span style="font-size:10px;font-weight:normal;opacity:.7;">${c.date.getMonth() + 1}/${c.date.getDate()}${holBadge}</span>`
+      : "";
+    const dayActions = c.date
+      ? `<div class="equip-day-actions"><button type="button" class="btn-equip-day-copy" data-day="${c.dk}" title="${dayLabels[c.dk]}曜日に前日コピー">前日コピー</button><button type="button" class="btn-equip-day-clear" data-day="${c.dk}" title="${dayLabels[c.dk]}曜日をクリア">クリア</button></div>`
+      : "";
+    headHtml += `<th class="col-${c.dk}${c.isHol ? ' col-holiday' : ''}">${dayLabels[c.dk]}${dateStr}${dayActions}</th>`;
+  });
+
+  let bodyHtml = "";
+  sections.forEach(sec => {
+    // type:'auto'（転記読み）のみ非表示。autoCalc(__使用量) は表示（編集不可）。
+    const visibleFields = (sec.fields || []).filter(f => f.type !== 'auto');
+    if (visibleFields.length === 0) return;
+    bodyHtml += `<tr class="section-header"><td colspan="6">${escapeHtml(sec.title)}</td></tr>`;
+    visibleFields.forEach(f => {
+      const unit = f.unit ? `<span class="item-unit">${escapeHtml(f.unit)}</span>` : "";
+      bodyHtml += `<tr><td><span class="item-label">${escapeHtml(f.label)}</span>${unit}</td>`;
+      cols.forEach(c => {
+        const tdCls = ((c.enabled ? "" : "day-disabled") + (c.isHol ? " cell-holiday" : "")).trim();
+        const tdClsAttr = tdCls ? ` class="${tdCls}"` : "";
+        const disabledAttr = c.enabled ? "" : " disabled";
+        bodyHtml += `<td${tdClsAttr}>${buildElecCellHtml(f, c.dk, disabledAttr)}</td>`;
+      });
+      bodyHtml += `</tr>`;
+    });
+  });
+
+  return `<div class="equip-table-wrap"><table class="equip-table" id="elecTable">`
+       + `<thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+}
+
+// 電気週グリッドの1セル。buildMechCellHtml と型別ロジック逐語一致（data-mfield→data-efield）。
+// 追加: type==='autoCalc' は編集不可の表示セル（data-efield を持たない＝保存/読込/Undo/ナビ対象外）。
+//   値は recomputeElecAutoCalc が data-autocalc-display 経由で書き込む。
+function buildElecCellHtml(f, dayKey, disabledAttr) {
+  const keyEsc = escapeHtml(f.key);
+  if (f.type === "autoCalc") {
+    return `<div class="autocalc-cell" data-autocalc-display="${keyEsc}" data-day="${dayKey}" title="自動計算（当日の読み − 前回の読み）"></div>`;
+  }
+  if (f.type === "number") {
+    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
+  } else if (f.type === "text") {
+    return `<input type="text" inputmode="${f.inputmode || 'decimal'}" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
+  } else if (f.type === "numdash") {
+    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}" placeholder="-"${disabledAttr}>`;
+  } else if (f.type === "toggle") {
+    const baseOpts = Array.isArray(f.options) ? f.options : [];
+    const augmented = baseOpts.indexOf('-') >= 0 ? baseOpts : baseOpts.concat(['-']);
+    const opts = JSON.stringify(augmented).replace(/"/g, '&quot;');
+    return `<button type="button" class="toggle-btn" data-efield="${keyEsc}" data-day="${dayKey}" data-options="${opts}"${disabledAttr}>―</button>`;
+  }
+  return `<span style="color:#999;">―</span>`;
+}
+
 // 機械/電気の日タブを描画（mon-fri）
 function renderMechElecDayTabs(kind) {
   const containerId = (kind === "mech") ? "mechDayTabs" : "elecDayTabs";
@@ -5961,15 +6085,30 @@ function renderElecPanel() {
     }
   });
 
-  renderMechElecDayTabs("elec");
+  // フェーズ2 (2026-06-08): 電気は週グリッド化＝日は列。日タブは使わないので非表示。
+  const elecDayTabs = document.getElementById("elecDayTabs");
+  if (elecDayTabs) { elecDayTabs.innerHTML = ""; elecDayTabs.style.display = "none"; }
 
   const wrap = document.getElementById("elecFormWrap");
   if (wrap) {
+    // .equip-table-wrap が自前の左右マージンを持つため form-wrap の padding は外す（機械と同じ）。
+    wrap.style.padding = "0";
     wrap.innerHTML = buildEquipFormHtml("elec", currentElecSub, currentWeek, currentDay);
     bindEquipInputEvents("elec");
     loadElecDataToForm();
-    // Phase 8 修正02 Step2: autoCalc 自動計算値を注入（描画＋tutugaData 反映）
-    recomputeElecAutoCalc();
+    // フェーズ2: 描画＋データ流し込み確定後に mon 起点で全曜日の autoCalc(__使用量) を再計算・表示。
+    //   mon→fri 連鎖（多日版）。autoCalc セルは data-autocalc-display 経由で更新される。
+    recomputeElecAutoCalc('mon');
+
+    // フェーズ2: 列見出しの個別「前日コピー」「クリア」を配線（機械グリッドと同方式）。
+    //   getCurrentFormFields は elec を data-day でフィルタするので他曜日へ波及しない。
+    wrap.querySelectorAll('.btn-equip-day-copy').forEach(btn => {
+      btn.addEventListener('click', () => { copyPreviousDayToCurrent(btn.dataset.day); });
+    });
+    wrap.querySelectorAll('.btn-equip-day-clear').forEach(btn => {
+      btn.addEventListener('click', () => { clearCurrentForm(btn.dataset.day); });
+    });
+
     // Phase 8 修正06: モバイルキーボードに「次へ」キーを表示
     applyEnterKeyHintNext(wrap);
   }
@@ -6187,28 +6326,45 @@ function computeElectricalUsage(month, week, day, sourceKey) {
 // フォームから削除したため、ELEC_AUTO_CALC_PAIRS メタデータから autoCalc ペアを列挙する形に変更。
 // tutugaData.elec[w].days[d][usageKey] へ計算結果を書き込んで保存対象にする
 // （DOM 入力欄が残っている場合は併せて更新するが、現状 04B 以降は存在しない）。
-function recomputeElecAutoCalc() {
+// フェーズ2 (2026-06-08): 多日化。起点曜日 startDk（省略時 'mon'）から fri まで順に再計算する。
+//   ある曜日の読みを変えると、その日＋以降の曜日の使用量(=読み−前回)が連鎖して変わるため。
+//   計算の中身（前日基準の取得経路 findPreviousElecReading / computeElectricalUsage）は不変＝
+//   クロス週・クロス月・祝日の扱いは一切変えない。前提: 呼び出し前に DOM の読みが
+//   tutugaData へ反映済（各 caller が saveCurrentFormToData 後に呼ぶ）。
+//   autoCalc(__使用量) は週グリッドでは編集不可の表示セル(data-autocalc-display)。tutugaData へ
+//   書き込み（保存・出力対象）＋表示セル更新の両方を行う。
+function recomputeElecAutoCalc(startDk) {
   const month = tutugaData.targetMonth;
   if (!month) return;
   const week = currentWeek;
-  const day = DAY_NUM_TO_STR[currentDay] || 'mon';
   const wk = (tutugaData.elec || {})[week];
-  const dayData = wk && wk.days && wk.days[day];
-  if (!dayData) return;
+  if (!wk || !wk.days) return;
 
-  const wrap = document.getElementById('elecFormWrap');  // 残っていれば DOM も更新
+  const dayOrder = ['mon', 'tue', 'wed', 'thu', 'fri'];
+  let start = dayOrder.indexOf(startDk);
+  if (start < 0) start = 0;  // 省略/不正時は mon 起点（fri まで全曜日）
 
-  Object.keys(ELEC_AUTO_CALC_PAIRS).forEach(usageKey => {
-    const sourceKey = ELEC_AUTO_CALC_PAIRS[usageKey];
-    if (!sourceKey || !usageKey) return;
-    const usage = computeElectricalUsage(month, week, day, sourceKey);
-    dayData[usageKey] = (usage === '' || usage == null) ? null : usage;
-    // 互換: 万一 DOM に該当 input が残っている場合は表示も更新
-    if (wrap) {
-      const input = wrap.querySelector('input[data-efield="' + _cssEscape(usageKey) + '"]');
-      if (input) input.value = (usage === '' || usage == null) ? '' : usage;
-    }
-  });
+  const wrap = document.getElementById('elecFormWrap');
+
+  for (let i = start; i < dayOrder.length; i++) {
+    const day = dayOrder[i];
+    const dayData = wk.days[day];
+    if (!dayData) continue;
+    Object.keys(ELEC_AUTO_CALC_PAIRS).forEach(usageKey => {
+      const sourceKey = ELEC_AUTO_CALC_PAIRS[usageKey];
+      if (!sourceKey || !usageKey) return;
+      const usage = computeElectricalUsage(month, week, day, sourceKey);
+      dayData[usageKey] = (usage === '' || usage == null) ? null : usage;
+      if (wrap) {
+        // 週グリッドの編集不可表示セル
+        const disp = wrap.querySelector('[data-autocalc-display="' + _cssEscape(usageKey) + '"][data-day="' + day + '"]');
+        if (disp) disp.textContent = (usage === '' || usage == null) ? '' : String(usage);
+        // 後方互換: 万一 data-efield 入力が残っている場合も更新
+        const input = wrap.querySelector('input[data-efield="' + _cssEscape(usageKey) + '"][data-day="' + day + '"]');
+        if (input) input.value = (usage === '' || usage == null) ? '' : usage;
+      }
+    });
+  }
 }
 
 // Phase 8 修正05: 電気・機械の数値テキスト入力で許容する文字列か判定
@@ -6331,9 +6487,9 @@ function bindEquipInputEvents(kind) {
     if (kind === "elec") {
       const changedKey = ev.target.dataset[dataAttr];
       if (changedKey && Object.values(ELEC_AUTO_CALC_PAIRS).indexOf(changedKey) >= 0) {
-        // 変更された値を tutugaData に反映してから再計算
+        // 変更された値を tutugaData に反映してから、その曜日を起点に fri まで連鎖再計算。
         saveCurrentFormToData();
-        recomputeElecAutoCalc();
+        recomputeElecAutoCalc(ev.target.dataset.day);
       }
     }
   };
