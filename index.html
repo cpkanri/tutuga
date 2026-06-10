@@ -3352,9 +3352,10 @@ function getCurrentFormFields(dayOverride) {
     // 効いて誤爆する。equip の data-eday フィルタと対になる data-day フィルタ。
     const dk = dayOverride || DAY_NUM_TO_STR[currentDay];
     all = all.filter(el => el.dataset.day === dk);
-  } else if (currentSheet === 'water' && currentWaterSub === 'usage') {
-    // フェーズ3a (2026-06-09): 使用量サブも週グリッド化で5曜日分の data-field が同時存在。
-    // data-day で絞り列単位コピー/クリアの誤爆を防止。measure サブは単日のままなので絞らない。
+  } else if (currentSheet === 'water') {
+    // フェーズ3a/3b (2026-06-09): 水質 usage・measure とも週グリッド化で5曜日分の data-field が同時存在。
+    // data-day で絞らないと、列単位の前日コピー/クリアが5日全部に効いて誤爆する。
+    // （equip の data-eday、mech/elec の data-day フィルタと対になる measure/usage 対応）。
     const dk = dayOverride || DAY_NUM_TO_STR[currentDay];
     all = all.filter(el => el.dataset.day === dk);
   }
@@ -4760,48 +4761,11 @@ function getCurrentWaterFieldKeys() {
 }
 
 function saveFormToData() {
-  // 水質: 日単位 (currentWeek, currentDay)
+  // 水質: 週グリッド（usage/measure とも 月〜金5日を一括保存）。
   if (currentSheet !== "water") return;
-  // フェーズ3a (2026-06-09): usage は週グリッド＝5日分を一括保存（measure は従来の単日）。
-  if (currentWaterSub === "usage") { _saveWaterUsageGridToData(); return; }
-  const cell = tutugaData.weeks[currentWeek] && tutugaData.weeks[currentWeek][currentDay];
-  if (!cell) return;
-  const visibleFieldIds = new Set(getCurrentWaterFieldKeys());
-
-  document.querySelectorAll("#formWrap [data-field]").forEach(el => {
-    const key = el.dataset.field;
-    if (!visibleFieldIds.has(key)) return;
-
-    if (el.tagName === "SELECT") {
-      cell[key] = el.value || null;
-      return;
-    }
-    if (el.tagName === "BUTTON" && el.classList.contains("toggle-btn")) {
-      cell[key] = el.dataset.val || null;
-    } else if (el.type === "number") {
-      if (el.value === "") {
-        cell[key] = null;
-      } else {
-        const num = Number(el.value);
-        cell[key] = isNaN(num) ? el.value : num;
-      }
-    } else if (el.type === "text" && DASH_SUPPORT_FIELDS.has(key)) {
-      const v = (el.value || "").trim();
-      if (v === "" || v === "-") {
-        cell[key] = (v === "-") ? "-" : null;
-      } else {
-        const num = Number(v);
-        cell[key] = isNaN(num) ? v : num;
-      }
-    } else if (el.type === "date") {
-      cell[key] = el.value || null;
-    } else if (key === "bikou") {
-      // Phase 18-b: bikou に ISO タイムスタンプが入っていれば空に
-      cell[key] = sanitizeBikou(el.value);
-    } else {
-      cell[key] = el.value;
-    }
-  });
+  // フェーズ3a/3b (2026-06-09): usage・measure とも週グリッド＝5日分を一括保存。単日経路は撤去。
+  if (currentWaterSub === "usage")   { _saveWaterUsageGridToData();   return; }
+  if (currentWaterSub === "measure") { _saveWaterMeasureGridToData(); return; }
 }
 
 // フェーズ3a (2026-06-09): 使用量週グリッド → tutugaData。各 data-day(mon..fri)→日番号(1..5) で
@@ -4832,37 +4796,58 @@ function _saveWaterUsageGridToData() {
   });
 }
 
-function loadDataToForm() {
-  if (currentSheet !== "water") return;
-  // フェーズ3a: usage は週グリッド＝5列すべて復元（measure は従来の単日）。
-  if (currentWaterSub === "usage") { _loadWaterUsageGridToForm(); return; }
-  const cell = tutugaData.weeks[currentWeek] && tutugaData.weeks[currentWeek][currentDay];
-  if (!cell) return;
-  const visibleFieldIds = new Set(getCurrentWaterFieldKeys());
-
-  document.querySelectorAll("#formWrap [data-field]").forEach(el => {
+// フェーズ3b (2026-06-09): 測定週グリッド → tutugaData。各 data-day(mon..fri)→日番号(1..5) で
+//   tutugaData.weeks[currentWeek][dayNum] の該当セルへ書込。月外列は disabled で非保存。
+//   型処理は旧 measure 単日の saveFormToData と逐語一致（bikou=sanitizeBikou / number=数値化 / text=そのまま）。
+//   inspector は per-day 入力欄を持たない（monthInspector のみ）→ applyMonthInspectorToAllDays が展開＝ここでは触れない。
+function _saveWaterMeasureGridToData() {
+  const week = tutugaData.weeks[currentWeek];
+  if (!week) return;
+  const measureKeys = new Set(TUTUGA_FIELDS.water.measureFormFull);
+  document.querySelectorAll("#formWrap [data-field][data-day]").forEach(el => {
+    if (el.disabled) return;                       // 月外列は非保存
     const key = el.dataset.field;
-    if (!visibleFieldIds.has(key)) return;
-
-    const v = cell[key];
-    if (el.tagName === "SELECT") {
-      el.value = (v === null || v === undefined) ? "" : String(v);
-      return;
-    }
-    if (el.tagName === "BUTTON" && el.classList.contains("toggle-btn")) {
-      const val = (v === null || v === undefined) ? "" : String(v);
-      el.dataset.val = val;
-      el.textContent = val || "―";
+    if (!measureKeys.has(key)) return;
+    const dayNum = DAY_STR_TO_NUM[el.dataset.day];
+    if (!dayNum) return;
+    const cell = week[dayNum];
+    if (!cell) return;
+    if (key === "bikou") {
+      // Phase 18-b: bikou に ISO タイムスタンプが入っていれば空に
+      cell[key] = sanitizeBikou(el.value);
+    } else if (el.type === "number") {
+      if (el.value === "") { cell[key] = null; }
+      else { const num = Number(el.value); cell[key] = isNaN(num) ? el.value : num; }
     } else {
-      el.value = (v === null || v === undefined) ? "" : v;
+      cell[key] = el.value;
     }
   });
+}
 
-  // 測定者UI横展開: tutuga_last_inspector の autofill は撤去（A方式へ一本化・月単位欄は renderForm が復元）
+function loadDataToForm() {
+  if (currentSheet !== "water") return;
+  // フェーズ3a/3b: usage・measure とも週グリッド＝5列すべて復元。単日経路は撤去。
+  //   月単位測定者欄(monthInspector)は renderForm が別途復元（data-field 無し＝grid 復元の対象外）。
+  if (currentWaterSub === "usage")   { _loadWaterUsageGridToForm();   return; }
+  if (currentWaterSub === "measure") { _loadWaterMeasureGridToForm(); return; }
 }
 
 // フェーズ3a (2026-06-09): tutugaData.weeks[currentWeek][1..5] → 使用量週グリッドの5列を復元。
 function _loadWaterUsageGridToForm() {
+  const week = tutugaData.weeks[currentWeek];
+  if (!week) return;
+  document.querySelectorAll("#formWrap [data-field][data-day]").forEach(el => {
+    const key = el.dataset.field;
+    const dayNum = DAY_STR_TO_NUM[el.dataset.day];
+    const cell = dayNum ? week[dayNum] : null;
+    const v = cell ? cell[key] : null;
+    el.value = (v === null || v === undefined) ? "" : v;
+  });
+}
+
+// フェーズ3b (2026-06-09): tutugaData.weeks[currentWeek][1..5] → 測定週グリッドの5列を復元。
+//   number/text（bikou）とも el.value へ。inspector は monthInspector 欄として renderForm が別途復元。
+function _loadWaterMeasureGridToForm() {
   const week = tutugaData.weeks[currentWeek];
   if (!week) return;
   document.querySelectorAll("#formWrap [data-field][data-day]").forEach(el => {
@@ -4892,15 +4877,33 @@ function getNavigableFields() {
   if (currentSheet === 'elec') {
     return _getElecWeekNavigableFields();
   }
-  // フェーズ3a (2026-06-09): 水質 usage も週グリッド＝列優先ナビ（measure は従来どおり DOM 順）
+  // フェーズ3a/3b (2026-06-09): 水質 usage・measure とも週グリッド＝列優先ナビ（mon列→…→fri列）。
   if (currentSheet === 'water' && currentWaterSub === 'usage') {
     return _getWaterUsageWeekNavigableFields();
+  }
+  if (currentSheet === 'water' && currentWaterSub === 'measure') {
+    return _getWaterMeasureWeekNavigableFields();
   }
   return _getPerDayNavigableFields();
 }
 
 // 使用量週グリッド: 列優先（mon→tue→wed→thu→fri）、各列内は行順（DOM 順）
 function _getWaterUsageWeekNavigableFields() {
+  const container = document.getElementById('formWrap');
+  if (!container) return [];
+  const dayOrder = ['mon','tue','wed','thu','fri'];
+  const result = [];
+  dayOrder.forEach(dk => {
+    container.querySelectorAll('input[data-field][data-day="' + dk + '"]').forEach(el => {
+      if (_isFieldEnterNavigable(el)) result.push(el);
+    });
+  });
+  return result;
+}
+
+// 測定週グリッド: 列優先（mon→tue→wed→thu→fri）、各列内は行順（DOM 順）。末尾で次週へ。
+//   bikou は type=text の input[data-field][data-day] なので usage と同一クエリで拾える。
+function _getWaterMeasureWeekNavigableFields() {
   const container = document.getElementById('formWrap');
   if (!container) return [];
   const dayOrder = ['mon','tue','wed','thu','fri'];
@@ -5131,38 +5134,10 @@ function markClean() {
 function renderDayTabs() {
   const container = document.getElementById("dayTabs");
   if (!container) return;
-  // フェーズ3a (2026-06-09): usage は週グリッド＝5日同時表示なので日タブを非表示（measure は従来どおり表示）。
-  if (currentWaterSub === 'usage') { container.innerHTML = ""; container.style.display = "none"; return; }
-  container.style.display = "";
-  const weekSlots = monthWeeks[currentWeek - 1];
-  if (!weekSlots) {
-    container.innerHTML = `<div style="padding:14px;color:#999;font-size:13px;">この週は該当する日がありません</div>`;
-    return;
-  }
-  if (!weekSlots[currentDay]) {
-    for (let d = 1; d <= 5; d++) { if (weekSlots[d]) { currentDay = d; break; } }
-  }
-  const labelMap = { 1: "月", 2: "火", 3: "水", 4: "木", 5: "金" };
-  let html = "";
-  for (let d = 1; d <= 5; d++) {
-    const dateObj = weekSlots[d];
-    if (!dateObj) continue;
-    const isHol = _tutugaIsHolidayWD(currentWeek, d);
-    const cls = (d === currentDay ? "active" : "") + (isHol ? " day-holiday" : "");
-    const dateStr = formatDateShort(dateObj) + "(" + labelMap[d] + ")";
-    const filled = isDayFilledForSub(currentWeek, d, currentWaterSub) ? "✓" : "";
-    const holBadge = isHol ? `<span class="tutuga-holiday-badge">祝</span>` : "";
-    html += `<button type="button" data-day="${d}" class="${cls.trim()}"><span class="check">${filled}</span>${dateStr}${holBadge}</button>`;
-  }
-  container.innerHTML = html;
-  container.querySelectorAll("button").forEach(btn => {
-    btn.addEventListener("click", () => {
-      saveFormToData();
-      saveCurrentToLocalStorage();  // Phase 8 修正03: 切替前に localStorage 保存
-      currentDay = Number(btn.dataset.day);
-      renderAll();
-    });
-  });
+  // フェーズ3a/3b (2026-06-09): 水質は usage/measure とも週グリッド＝月〜金5日を1画面表示。
+  //   単日切替の日タブ UI は廃止し常に非表示（単日経路撤去）。
+  container.innerHTML = "";
+  container.style.display = "none";
 }
 
 // 水質: 指定日の指定サブタブ (usage/measure) に1つでも値があるか
@@ -5351,39 +5326,22 @@ function renderForm() {
     //   翌週月曜セルは送信層 _tutugaBuildWaterUsagePayload が自動流用するため入力 UI 不要）。
     html = buildWaterUsageWeekGridHtml();
   } else {
-    // 下段水質測定: 月単位測定者（最上部）+ グループごとにセクション
-    // 測定者UI横展開 (A方式): id=monthInspector・data-field 無し（[data-field] 収集/復元の対象外）
-    html += `<div class="section"><div class="section-header">測定者（今月）</div>`;
+    // フェーズ3b (2026-06-09): 水質測定も「月〜金5日を1画面の週グリッド」へ。
+    //   最上部に月単位測定者（id=monthInspector・data-field 無し＝[data-field] 収集/復元/grid 保存の対象外）を
+    //   1個だけ置き、その下に measure 週グリッド（9数値グループ＋備考 × 月〜金）。inspector の per-day 展開は
+    //   applyMonthInspectorToAllDays（実測日のみ）に委譲＝無改修。nextMon 列は作らない。
+    // 測定者UI横展開 (A方式): monthInspector は自前パディング div で包む（grid wrap は自前の左右マージンを持つ）。
+    html += `<div style="padding:12px 12px 0;"><div class="section"><div class="section-header">測定者（今月）</div>`;
     html += `<div class="field"><span class="label">測定者名</span><span class="unit"></span><input type="text" id="monthInspector" placeholder="今月の測定者名"></div>`;
-    html += `</div>`;
-    MEASURE_FORM_GROUPS.forEach(g => {
-      html += `<div class="section"><div class="section-header">${escapeHtml(g.title)}</div>`;
-      g.keys.forEach(key => {
-        const meta = MEASURE_FIELD_META[key] || { label: key, unit: "", type: "text" };
-        html += `<div class="field"><span class="label">${escapeHtml(meta.label)}</span><span class="unit">${escapeHtml(meta.unit || "")}</span>`;
-        if (meta.type === "number") {
-          html += `<input type="number" inputmode="decimal" step="${meta.step || "1"}" data-field="${key}">`;
-        } else if (meta.type === "select_dropdown") {
-          const options = meta.options || [];
-          let selectHtml = `<select class="dropdown-select" data-field="${key}"><option value="">―</option>`;
-          options.forEach(opt => { selectHtml += `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`; });
-          selectHtml += `</select>`;
-          html += selectHtml;
-        } else if (meta.type === "text") {
-          const placeholder = (key === "inspector") ? "氏名" : "";
-          html += `<input type="text" data-field="${key}" placeholder="${escapeHtml(placeholder)}">`;
-        }
-        html += `</div>`;
-      });
-      html += `</div>`;
-    });
+    html += `</div></div>`;
+    html += buildWaterMeasureWeekGridHtml();
   }
 
   wrap.innerHTML = html;
 
-  // フェーズ3a: usage 週グリッドは .equip-table-wrap が左右マージンを持つため form-wrap padding を外す。
-  //   measure は従来の縦リストなので既定 padding に戻す。
-  wrap.style.padding = (currentWaterSub === 'usage') ? '0' : '';
+  // フェーズ3a/3b: usage/measure とも週グリッド＝.equip-table-wrap が左右マージンを持つため
+  //   form-wrap の padding は外す（measure は monthInspector を自前パディング div で包む）。
+  wrap.style.padding = '0';
 
   // 測定者UI横展開: 月単位測定者欄（data-field 無し）の値復元 + 同期リスナー（再描画ごとに新要素へ再配線）
   const monthInspectorEl = document.getElementById("monthInspector");
@@ -5441,16 +5399,15 @@ function renderForm() {
     });
   });
 
-  // フェーズ3a: usage 週グリッドの列見出し 個別「前日コピー」「クリア」を配線（mech/elec と同方式）。
-  //   dayOverride により列（曜日）単位で作用。getCurrentFormFields が usage を data-day で絞るため非波及。
-  if (currentWaterSub === 'usage') {
-    wrap.querySelectorAll('.btn-equip-day-copy').forEach(btn => {
-      btn.addEventListener('click', () => { copyPreviousDayToCurrent(btn.dataset.day); });
-    });
-    wrap.querySelectorAll('.btn-equip-day-clear').forEach(btn => {
-      btn.addEventListener('click', () => { clearCurrentForm(btn.dataset.day); });
-    });
-  }
+  // フェーズ3a/3b: usage/measure とも週グリッドの列見出し 個別「前日コピー」「クリア」を配線（mech/elec と同方式）。
+  //   dayOverride により列（曜日）単位で作用。getCurrentFormFields が water を data-day で絞るため非波及。
+  //   前日コピーの inspector/bikou 除外は shouldSkipFieldForCopy（water は両者 skip）が自動で担保。
+  wrap.querySelectorAll('.btn-equip-day-copy').forEach(btn => {
+    btn.addEventListener('click', () => { copyPreviousDayToCurrent(btn.dataset.day); });
+  });
+  wrap.querySelectorAll('.btn-equip-day-clear').forEach(btn => {
+    btn.addEventListener('click', () => { clearCurrentForm(btn.dataset.day); });
+  });
 
   // Phase 8 修正04A: input/select の単一フィールド変更を Undo スタックに記録
   attachUndoTracking(wrap);
@@ -5522,6 +5479,71 @@ function buildWaterUsageCellHtml(key, dayKey, disabledAttr) {
   return `<input type="number" inputmode="decimal" step="0.01" data-field="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
 }
 
+// =====================================================
+// フェーズ3b (2026-06-09): 水質「測定」週グリッド HTML 生成（雛形＝使用量グリッド）。
+//   行＝MEASURE_FORM_GROUPS の9数値グループ（28 number 項目＝終沈6・do1/do2 含む）＋備考(bikou=text)。
+//   各グループは section-header 行（colspan=6）で区切る。列＝項目＋月〜金（nextMon 列は作らない）。
+//   各セルに data-field（既存キー）＋ data-day（mon..fri）。型は MEASURE_FIELD_META[key].type で number/text。
+//   inspector は行に含めない（最上部の月単位 monthInspector を renderForm が別途描画）。
+//   列の活性/祝日/月外は usage と同源（monthWeeks[currentWeek-1] のスロット ＋ _tutugaIsHolidayWD）。
+//   月外列＝disabled+day-disabled（非保存）、祝日列＝col/cell-holiday（入力可・送信は per-day）。
+// =====================================================
+function buildWaterMeasureWeekGridHtml() {
+  const dayLabels = { mon: "月", tue: "火", wed: "水", thu: "木", fri: "金" };
+  const weekSlots = monthWeeks[currentWeek - 1] || {};
+
+  const cols = [1, 2, 3, 4, 5].map(d => {
+    const dk = DAY_NUM_TO_STR[d];
+    const date = weekSlots[d] || null;
+    const enabled = !!date;
+    const isHol = enabled && _tutugaIsHolidayWD(currentWeek, d);
+    return { d, dk, date, enabled, isHol };
+  });
+
+  let headHtml = '<th>項目</th>';
+  cols.forEach(c => {
+    const holBadge = c.isHol ? `<span class="tutuga-holiday-badge">祝</span>` : "";
+    const dateStr = c.date
+      ? `<br><span style="font-size:10px;font-weight:normal;opacity:.7;">${c.date.getMonth() + 1}/${c.date.getDate()}${holBadge}</span>`
+      : "";
+    const dayActions = c.date
+      ? `<div class="equip-day-actions"><button type="button" class="btn-equip-day-copy" data-day="${c.dk}" title="${dayLabels[c.dk]}曜日に前日コピー">前日コピー</button><button type="button" class="btn-equip-day-clear" data-day="${c.dk}" title="${dayLabels[c.dk]}曜日をクリア">クリア</button></div>`
+      : "";
+    headHtml += `<th class="col-${c.dk}${c.isHol ? ' col-holiday' : ''}">${dayLabels[c.dk]}${dateStr}${dayActions}</th>`;
+  });
+
+  let bodyHtml = "";
+  MEASURE_FORM_GROUPS.forEach(g => {
+    bodyHtml += `<tr class="section-header"><td colspan="6">${escapeHtml(g.title)}</td></tr>`;
+    g.keys.forEach(key => {
+      const meta = MEASURE_FIELD_META[key] || { label: key, unit: "" };
+      const unit = meta.unit ? `<span class="item-unit">${escapeHtml(meta.unit)}</span>` : "";
+      bodyHtml += `<tr><td><span class="item-label">${escapeHtml(meta.label)}</span>${unit}</td>`;
+      cols.forEach(c => {
+        const tdCls = ((c.enabled ? "" : "day-disabled") + (c.isHol ? " cell-holiday" : "")).trim();
+        const tdClsAttr = tdCls ? ` class="${tdCls}"` : "";
+        const disabledAttr = c.enabled ? "" : " disabled";
+        bodyHtml += `<td${tdClsAttr}>${buildWaterMeasureCellHtml(key, c.dk, disabledAttr)}</td>`;
+      });
+      bodyHtml += `</tr>`;
+    });
+  });
+
+  return `<div class="equip-table-wrap"><table class="equip-table" id="waterMeasureTable">`
+       + `<thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+}
+
+// 測定グリッドの1セル。MEASURE_FIELD_META[key].type で型分岐（buildWaterUsageCellHtml と同方針）。
+//   number → number/step=meta.step、text → text（bikou）。data-field + data-day を付与。
+function buildWaterMeasureCellHtml(key, dayKey, disabledAttr) {
+  const keyEsc = escapeHtml(key);
+  const meta = MEASURE_FIELD_META[key] || { type: "text" };
+  if (meta.type === "number") {
+    return `<input type="number" inputmode="decimal" step="${meta.step || "1"}" data-field="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
+  }
+  return `<input type="text" data-field="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
+}
+
 // 手順2-1/2-2: 水フォームに祝日ノートと「埋まっているべき空欄」ハイライトを反映。
 // 判定は _tutugaIsGapCell（②祝日ブランク・dayHasMeasurement と整合）を通すため、
 // 祝日の積算空欄・非測定日の do1/do2 を誤検知しない。
@@ -5530,46 +5552,16 @@ function applyWaterFormUsabilityCues() {
   const wrap = document.getElementById('formWrap');
   if (!wrap) return;
 
-  // フェーズ3a (2026-06-09): usage 週グリッドは列ごとに空欄ハイライトを適用（各 data-day の曜日で判定）。
-  //   祝日シェーディングはグリッド HTML 側(col/cell-holiday)で対応済。単日の祝日ノートは出さない。
-  //   判定は既存 _tutugaIsGapCell（祝日積算空欄・非測定日を誤検知しない）を流用。
-  if (currentWaterSub === 'usage') {
-    const note = document.getElementById('tutugaHolidayNote');
-    if (note) note.remove();
-    wrap.querySelectorAll('[data-field][data-day]').forEach(function (el) {
-      const key = el.dataset.field;
-      const dnum = DAY_STR_TO_NUM[el.dataset.day];
-      el.classList.toggle('tutuga-gap', dnum ? _tutugaIsGapCell(currentWeek, dnum, key) : false);
-    });
-    return;
-  }
-
-  // measure 単日（既存ロジック）
-  const isHol = _tutugaIsHolidayWD(currentWeek, currentDay);
-
-  // 2-1 祝日ノート
-  let note = document.getElementById('tutugaHolidayNote');
-  if (isHol) {
-    if (!note) {
-      note = document.createElement('div');
-      note.id = 'tutugaHolidayNote';
-      note.className = 'tutuga-holiday-note';
-      wrap.insertBefore(note, wrap.firstChild);
-    }
-    let hname = '会社休日';
-    try {
-      const d = getDateForDay(currentWeek, currentDay);
-      if (typeof getHolidayName === 'function') hname = getHolidayName(d) || '会社休日';
-    } catch (e) {}
-    note.innerHTML = '🟣 <b>祝日（' + escapeHtml(hname) + '）</b> ― 積算メーター（返送汚泥・放流・固形塩素 等）は空欄が正常です。';
-  } else if (note) {
-    note.remove();
-  }
-
-  // 2-2 空欄ハイライト（種別・祝日・測定日ロジックは _tutugaIsGapCell に集約）
-  wrap.querySelectorAll('[data-field]').forEach(function (el) {
+  // フェーズ3a/3b (2026-06-09): usage/measure とも週グリッド＝列ごとに空欄ハイライトを適用（各 data-day の曜日で判定）。
+  //   祝日シェーディングはグリッド HTML 側(col/cell-holiday)で対応済。単日の祝日ノートは出さない（撤去）。
+  //   判定は既存 _tutugaIsGapCell に集約＝祝日の積算空欄・非測定日の do1/do2 等を誤検知しない
+  //   （measure は TUTUGA_MEASURE_EXPECTED_SET ∧ dayHasMeasurement、終沈6/bikou/inspector は対象外）。
+  const note = document.getElementById('tutugaHolidayNote');
+  if (note) note.remove();
+  wrap.querySelectorAll('[data-field][data-day]').forEach(function (el) {
     const key = el.dataset.field;
-    el.classList.toggle('tutuga-gap', _tutugaIsGapCell(currentWeek, currentDay, key));
+    const dnum = DAY_STR_TO_NUM[el.dataset.day];
+    el.classList.toggle('tutuga-gap', dnum ? _tutugaIsGapCell(currentWeek, dnum, key) : false);
   });
 }
 
@@ -5754,7 +5746,7 @@ function renderAll() {
   // 「保存」「元に戻す」は全タブ共通で表示維持。
   // フェーズ1/2 (2026-06-08): 機械・電気も週グリッド化で列見出しに個別ボタンを持つため非表示対象に追加。
   const usesPerColumnDayBtns = (currentSheet === "equip" || currentSheet === "mech" || currentSheet === "elec"
-    || (currentSheet === "water" && currentWaterSub === "usage"));  // フェーズ3a: usage 週グリッドも列見出しに個別ボタン
+    || currentSheet === "water");  // フェーズ3a/3b: 水質 usage/measure とも週グリッド＝列見出しに個別ボタン
   if (btnCopy)  btnCopy.style.display  = usesPerColumnDayBtns ? "none" : "";
   if (btnClear) btnClear.style.display = usesPerColumnDayBtns ? "none" : "";
 
