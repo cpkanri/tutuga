@@ -309,9 +309,8 @@ var TUTUGA_MECH3_ROW_W1 = {
 // =====================================================================
 
 // Phase 8 修正02 Step3: 水質シート用 第1週月曜（前月跨ぎあり、土日なら翌週月曜）
-// 現状の Excel テンプレートはセル位置（行・列）固定で日付ヘッダ自体は静的なため、
-// 出力時に日付値を再計算して書き込むことは不要。本ヘルパは将来日付ヘッダの動的書込が
-// 必要になった場合の参照実装として用意する。
+// 日常水質 I3（第1週月曜）の動的書込に使用する（_tutugaWriteMonthBaseDates）。
+// index.html の getWaterFirstWeekMonday と同一規則を維持すること。
 function _tutugaGetWaterFirstMonday(monthStr) {
   var parts = String(monthStr || '').split('-').map(Number);
   var y = parts[0], m = parts[1];
@@ -766,7 +765,7 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
 // =====================================================================
 // テンプレに静的に埋め込まれた3月の datetime 値を、対象年月に応じて書き換える。
 // 起点は 2 セルだけで全シート連動：
-//   - 日常水質 I3        : 第1週ページ起点 (前週月曜、前月跨ぎあり)
+//   - 日常水質 I3        : 第1週月曜（当月1日を含む週の月曜。土日始まりなら翌月曜。前月跨ぎあり）
 //                          → J3-N3, I55, I107, I159, I211 (式) 連鎖更新
 //                          → 日常機械設備 E3-I3, E180 等 (=日常水質!I3+...) 連鎖更新
 //                          → 日常電気設備 G2-K2 (=日常水質!I3+...) 連鎖更新
@@ -782,19 +781,17 @@ function _tutugaWriteMonthBaseDates(wb, monthStr) {
   if (!y || !m) return;
   var lastDay = new Date(y, m, 0).getDate();
 
-  // ===== 日常水質 I3 = 対象月内最初の月曜の前週月曜（前月跨ぎあり） =====
+  // ===== 日常水質 I3 = 水質第1週月曜（当月1日を含む週の月曜。1日が土日なら翌月曜） =====
+  // バグ修正(2026-06-11): 旧実装「当月内最初の月曜 -7日」は1日が月/土/日の月で
+  // 丸1週前倒しになっていた（例: 2026-06 → 5/25）。テンプレ原本(令和8年3月)の
+  // I3 は 3/2 = 第1週月曜であり、index.html の getWaterFirstWeekMonday と同一規則。
+  // J3-N3 / I55-I211 / 機械 E3-I3 / 電気 G2-K2 は式参照のため自動追従する。
   var wsWater = wb.worksheets[TUTUGA_SHEET_IDX.daily_water];
   if (wsWater) {
-    var monthFirst = new Date(y, m - 1, 1);
-    var firstMonday = new Date(monthFirst);
-    while (firstMonday.getDay() !== 1) {
-      firstMonday.setDate(firstMonday.getDate() + 1);
-    }
-    var prevMonday = new Date(firstMonday);
-    prevMonday.setDate(prevMonday.getDate() - 7);
+    var week1Monday = _tutugaGetWaterFirstMonday(monthStr);
 
     var i3 = wsWater.getCell('I3');
-    i3.value = _tutugaToUtcDate(prevMonday);
+    i3.value = _tutugaToUtcDate(week1Monday);
     // テンプレ既存書式を明示再適用（ExcelJS のデフォルト書式上書き対策）
     i3.numFmt = 'm"月"d"日("aaa")"';
   }
