@@ -55,20 +55,6 @@ header h1 {
   flex: 0 1 auto;
   min-width: 130px;
 }
-/* B-6: 接続中・ログアウトを対象年月の右に並べる */
-.header-controls .conn-status {
-  margin-left: auto;
-  align-self: flex-end;
-}
-.header-controls .user-name {
-  align-self: flex-end;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-}
-.header-controls .logout-btn {
-  align-self: flex-end;
-}
 .header-controls label span { opacity: 0.85; }
 .header-controls input, .header-controls select {
   padding: 8px 10px;
@@ -472,26 +458,77 @@ input[type="number"] {
 .login-error.visible { display: block; }
 body.login-active { overflow: hidden; }
 
-/* ヘッダー内 ユーザー情報＆ログアウト */
-.user-info {
-  display: none;
+/* ===== ヘッダー上部: タイトルとユーザー情報を横並び（上殿構成へ統一, 2026-06-12） ===== */
+.header-top {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
   gap: 8px;
-  font-size: 13px;
-  margin-top: 6px;
 }
-.user-info .user-name { font-weight: 600; }
-.user-info .logout-btn {
-  padding: 4px 10px;
-  background: rgba(255,255,255,0.15);
+.header-top h1 {
+  margin: 0;
+  font-size: 18px;
+  flex: 1 1 auto;
+  min-width: 200px;
+}
+
+/* ユーザー情報エリア: 接続状態 + ユーザー名 + ログアウト */
+header .user-info {
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  font-size: 13px;
+}
+
+/* インライン接続状態 */
+.conn-status-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.9);
+}
+.conn-status-inline .conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+  display: inline-block;
+}
+.conn-status-inline .conn-dot.online { background: #2ecc71; }
+.conn-status-inline .conn-dot.offline { background: #e74c3c; }
+
+.user-info .user-name {
+  font-size: 13px;
+  color: rgba(255,255,255,0.95);
+}
+
+.btn-logout {
+  background: rgba(255,255,255,0.2);
   color: white;
   border: 1px solid rgba(255,255,255,0.3);
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
   cursor: pointer;
   font-family: inherit;
 }
-.user-info .logout-btn:hover { background: rgba(255,255,255,0.25); }
+
+/* スマホ対応: 狭い画面で header-top を縦並びに（上殿 480px ルール移植） */
+@media (max-width: 480px) {
+  .header-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  header .user-info {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
 
 /* 日付入力欄のラベル差別化 */
 .date-inspector-wrap {
@@ -581,33 +618,7 @@ body.login-active { overflow: hidden; }
   50% { opacity: 0.5; }
 }
 
-/* ===== 接続状態バッジ ===== */
-.conn-status {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 8px;
-  background: rgba(255,255,255,0.12);
-  color: white;
-  border: 1px solid rgba(255,255,255,0.3);
-  border-radius: 6px;
-  font-size: 11px;
-  font-family: inherit;
-  line-height: 1.2;
-  user-select: none;
-}
-.conn-status.online {
-  background: rgba(76,175,80,0.3);
-  border-color: rgba(76,175,80,0.7);
-}
-.conn-status.offline {
-  background: rgba(244,67,54,0.35);
-  border-color: rgba(244,67,54,0.8);
-  animation: conn-pulse 2s infinite;
-}
-@keyframes conn-pulse {
-  0%,100% { box-shadow: 0 0 0 0 rgba(244,67,54,0.5); }
-  50%     { box-shadow: 0 0 0 4px rgba(244,67,54,0); }
-}
+/* （旧ピル型 .conn-status バッジは上殿構成への統一でドット式 .conn-status-inline に置換・削除済み） */
 /* オフライン警告バー（画面上部） */
 .offline-banner {
   display: none;
@@ -1343,21 +1354,27 @@ body.login-active { overflow: hidden; }
 
 <!-- ヘッダー -->
 <header>
-  <h1>筒賀水質管理センター 週報入力</h1>
+  <!-- ヘッダー統一 (2026-06-12): 上殿構成 — タイトル行右に接続状態ドット＋ユーザー名＋ログアウト、対象年月は全幅 -->
+  <div class="header-top">
+    <h1>筒賀水質管理センター 週報入力</h1>
+    <div class="user-info" id="userInfo" style="display:none;">
+      <div class="conn-status-inline" id="connStatus">
+        <span class="conn-dot" id="connDot"></span>
+        <span id="connLabel">接続確認中...</span>
+      </div>
+      <span class="user-name" id="userName"></span>
+      <button type="button" class="btn-logout" id="btnLogout">ログアウト</button>
+    </div>
+  </div>
   <div class="header-controls">
     <label>
       <span>対象年月</span>
       <input type="month" id="targetMonth" style="display:none">
       <button type="button" id="btnTargetMonth" class="btn-header-action">📅 ----</button>
     </label>
-    <!-- B-6: 接続中・ログアウトを対象年月の右に配置 -->
-    <span class="conn-status" id="connStatus" title="接続状態">🟡 未接続</span>
-    <span class="user-name" id="userName"></span>
-    <button type="button" class="logout-btn" id="btnLogout">ログアウト</button>
   </div>
-  <div class="user-info" id="userInfo">
-    <!-- Phase 17 ヘッダー B デザイン: 2 グループ統一 -->
-    <div class="header-btn-area">
+  <!-- Phase 17 ヘッダー B デザイン: 2 グループ統一（#userInfo はタイトル行へ移設済み・ボタンエリアは常時表示） -->
+  <div class="header-btn-area">
       <div class="header-btn-col">
         <div class="header-btn-group-label">データ</div>
         <div class="header-btn-group">
@@ -1394,7 +1411,6 @@ body.login-active { overflow: hidden; }
         </div>
       </div>
     </div>
-  </div>
 </header>
 
 <!-- 対象年月カスタムモーダル (上殿 Phase 17d 流用) -->
@@ -1599,20 +1615,20 @@ let _connState = 'unknown'; // 'online' | 'offline' | 'unknown'
 
 function setConnectionStatus(online) {
   _connState = online ? 'online' : 'offline';
-  const badge = document.getElementById('connStatus');
+  // ヘッダー統一 (2026-06-12): 旧ピル型バッジ → 上殿方式の connDot/connLabel
+  const dot = document.getElementById('connDot');
+  const label = document.getElementById('connLabel');
   const banner = document.getElementById('offlineBanner');
-  if (badge) {
-    badge.classList.remove('online', 'offline');
+  if (dot && label) {
     if (online) {
-      badge.classList.add('online');
-      badge.textContent = '🟢 接続中';
-      badge.title = 'サーバーに接続されています';
+      dot.className = 'conn-dot online';
+      label.textContent = 'サーバー接続済み';
     } else {
-      badge.classList.add('offline');
-      badge.textContent = '🔴 オフライン';
-      badge.title = 'サーバーに接続できません';
+      dot.className = 'conn-dot offline';
+      label.textContent = 'オフライン（端末保存のみ）';
     }
   }
+  // 筒賀固有: オフライン警告バナーの表示切替は維持（上殿には無い処理）
   if (banner) {
     if (online) banner.classList.remove('visible');
     else banner.classList.add('visible');
