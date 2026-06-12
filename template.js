@@ -399,7 +399,24 @@ function _tutugaWriteCell(ws, row, col, value) {
     value = '-';
   }
   if (value === '-') {
-    try { cell.numFmt = '@'; } catch (e) {}
+    // 共有 style 破壊防止のため新 style オブジェクト割当（Object.assign）で numFmt を設定
+    try { cell.style = Object.assign({}, cell.style, { numFmt: '@' }); } catch (e) {}
+    cell.value = value;
+    return;
+  }
+  // 2026-06-12 B方式(3): 数値様文字列は数値として書込（AVERAGE・集計式に算入させる）。
+  // 小数部付き ("16.0" 等) は書込先が General のときのみ小数桁 numFmt を付与（テンプレ書式優先）。
+  if (typeof value === 'string') {
+    var s = value.trim();
+    var num = Number(s);
+    if (s !== '' && !isNaN(num) && /^-?\d+(\.\d+)?$/.test(s)) {
+      cell.value = num;
+      var decM = s.match(/\.(\d+)$/);
+      if (decM && (!cell.numFmt || cell.numFmt === 'General')) {
+        cell.style = Object.assign({}, cell.style, { numFmt: '0.' + new Array(decM[1].length + 1).join('0') });
+      }
+      return;
+    }
   }
   cell.value = value;
 }

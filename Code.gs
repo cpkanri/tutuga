@@ -44,7 +44,7 @@ var HEADERS_EQUIPMENT     = ['月', '週', 'データJSON', '更新日時'];
 var TUTUGA_USERS = [
   { id: 'cpkanri', password: 'cptutuga', name: '筒賀' }
 ];
-var PUBLIC_ACTIONS = { ping: 1, login: 1, verifyToken: 1 };
+var PUBLIC_ACTIONS = { ping: 1, login: 1, verifyToken: 1, adminUnifyDataFormat: 1 };
 
 // ===== 曜日マッピング =====
 var DAYS         = ['mon', 'tue', 'wed', 'thu', 'fri'];
@@ -131,6 +131,76 @@ function getOrCreateSheet(name, headers) {
   return sh;
 }
 
+// B方式 (2026-06-12): update 行群のデータ値列を '@' に固定する共通ヘルパー（kamitono 横展開）。
+// min..max 行スパンを範囲単位1コールで適用（セル単位ループ禁止・バッチ性維持）。
+function applyDataFormatSpan_(sheet, updates, startCol, numCols) {
+  if (!updates || updates.length === 0) return;
+  var rMin = updates[0].r, rMax = updates[0].r;
+  for (var i = 1; i < updates.length; i++) {
+    if (updates[i].r < rMin) rMin = updates[i].r;
+    if (updates[i].r > rMax) rMax = updates[i].r;
+  }
+  sheet.getRange(rMin, startCol, rMax - rMin + 1, numCols).setNumberFormat('@');
+}
+// B方式 (2026-06-12): 全データシートのデータJSON列へ '@' を一括適用する backfill（kamitono 横展開・検証内蔵版）。
+// idempotent・データ非破壊。データ列は JSON 文字列のみのため型変化も原則発生しない（typeOnlyDiffs で確認）。
+// testOnly=true: 各シート先頭1データ行のみ / sample=true: 書式適用せず値・型を返す / proof=true: 一時行で '16.0' 保持実証。
+function backfillDataFormatText_(opts) {
+  opts = opts || {};
+  var ss = SpreadsheetApp.getActiveSpreadsheet(); // getOrCreateSheet と同一の取得方法
+  var targets = [
+    { name: SHEET_WATER_USAGE,   startCol: 3, numCols: 1 },
+    { name: SHEET_WATER_MEASURE, startCol: 4, numCols: 1 },
+    { name: SHEET_EQUIPMENT,     startCol: 3, numCols: 1 },
+    { name: SHEET_ELECTRICAL,    startCol: 4, numCols: 1 },
+    { name: SHEET_MECHANICAL,    startCol: 4, numCols: 1 }
+  ];
+  var report = { status: 'OK', mode: opts.sample ? 'sample' : (opts.testOnly ? 'test' : 'full'), sheets: [] };
+  for (var t = 0; t < targets.length; t++) {
+    var spec = targets[t], sh = ss.getSheetByName(spec.name);
+    if (!sh) { report.sheets.push({ name: spec.name, error: 'シートなし' }); report.status = 'ERROR'; continue; }
+    var lastRow = sh.getLastRow();
+    var rows = opts.testOnly ? Math.min(1, lastRow - 1) : Math.max(sh.getMaxRows(), lastRow) - 1;
+    if (rows < 1) { report.sheets.push({ name: spec.name, skipped: 'データ行なし' }); continue; }
+    var rng = sh.getRange(2, spec.startCol, rows, spec.numCols);
+    if (opts.sample) {
+      var sv = rng.getValues();
+      var firstR = sv[0] || [], lastR = sv[Math.max(lastRow - 2, 0)] || [];
+      report.sheets.push({ name: spec.name,
+        first: firstR.map(function(v){ return (typeof v + ':' + v).slice(0, 120); }),
+        last: lastR.map(function(v){ return (typeof v + ':' + v).slice(0, 120); }) });
+      continue;
+    }
+    var before = rng.getValues();
+    rng.setNumberFormat('@');
+    var after = rng.getValues();
+    var typeOnly = 0, strDiffs = 0, samples = [];
+    for (var i = 0; i < before.length; i++) {
+      for (var j = 0; j < before[i].length; j++) {
+        var b = before[i][j], a = after[i][j];
+        if (String(b) !== String(a)) {
+          strDiffs++;
+          if (samples.length < 5) samples.push({ r: i + 2, c: spec.startCol + j, before: String(b).slice(0, 80), after: String(a).slice(0, 80) });
+        } else if (typeof b !== typeof a) { typeOnly++; }
+      }
+    }
+    var entry = { name: spec.name, rows: rows, cols: spec.numCols, typeOnlyDiffs: typeOnly, valueStrDiffs: strDiffs };
+    if (strDiffs > 0) { entry.diffSamples = samples; report.status = 'VALUE_DIFF'; }
+    if (opts.proof && !opts.testOnly) {
+      var mr0 = sh.getMaxRows();
+      sh.insertRowsAfter(mr0, 1);
+      var pc = sh.getRange(mr0 + 1, spec.startCol);
+      pc.setNumberFormat('@');
+      pc.setValues([['16.0']]);
+      var back = pc.getValues()[0][0];
+      entry.proof = { value: back, type: typeof back, preserved: back === '16.0' };
+      sh.deleteRow(mr0 + 1);
+      if (!entry.proof.preserved) report.status = 'PROOF_FAIL';
+    }
+    report.sheets.push(entry);
+  }
+  return report;
+}
 // 連続する行を 1 回の setValues にまとめて batched 書込する (N+1 根絶用)。
 // shiwagi Phase 25-c-γ / kamitono 25-c-β の flushRowUpdates と同手法。
 // updates = [{ r: 絶対行番号(1始まり), v: [列値...] }]。startCol は書込開始列(1始まり)。
@@ -321,6 +391,12 @@ function doPost(e) {
     if (a === 'saveElectrical')  return saveElectrical(data);
     if (a === 'saveMechanical')  return saveMechanical(data);
     if (a === 'saveEverything')  return saveEverything(data);
+    // B方式 backfill 管理アクション。confirm 必須。clasp run 未設定のため curl 実行用に PUBLIC 登録。
+    // idempotent(setNumberFormat のみ・データ非破壊)。完了後は撤去して再デプロイ（kake f64fec1 同型）。
+    if (a === 'adminUnifyDataFormat') {
+      if ((data && data.confirm) !== 'datafmt') return jsonResponse({ status: 'ERROR', reason: 'confirm 不一致' });
+      return jsonResponse(backfillDataFormatText_({ testOnly: !!data.testOnly, proof: !!data.proof, sample: !!data.sample }));
+    }
     return jsonResponse({ error: '不明なアクション: ' + a });
   } catch (err) {
     return jsonResponse({ error: err.message });
@@ -451,9 +527,13 @@ function saveWaterUsage(data) {
 
   // --- batched 書込 ---
   // 水質上段
+  // B方式 (2026-06-12): データJSON列(col3)を '@' に固定してから書込（キー列1-2・更新日時列4 は対象外）
+  applyDataFormatSpan_(sh, wuUpdates, 3, 1);
   flushRowUpdates(sh, wuUpdates, 1);
   if (wuAppends.length > 0) {
-    sh.getRange(sh.getLastRow() + 1, 1, wuAppends.length, 4).setValues(wuAppends);
+    var wuStart = sh.getLastRow() + 1;
+    sh.getRange(wuStart, 3, wuAppends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
+    sh.getRange(wuStart, 1, wuAppends.length, 4).setValues(wuAppends);
   }
   // 電気: 既存行更新 (dirty のみ) + 新規行一括追加 (出現順)
   var elecUpdates = [];
@@ -463,13 +543,17 @@ function saveWaterUsage(data) {
       elecUpdates.push({ r: e.r, v: [month, e.w, e.dayName, JSON.stringify(e.json), now] });
     }
   }
+  // B方式 (2026-06-12): 電気データJSON列(col4)を '@' に固定してから書込
+  applyDataFormatSpan_(elecSh, elecUpdates, 4, 1);
   flushRowUpdates(elecSh, elecUpdates, 1);
   if (elecNewOrder.length > 0) {
     var elecAppends = elecNewOrder.map(function (key) {
       var n = elecNew[key];
       return [month, n.w, n.dayName, JSON.stringify(n.json), now];
     });
-    elecSh.getRange(elecSh.getLastRow() + 1, 1, elecAppends.length, 5).setValues(elecAppends);
+    var elStart = elecSh.getLastRow() + 1;
+    elecSh.getRange(elStart, 4, elecAppends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
+    elecSh.getRange(elStart, 1, elecAppends.length, 5).setValues(elecAppends);
   }
 
   return jsonResponse({
@@ -535,9 +619,13 @@ function saveWaterMeasure(data) {
       cnt++;
     }
   }
+  // B方式 (2026-06-12): データJSON列(col4)を '@' に固定してから書込（キー列1-3・更新日時列5 は対象外）
+  applyDataFormatSpan_(sh, updates, 4, 1);
   flushRowUpdates(sh, updates, 1);
   if (appends.length > 0) {
-    sh.getRange(sh.getLastRow() + 1, 1, appends.length, 5).setValues(appends);
+    var apStart = sh.getLastRow() + 1;
+    sh.getRange(apStart, 4, appends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
+    sh.getRange(apStart, 1, appends.length, 5).setValues(appends);
   }
   return jsonResponse({ status: 'ok', message: '水質下段 ' + cnt + ' 日保存', savedCount: cnt });
 }
@@ -573,9 +661,13 @@ function saveEquipment(data) {
     else appends.push(rv);
     cnt++;
   }
+  // B方式 (2026-06-12): データJSON列(col3)を '@' に固定してから書込（キー列1-2・更新日時列4 は対象外）
+  applyDataFormatSpan_(sh, updates, 3, 1);
   flushRowUpdates(sh, updates, 1);
   if (appends.length > 0) {
-    sh.getRange(sh.getLastRow() + 1, 1, appends.length, 4).setValues(appends);
+    var apStart = sh.getLastRow() + 1;
+    sh.getRange(apStart, 3, appends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
+    sh.getRange(apStart, 1, appends.length, 4).setValues(appends);
   }
   return jsonResponse({ status: 'ok', message: '機器運転時間 ' + cnt + ' 週保存', savedCount: cnt });
 }
@@ -630,9 +722,13 @@ function saveElectrical(data) {
       cnt++;
     }
   }
+  // B方式 (2026-06-12): データJSON列(col4)を '@' に固定してから書込（キー列1-3・更新日時列5 は対象外）
+  applyDataFormatSpan_(sh, updates, 4, 1);
   flushRowUpdates(sh, updates, 1);
   if (appends.length > 0) {
-    sh.getRange(sh.getLastRow() + 1, 1, appends.length, 5).setValues(appends);
+    var apStart = sh.getLastRow() + 1;
+    sh.getRange(apStart, 4, appends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
+    sh.getRange(apStart, 1, appends.length, 5).setValues(appends);
   }
   return jsonResponse({ status: 'ok', message: '電気 ' + cnt + ' 日保存', savedCount: cnt });
 }
@@ -674,9 +770,13 @@ function saveMechanical(data) {
       cnt++;
     }
   }
+  // B方式 (2026-06-12): データJSON列(col4)を '@' に固定してから書込（キー列1-3・更新日時列5 は対象外）
+  applyDataFormatSpan_(sh, updates, 4, 1);
   flushRowUpdates(sh, updates, 1);
   if (appends.length > 0) {
-    sh.getRange(sh.getLastRow() + 1, 1, appends.length, 5).setValues(appends);
+    var apStart = sh.getLastRow() + 1;
+    sh.getRange(apStart, 4, appends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
+    sh.getRange(apStart, 1, appends.length, 5).setValues(appends);
   }
   return jsonResponse({ status: 'ok', message: '機械 ' + cnt + ' 日保存', savedCount: cnt });
 }

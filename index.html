@@ -4788,12 +4788,12 @@ function _saveWaterUsageGridToData() {
     const cell = week[dayNum];
     if (!cell) return;
     if (el.type === "number") {
-      if (el.value === "") { cell[key] = null; }
-      else { const num = Number(el.value); cell[key] = isNaN(num) ? el.value : num; }
+      // 2026-06-12 B方式(1): raw 文字列で保持（Number 化は末尾0 "16.0"→16 を破壊）
+      cell[key] = el.value === "" ? null : el.value;
     } else if (el.type === "text" && DASH_SUPPORT_FIELDS.has(key)) {
+      // 「-」許容フィールド: 空→null / それ以外は raw 文字列のまま（B方式(1)）
       const v = (el.value || "").trim();
-      if (v === "" || v === "-") { cell[key] = (v === "-") ? "-" : null; }
-      else { const num = Number(v); cell[key] = isNaN(num) ? v : num; }
+      cell[key] = v === "" ? null : v;
     } else {
       cell[key] = el.value;
     }
@@ -4820,8 +4820,8 @@ function _saveWaterMeasureGridToData() {
       // Phase 18-b: bikou に ISO タイムスタンプが入っていれば空に
       cell[key] = sanitizeBikou(el.value);
     } else if (el.type === "number") {
-      if (el.value === "") { cell[key] = null; }
-      else { const num = Number(el.value); cell[key] = isNaN(num) ? el.value : num; }
+      // 2026-06-12 B方式(1): raw 文字列で保持（Number 化は末尾0 "16.0"→16 を破壊）
+      cell[key] = el.value === "" ? null : el.value;
     } else {
       cell[key] = el.value;
     }
