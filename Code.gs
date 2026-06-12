@@ -44,7 +44,7 @@ var HEADERS_EQUIPMENT     = ['月', '週', 'データJSON', '更新日時'];
 var TUTUGA_USERS = [
   { id: 'cpkanri', password: 'cptutuga', name: '筒賀' }
 ];
-var PUBLIC_ACTIONS = { ping: 1, login: 1, verifyToken: 1, adminUnifyDataFormat: 1 };
+var PUBLIC_ACTIONS = { ping: 1, login: 1, verifyToken: 1 };
 
 // ===== 曜日マッピング =====
 var DAYS         = ['mon', 'tue', 'wed', 'thu', 'fri'];
@@ -391,12 +391,6 @@ function doPost(e) {
     if (a === 'saveElectrical')  return saveElectrical(data);
     if (a === 'saveMechanical')  return saveMechanical(data);
     if (a === 'saveEverything')  return saveEverything(data);
-    // B方式 backfill 管理アクション。confirm 必須。clasp run 未設定のため curl 実行用に PUBLIC 登録。
-    // idempotent(setNumberFormat のみ・データ非破壊)。完了後は撤去して再デプロイ（kake f64fec1 同型）。
-    if (a === 'adminUnifyDataFormat') {
-      if ((data && data.confirm) !== 'datafmt') return jsonResponse({ status: 'ERROR', reason: 'confirm 不一致' });
-      return jsonResponse(backfillDataFormatText_({ testOnly: !!data.testOnly, proof: !!data.proof, sample: !!data.sample }));
-    }
     return jsonResponse({ error: '不明なアクション: ' + a });
   } catch (err) {
     return jsonResponse({ error: err.message });
