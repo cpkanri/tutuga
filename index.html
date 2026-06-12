@@ -43,8 +43,8 @@ header h1 {
 }
 .header-controls {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: clamp(6px, 2vw, 8px);           /* v2.1: 狭幅で6pxまで縮む */
+  flex-wrap: wrap;                     /* 保険として維持（320px級の極狭幅のみ折返し許容） */
   align-items: flex-end;   /* 対象年月ボタンの行に下端を揃える */
 }
 .header-controls label {
@@ -52,8 +52,8 @@ header h1 {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  flex: 0 1 auto;
-  min-width: 130px;
+  flex: 0 1 auto;          /* ヘッダーv2: 全幅化を止めてコンパクトに（筒賀・吉和準拠） */
+  min-width: min(130px, 30vw);        /* v2.1: 現行130px→390px幅で約117px */
 }
 .header-controls label span { opacity: 0.85; }
 .header-controls input, .header-controls select {
@@ -464,18 +464,20 @@ body.login-active { overflow: hidden; }
   margin-left: auto;       /* 右端へ寄せる */
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: clamp(5px, 1.6vw, 10px);        /* v2.1: 現行10px */
   font-size: 13px;
   margin-bottom: 5px;      /* 📅ボタンと垂直中心が揃うよう微調整 */
+  min-width: 0;                        /* v2.1: 子のellipsisを有効化 */
 }
 
 /* インライン接続状態 */
 .conn-status-inline {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: clamp(3px, 1vw, 6px);           /* v2.1: 現行6px */
+  font-size: clamp(10px, 2.8vw, 12px); /* v2.1: 現行12px */
   color: rgba(255,255,255,0.9);
+  white-space: nowrap;                 /* v2.1: 「サーバー接続済み」の途中改行防止 */
 }
 .conn-status-inline .conn-dot {
   width: 8px;
@@ -488,8 +490,12 @@ body.login-active { overflow: hidden; }
 .conn-status-inline .conn-dot.offline { background: #e74c3c; }
 
 .user-info .user-name {
-  font-size: 13px;
+  font-size: clamp(11px, 3vw, 13px);   /* v2.1: 現行13px */
   color: rgba(255,255,255,0.95);
+  max-width: clamp(48px, 16vw, 220px); /* v2.1: 長い名前は省略 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn-logout {
@@ -497,10 +503,11 @@ body.login-active { overflow: hidden; }
   color: white;
   border: 1px solid rgba(255,255,255,0.3);
   border-radius: 4px;
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: 3px clamp(5px, 1.5vw, 8px); /* v2.1: 現行3px 8px */
+  font-size: clamp(10px, 2.7vw, 11px); /* v2.1: 現行11px */
   cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;                 /* v2.1 */
 }
 
 /* 日付入力欄のラベル差別化 */

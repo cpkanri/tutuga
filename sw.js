@@ -1,7 +1,7 @@
 // 筒賀水質管理センター 週報 Service Worker
 // v1: 筒賀アプリ 初期キャッシュ
-const CACHE_NAME = 'tutuga-v41';
-const APP_VERSION = '20260613-2';
+const CACHE_NAME = 'tutuga-v42';
+const APP_VERSION = '20260613-3';
 const ASSETS = [
   './',
   './index.html?v=' + APP_VERSION,
