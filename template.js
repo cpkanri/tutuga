@@ -442,18 +442,44 @@ function _tutugaWriteWaterSheet(ws, allData) {
   }
 
   // 下段水質測定 (per-day, 28 項目, 5 セル mon-fri)
+  // 2026-06-12: 週レベルの weekDays ガードを日レベルへ変更（読み値のみの点検日にも塩素 0 を出すため、
+  // waterMeasure 週が無くても waterUsage を見る塩素投入量処理を各日で通す）。
   for (var w2 = 1; w2 <= 5; w2++) {
     var weekDays = (allData.waterMeasure && allData.waterMeasure[w2]) || null;
-    if (!weekDays) continue;
     var blockRow2 = WATER_BLOCK_ROW[w2];
     if (!blockRow2) continue;
+    var holDksM = holidayDayKeys[w2] || [];
+    var usageWeek2 = (allData.waterUsage && allData.waterUsage[w2]) || null;
     DAYS5.forEach(function(dc) {
-      var dayData = weekDays[dc];
-      if (!dayData || typeof dayData !== 'object') return;
-      Object.keys(TUTUGA_MEASURE_ROW_OFFSET).forEach(function(key) {
-        var rowOff = TUTUGA_MEASURE_ROW_OFFSET[key];
-        _tutugaWriteCell(ws, blockRow2 + rowOff, MEASURE_DAY_COL[dc], dayData[key]);
-      });
+      var dayData = weekDays ? weekDays[dc] : null;
+      if (dayData && typeof dayData === 'object') {
+        Object.keys(TUTUGA_MEASURE_ROW_OFFSET).forEach(function(key) {
+          var rowOff = TUTUGA_MEASURE_ROW_OFFSET[key];
+          _tutugaWriteCell(ws, blockRow2 + rowOff, MEASURE_DAY_COL[dc], dayData[key]);
+        });
+      }
+      // ===== 塩素投入量: 点検日(実測あり・非祝日)で未入力なら 0 を値で書く（=投入なし 0kg、kamitono v85 横展開）=====
+      // 実測判定: 下段28項目のいずれか非空、または上段9項目(waterUsage)の同日値のいずれか非空
+      // （読み値のみの点検日にも 0 を出す）。_tutugaWriteCell は空値スキップ仕様のため 0 はセル直書き。
+      // 祝日・点検なし日（全 null プリアロケート含む）は実測判定 false で空欄維持。入力日は上の書込が優先。
+      if (holDksM.indexOf(dc) >= 0) return; // 祝日は 0 を書かない
+      var chlorVal = dayData && typeof dayData === 'object' ? dayData.chlorineDose : null;
+      if (!_tutugaIsEmpty(chlorVal)) return; // 0/数値/「-」入力日は既存書込どおり
+      var hasMeasure = false;
+      if (dayData && typeof dayData === 'object') {
+        hasMeasure = Object.keys(TUTUGA_MEASURE_ROW_OFFSET).some(function(key) {
+          return !_tutugaIsEmpty(dayData[key]);
+        });
+      }
+      if (!hasMeasure && usageWeek2) {
+        hasMeasure = Object.keys(TUTUGA_USAGE_ROW_OFFSET).some(function(key) {
+          var perDay = usageWeek2[key];
+          return perDay && typeof perDay === 'object' && !_tutugaIsEmpty(perDay[dc]);
+        });
+      }
+      if (hasMeasure) {
+        ws.getCell(blockRow2 + TUTUGA_MEASURE_ROW_OFFSET.chlorineDose, MEASURE_DAY_COL[dc]).value = 0;
+      }
     });
   }
 }
