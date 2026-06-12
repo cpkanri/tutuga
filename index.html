@@ -3641,8 +3641,12 @@ function copyPreviousDayToCurrent(dayOverride) {
   saveCurrentToLocalStorage();
   markDirty();
 
-  const monthLabel = (prev.month && prev.month !== curMonth) ? (prev.month + ' / ') : '';
-  showToast(monthLabel + '第' + prev.week + '週 ' + (prev.day || '') + ' の値をコピーしました');
+  // 2026-06-12: 前月由来を明示（1ヶ月前なら「前月」、それ以前は YYYY-MM）+ 曜日を日本語表記
+  const DAY_JP_COPY = { mon: '月', tue: '火', wed: '水', thu: '木', fri: '金' };
+  const monthLabel = (prev.month && prev.month !== curMonth)
+    ? ((prev.month === subtractMonths(curMonth, 1) ? '前月' : prev.month) + ' ')
+    : '';
+  showToast(monthLabel + '第' + prev.week + '週 ' + (DAY_JP_COPY[prev.day] || prev.day) + '曜の値をコピーしました');
 }
 
 // 対象月のカレンダー週構造。recomputeMonthWeeks() で再計算される。
@@ -4967,8 +4971,11 @@ function _getEquipNavigableFields() {
 
 function _isFieldEnterNavigable(el) {
   if (!el) return false;
-  if (el.disabled) return false;
-  if (el.type === 'hidden') return false;
+  // 2026-06-12 仕様統一: 巡回対象はテキスト/数値 input のみ
+  // （トグルボタン・select・チェックボックス類・readonly は移動先にしない）。
+  if (el.tagName !== 'INPUT') return false;
+  if (el.type !== 'number' && el.type !== 'text') return false;
+  if (el.disabled || el.readOnly) return false;
   if (typeof window.getComputedStyle === 'function') {
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
@@ -5020,21 +5027,12 @@ function advanceToNextField(currentEl) {
   advanceToNextDay();
 }
 
-// 次の active day（または equip では次週）に切替してフォーカスを移す
-// 月跨ぎはしない。月内に次がなければ false（フォーカスはそのまま）。
+// 2026-06-12 仕様統一: 週内最終日（金曜列）の最下端では移動しない（フォーカス維持）。
+// 全タブが週グリッド化済みのため「次の日の最上端へ」はフィールド配列（列優先 mon→fri）内で完結し、
+// グリッド末尾＝週の終わり。週またぎ・サブタブ/タブ/月跨ぎの自動移動は行わない
+// （旧フェーズ1/2/3a の「次週へ切替」を廃止。_advanceToNext*Week / _advanceToNextPerDayDay は未使用化）。
 function advanceToNextDay() {
-  const month = tutugaData.targetMonth || '';
-  if (!month) return false;
-  // フェーズ1/2 (2026-06-08): 機械・電気は週グリッド＝全曜日が同時表示。最終フィールドの次は
-  //   equip と同じく「次週へ切替」（renderAll が当該グリッドを再描画）。
-  if (currentSheet === 'equip' || currentSheet === 'mech' || currentSheet === 'elec') {
-    return _advanceToNextEquipWeek(month);
-  }
-  // フェーズ3a (2026-06-09): 水質 usage 週グリッドも最終フィールドの次は「次週へ」。
-  if (currentSheet === 'water' && currentWaterSub === 'usage') {
-    return _advanceToNextWaterUsageWeek(month);
-  }
-  return _advanceToNextPerDayDay(month);
+  return false;
 }
 
 function _advanceToNextPerDayDay(month) {
