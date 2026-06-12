@@ -43,9 +43,9 @@ header h1 {
 }
 .header-controls {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;   /* 対象年月ボタンの行に下端を揃える */
 }
 .header-controls label {
   font-size: 12px;
@@ -458,30 +458,15 @@ input[type="number"] {
 .login-error.visible { display: block; }
 body.login-active { overflow: hidden; }
 
-/* ===== ヘッダー上部: タイトルとユーザー情報を横並び（上殿構成へ統一, 2026-06-12） ===== */
-.header-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.header-top h1 {
-  margin: 0;
-  font-size: 18px;
-  flex: 1 1 auto;
-  min-width: 200px;
-}
-
-/* ユーザー情報エリア: 接続状態 + ユーザー名 + ログアウト */
-header .user-info {
-  position: static;
+/* ===== ヘッダーv2 (2026-06-13): user-info を対象年月の行の右端へ（5アプリ統一） =====
+   狭幅時は flex-wrap により対象年月の下へ折り返す（メディアクエリ非依存） */
+.header-controls .user-info {
+  margin-left: auto;       /* 右端へ寄せる */
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: nowrap;
   font-size: 13px;
+  margin-bottom: 5px;      /* 📅ボタンと垂直中心が揃うよう微調整 */
 }
 
 /* インライン接続状態 */
@@ -516,18 +501,6 @@ header .user-info {
   font-size: 11px;
   cursor: pointer;
   font-family: inherit;
-}
-
-/* スマホ対応: 狭い画面で header-top を縦並びに（上殿 480px ルール移植） */
-@media (max-width: 480px) {
-  .header-top {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  header .user-info {
-    width: 100%;
-    justify-content: flex-end;
-  }
 }
 
 /* 日付入力欄のラベル差別化 */
@@ -596,11 +569,7 @@ header .user-info {
   border-color: rgba(100,181,246,0.7) !important;
 }
 .btn-history-header:hover { background: rgba(100,181,246,0.45) !important; }
-.btn-excel-header {
-  background: rgba(76,175,80,0.3) !important;
-  border-color: rgba(76,175,80,0.7) !important;
-}
-.btn-excel-header:hover { background: rgba(76,175,80,0.45) !important; }
+/* （.btn-excel-header は未参照のためヘッダーv2 で削除） */
 
 /* 強制更新ボタン（sync-btn と同じ見た目だが色だけ変える） */
 #btnForceRefresh {
@@ -1354,9 +1323,14 @@ header .user-info {
 
 <!-- ヘッダー -->
 <header>
-  <!-- ヘッダー統一 (2026-06-12): 上殿構成 — タイトル行右に接続状態ドット＋ユーザー名＋ログアウト、対象年月は全幅 -->
-  <div class="header-top">
-    <h1>筒賀水質管理センター 週報入力</h1>
+  <!-- ヘッダーv2 (2026-06-13): user-info を対象年月の行の右端へ（1行分コンパクト化・5アプリ統一） -->
+  <h1>筒賀水質管理センター 週報入力</h1>
+  <div class="header-controls">
+    <label>
+      <span>対象年月</span>
+      <input type="month" id="targetMonth" style="display:none">
+      <button type="button" id="btnTargetMonth" class="btn-header-action">📅 ----</button>
+    </label>
     <div class="user-info" id="userInfo" style="display:none;">
       <div class="conn-status-inline" id="connStatus">
         <span class="conn-dot" id="connDot"></span>
@@ -1365,13 +1339,6 @@ header .user-info {
       <span class="user-name" id="userName"></span>
       <button type="button" class="btn-logout" id="btnLogout">ログアウト</button>
     </div>
-  </div>
-  <div class="header-controls">
-    <label>
-      <span>対象年月</span>
-      <input type="month" id="targetMonth" style="display:none">
-      <button type="button" id="btnTargetMonth" class="btn-header-action">📅 ----</button>
-    </label>
   </div>
   <!-- Phase 17 ヘッダー B デザイン: 2 グループ統一（#userInfo はタイトル行へ移設済み・ボタンエリアは常時表示） -->
   <div class="header-btn-area">
