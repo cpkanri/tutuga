@@ -4892,13 +4892,14 @@ function getNavigableFields() {
 }
 
 // 使用量週グリッド: 列優先（mon→tue→wed→thu→fri）、各列内は行順（DOM 順）
+// 2026-06-12 修正: トグルボタン・select も巡回対象に含める（複合セレクタ=DOM 順）
 function _getWaterUsageWeekNavigableFields() {
   const container = document.getElementById('formWrap');
   if (!container) return [];
   const dayOrder = ['mon','tue','wed','thu','fri'];
   const result = [];
   dayOrder.forEach(dk => {
-    container.querySelectorAll('input[data-field][data-day="' + dk + '"]').forEach(el => {
+    container.querySelectorAll('input[data-field][data-day="' + dk + '"], select[data-field][data-day="' + dk + '"], button.toggle-btn[data-field][data-day="' + dk + '"]').forEach(el => {
       if (_isFieldEnterNavigable(el)) result.push(el);
     });
   });
@@ -4913,7 +4914,7 @@ function _getWaterMeasureWeekNavigableFields() {
   const dayOrder = ['mon','tue','wed','thu','fri'];
   const result = [];
   dayOrder.forEach(dk => {
-    container.querySelectorAll('input[data-field][data-day="' + dk + '"]').forEach(el => {
+    container.querySelectorAll('input[data-field][data-day="' + dk + '"], select[data-field][data-day="' + dk + '"], button.toggle-btn[data-field][data-day="' + dk + '"]').forEach(el => {
       if (_isFieldEnterNavigable(el)) result.push(el);
     });
   });
@@ -4927,7 +4928,8 @@ function _getMechWeekNavigableFields() {
   const dayOrder = ['mon','tue','wed','thu','fri'];
   const result = [];
   dayOrder.forEach(dk => {
-    container.querySelectorAll('input[data-mfield][data-day="' + dk + '"]').forEach(el => {
+    // 2026-06-12 修正: トグルボタン・select も巡回対象
+    container.querySelectorAll('input[data-mfield][data-day="' + dk + '"], select[data-mfield][data-day="' + dk + '"], button.toggle-btn[data-mfield][data-day="' + dk + '"]').forEach(el => {
       if (_isFieldEnterNavigable(el)) result.push(el);
     });
   });
@@ -4941,7 +4943,8 @@ function _getElecWeekNavigableFields() {
   const dayOrder = ['mon','tue','wed','thu','fri'];
   const result = [];
   dayOrder.forEach(dk => {
-    container.querySelectorAll('input[data-efield][data-day="' + dk + '"]').forEach(el => {
+    // 2026-06-12 修正: トグルボタン・select も巡回対象（autoCalc 表示セルは data-efield 無しで従来どおり除外）
+    container.querySelectorAll('input[data-efield][data-day="' + dk + '"], select[data-efield][data-day="' + dk + '"], button.toggle-btn[data-efield][data-day="' + dk + '"]').forEach(el => {
       if (_isFieldEnterNavigable(el)) result.push(el);
     });
   });
@@ -4962,7 +4965,8 @@ function _getEquipNavigableFields() {
   const dayOrder = ['mon','tue','wed','thu','fri'];
   const result = [];
   dayOrder.forEach(dk => {
-    body.querySelectorAll('input[data-equip][data-eday="' + dk + '"]').forEach(el => {
+    // 2026-06-12 修正: トグルボタン・select も巡回対象（現状 equip は input のみだが横並び統一）
+    body.querySelectorAll('input[data-equip][data-eday="' + dk + '"], select[data-equip][data-eday="' + dk + '"], button.toggle-btn[data-equip][data-eday="' + dk + '"]').forEach(el => {
       if (_isFieldEnterNavigable(el)) result.push(el);
     });
   });
@@ -4970,12 +4974,17 @@ function _getEquipNavigableFields() {
 }
 
 function _isFieldEnterNavigable(el) {
-  if (!el) return false;
-  // 2026-06-12 仕様統一: 巡回対象はテキスト/数値 input のみ
-  // （トグルボタン・select・チェックボックス類・readonly は移動先にしない）。
-  if (el.tagName !== 'INPUT') return false;
-  if (el.type !== 'number' && el.type !== 'text') return false;
-  if (el.disabled || el.readOnly) return false;
+  if (!el || el.disabled) return false;
+  // 2026-06-12 修正: 巡回対象 = text/number input ＋ トグルボタン ＋ select
+  // （disabled/readonly/非表示はスキップ。チェックボックス等は対象外）。
+  if (el.tagName === 'INPUT') {
+    if (el.type !== 'number' && el.type !== 'text') return false;
+    if (el.readOnly) return false;
+  } else if (el.tagName === 'BUTTON') {
+    if (!(el.classList && el.classList.contains('toggle-btn'))) return false;
+  } else if (el.tagName !== 'SELECT') {
+    return false;
+  }
   if (typeof window.getComputedStyle === 'function') {
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
@@ -5027,12 +5036,21 @@ function advanceToNextField(currentEl) {
   advanceToNextDay();
 }
 
-// 2026-06-12 仕様統一: 週内最終日（金曜列）の最下端では移動しない（フォーカス維持）。
-// 全タブが週グリッド化済みのため「次の日の最上端へ」はフィールド配列（列優先 mon→fri）内で完結し、
-// グリッド末尾＝週の終わり。週またぎ・サブタブ/タブ/月跨ぎの自動移動は行わない
-// （旧フェーズ1/2/3a の「次週へ切替」を廃止。_advanceToNext*Week / _advanceToNextPerDayDay は未使用化）。
+// 2026-06-12 修正: グリッド末尾（=週の終端）→ 次週グリッドの先頭へ自動切替を復活
+// （フェーズ1/2/3a の旧機構 _advanceToNext*Week を再統合）。月内最終週の末尾では停止・月跨ぎなし。
+// 「次の日の最上端へ」はフィールド配列（列優先 mon→fri）内で完結する。
 function advanceToNextDay() {
-  return false;
+  const month = tutugaData.targetMonth || '';
+  if (!month) return false;
+  // 機器/機械/電気: 週グリッド → 次週へ切替（renderAll が当該グリッドを再描画・保存込み）
+  if (currentSheet === 'equip' || currentSheet === 'mech' || currentSheet === 'elec') {
+    return _advanceToNextEquipWeek(month);
+  }
+  // 水質: usage/measure とも週グリッド → 次週へ（活性判定は water 週モデル monthWeeks と同源）
+  if (currentSheet === 'water') {
+    return _advanceToNextWaterUsageWeek(month);
+  }
+  return _advanceToNextPerDayDay(month);
 }
 
 function _advanceToNextPerDayDay(month) {
@@ -5371,6 +5389,13 @@ function renderForm() {
     });
   });
   wrap.querySelectorAll(".toggle-btn").forEach(btn => {
+    // 2026-06-12 修正: トグル上の Enter は値切替（クリック発火）を防ぎ次の項目へ移動のみ
+    btn.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        advanceToNextField(btn);
+      }
+    });
     btn.addEventListener("click", () => {
       let opts;
       try { opts = JSON.parse(btn.dataset.options || "[]"); } catch(e) { opts = []; }
@@ -5852,10 +5877,11 @@ function renderEquipPanel() {
       }
     });
     // Phase 8 修正06: Enter キーで次フィールドへ自動移動（列優先、同週最後で次週へ）
+    // 2026-06-12 修正: select/トグルも対象（トグルは preventDefault で値切替を防ぎ移動のみ）
     body.addEventListener("keydown", (ev) => {
       if (ev.key !== 'Enter') return;
       if (ev.target.tagName === 'TEXTAREA') return;
-      if (!ev.target.matches('input[data-equip]')) return;
+      if (!ev.target.matches('input[data-equip], select[data-equip], button.toggle-btn[data-equip]')) return;
       ev.preventDefault();
       advanceToNextField(ev.target);
     });
@@ -6676,10 +6702,11 @@ function bindEquipInputEvents(kind) {
   };
 
   // Phase 8 修正06: Enter キーで次フィールドへ自動移動（同日最後で次日 / 次週へ）
+  // 2026-06-12 修正: トグルボタンも対象（preventDefault でクリック発火=値切替を防ぎ移動のみ）
   const onKeyDown = function(ev) {
     if (ev.key !== 'Enter') return;
     if (ev.target.tagName === 'TEXTAREA') return;
-    if (!ev.target.matches('input[data-' + dataAttr + '], select[data-' + dataAttr + ']')) return;
+    if (!ev.target.matches('input[data-' + dataAttr + '], select[data-' + dataAttr + '], button.toggle-btn[data-' + dataAttr + ']')) return;
     ev.preventDefault();
     advanceToNextField(ev.target);
   };
