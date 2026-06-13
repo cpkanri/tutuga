@@ -6778,6 +6778,95 @@ function sanitizeSheetXml(xml) {
 // Phase 29-b: ExcelJS が書き出した xlsx バッファ（ZIP）を開き、各シート XML を
 // sanitize して詰め直す。出力の最終バイト列に対する確実な防御層。
 // 不正値が 1 件も無ければ元バッファをそのまま返す（再 ZIP しない）。
+// テンプレートの手動改ページ(<rowBreaks>/<colBreaks>)を出力に再注入する。
+// ExcelJS 4.4.0 は load→writeBuffer で手動改ページを保持しないため、出力で消える対策。
+// opts.skipBases  : 週ごとにシート複製する基底名（複製後はテンプレの積層改ページが当てはまらないので除外）
+// opts.reverseRename : { 出力シート名: テンプレシート名 }（出力時リネームの逆引き）
+async function restorePageBreaks(buf, templateB64, opts) {
+  opts = opts || {};
+  const skipBases = opts.skipBases || [];
+  const reverseRename = opts.reverseRename || {};
+  try {
+    if (typeof JSZip === "undefined") {
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
+    }
+    async function nameToPath(zip) {
+      const wbXml = await zip.file("xl/workbook.xml").async("string");
+      const relXml = await zip.file("xl/_rels/workbook.xml.rels").async("string");
+      const rel = {};
+      (relXml.match(/<Relationship\b[^>]*>/g) || []).forEach(t => {
+        const id = (t.match(/Id="([^"]*)"/) || [])[1];
+        const tgt = (t.match(/Target="([^"]*)"/) || [])[1];
+        if (id && tgt) rel[id] = tgt;
+      });
+      const map = [];
+      (wbXml.match(/<sheet\b[^>]*\/?>/g) || []).forEach(t => {
+        const nm = (t.match(/name="([^"]*)"/) || [])[1];
+        const rid = (t.match(/r:id="([^"]*)"/) || [])[1];
+        if (nm && rid && rel[rid]) {
+          let p = rel[rid].replace(/^\//, "");
+          if (p.indexOf("xl/") !== 0) p = "xl/" + p;
+          map.push({ name: nm, path: p });
+        }
+      });
+      return map;
+    }
+    const grabBreaks = (xml) => {
+      let s = "";
+      ["rowBreaks", "colBreaks"].forEach(tag => {
+        const re = new RegExp("<" + tag + "\\b[^>]*>[\\s\\S]*?<\\/" + tag + ">|<" + tag + "\\b[^>]*\\/>");
+        const m = xml.match(re);
+        if (m && m[0].indexOf('count="0"') < 0) s += m[0];
+      });
+      return s;
+    };
+    // テンプレの改ページ収集（シート名 -> breaks XML）
+    const tplZip = await JSZip.loadAsync(Uint8Array.from(atob(templateB64), c => c.charCodeAt(0)).buffer);
+    const tplMap = await nameToPath(tplZip);
+    const tplBreaks = {};
+    for (const s of tplMap) {
+      const b = grabBreaks(await tplZip.file(s.path).async("string"));
+      if (b) tplBreaks[s.name] = b;
+    }
+    if (Object.keys(tplBreaks).length === 0) return buf; // テンプレに改ページ無し→何もしない
+
+    const outZip = await JSZip.loadAsync(buf);
+    const outMap = await nameToPath(outZip);
+    const tname = (nm) => reverseRename[nm] || nm;
+    const isSkipped = (nm) => skipBases.some(b => nm.indexOf(b) === 0 || tname(nm).indexOf(b) === 0);
+    const derivedCount = (tn) => outMap.filter(s => {
+      const x = tname(s.name);
+      return x === tn || (x.indexOf(tn) === 0 && /^\d+$/.test(x.slice(tn.length)));
+    }).length;
+
+    let injected = 0;
+    for (const s of outMap) {
+      if (isSkipped(s.name)) continue;
+      const tn = tname(s.name);
+      if (!tplBreaks[tn]) continue;
+      if (derivedCount(tn) > 1) continue; // 複製シート群は自然改ページに任せる
+      let xml = await outZip.file(s.path).async("string");
+      xml = xml.replace(/<rowBreaks\b[^>]*>[\s\S]*?<\/rowBreaks>|<rowBreaks\b[^>]*\/>/g, "")
+               .replace(/<colBreaks\b[^>]*>[\s\S]*?<\/colBreaks>|<colBreaks\b[^>]*\/>/g, "");
+      const anchors = [/<\/headerFooter>/, /<pageSetup\b[^>]*\/>/, /<\/pageSetup>/, /<pageMargins\b[^>]*\/>/];
+      let done = false;
+      for (const a of anchors) {
+        const m = xml.match(a);
+        if (m) { const i = m.index + m[0].length; xml = xml.slice(0, i) + tplBreaks[tn] + xml.slice(i); done = true; break; }
+      }
+      if (!done) xml = xml.replace("</worksheet>", tplBreaks[tn] + "</worksheet>");
+      outZip.file(s.path, xml);
+      injected++;
+    }
+    if (injected === 0) return buf;
+    console.log("改ページ再注入: " + injected + " シート");
+    return await outZip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
+  } catch (e) {
+    console.warn("改ページ再注入 失敗（元バッファで続行）:", e);
+    return buf;
+  }
+}
+
 async function sanitizeXlsxBuffer(buf) {
   try {
     if (typeof JSZip === "undefined") {
@@ -7072,6 +7161,7 @@ async function exportExcel() {
 
     let buf = await wb.xlsx.writeBuffer();
     buf = await sanitizeXlsxBuffer(buf);
+    buf = await restorePageBreaks(buf, EXCEL_TEMPLATE_B64, { skipBases: [], reverseRename: {} });
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
