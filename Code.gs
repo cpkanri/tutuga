@@ -526,6 +526,7 @@ function saveWaterUsage(data) {
   flushRowUpdates(sh, wuUpdates, 1);
   if (wuAppends.length > 0) {
     var wuStart = sh.getLastRow() + 1;
+    sh.getRange(wuStart, 1, wuAppends.length, 1).setNumberFormat('@'); // 月キー列もテキスト固定（YYYY-MMの自動Date化防止）
     sh.getRange(wuStart, 3, wuAppends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
     sh.getRange(wuStart, 1, wuAppends.length, 4).setValues(wuAppends);
   }
@@ -546,6 +547,7 @@ function saveWaterUsage(data) {
       return [month, n.w, n.dayName, JSON.stringify(n.json), now];
     });
     var elStart = elecSh.getLastRow() + 1;
+    elecSh.getRange(elStart, 1, elecAppends.length, 1).setNumberFormat('@'); // 月キー列もテキスト固定（YYYY-MMの自動Date化防止）
     elecSh.getRange(elStart, 4, elecAppends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
     elecSh.getRange(elStart, 1, elecAppends.length, 5).setValues(elecAppends);
   }
@@ -618,6 +620,7 @@ function saveWaterMeasure(data) {
   flushRowUpdates(sh, updates, 1);
   if (appends.length > 0) {
     var apStart = sh.getLastRow() + 1;
+    sh.getRange(apStart, 1, appends.length, 1).setNumberFormat('@'); // 月キー列もテキスト固定（YYYY-MMの自動Date化防止）
     sh.getRange(apStart, 4, appends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
     sh.getRange(apStart, 1, appends.length, 5).setValues(appends);
   }
@@ -660,6 +663,7 @@ function saveEquipment(data) {
   flushRowUpdates(sh, updates, 1);
   if (appends.length > 0) {
     var apStart = sh.getLastRow() + 1;
+    sh.getRange(apStart, 1, appends.length, 1).setNumberFormat('@'); // 月キー列もテキスト固定（YYYY-MMの自動Date化防止）
     sh.getRange(apStart, 3, appends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
     sh.getRange(apStart, 1, appends.length, 4).setValues(appends);
   }
@@ -721,6 +725,7 @@ function saveElectrical(data) {
   flushRowUpdates(sh, updates, 1);
   if (appends.length > 0) {
     var apStart = sh.getLastRow() + 1;
+    sh.getRange(apStart, 1, appends.length, 1).setNumberFormat('@'); // 月キー列もテキスト固定（YYYY-MMの自動Date化防止）
     sh.getRange(apStart, 4, appends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
     sh.getRange(apStart, 1, appends.length, 5).setValues(appends);
   }
@@ -769,6 +774,7 @@ function saveMechanical(data) {
   flushRowUpdates(sh, updates, 1);
   if (appends.length > 0) {
     var apStart = sh.getLastRow() + 1;
+    sh.getRange(apStart, 1, appends.length, 1).setNumberFormat('@'); // 月キー列もテキスト固定（YYYY-MMの自動Date化防止）
     sh.getRange(apStart, 4, appends.length, 1).setNumberFormat('@'); // B方式: 書込前に '@'
     sh.getRange(apStart, 1, appends.length, 5).setValues(appends);
   }
@@ -967,4 +973,94 @@ function setupUsers() {
 function setupAll() {
   var msgs = [setupHolidays(), setupSettings(), setupUsers()];
   return msgs.join('\n');
+}
+
+
+// =====================================================================
+// month キー診断（Phase 1：読取り専用。書込みなし）
+// 全5データシートのA列(月)について typeof / instanceof Date / 正規化結果を出力し、
+// 「正規化前のテキスト表現が YYYY-MM と一致しない＝旧書式で読み落とされ得る行」を抽出する。
+// さらに getAllData('2026-04') を実行し、4月データが実際に取得できるか実証する。
+// 注: tutuga の getAllData は rawMonth を受け JSON(ContentService) を返すため、
+//     getContent() を JSON.parse して中身を検査する。
+// =====================================================================
+function diagnoseMonthKeys() {
+  var SHEETS = [SHEET_WATER_USAGE, SHEET_WATER_MEASURE, SHEET_EQUIPMENT, SHEET_ELECTRICAL, SHEET_MECHANICAL];
+  var report = { sheets: {}, legacyRows: [] };
+  SHEETS.forEach(function(name) {
+    var ws = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+    if (!ws) { report.sheets[name] = { exists: false }; return; }
+    var data = ws.getDataRange().getValues();
+    var info = { exists: true, rows: Math.max(0, data.length - 1), months: {}, types: {} };
+    for (var i = 1; i < data.length; i++) {
+      var raw = data[i][0];
+      var isDate = !!(raw && typeof raw === 'object' && typeof raw.getFullYear === 'function');
+      var t = isDate ? 'Date' : typeof raw;
+      info.types[t] = (info.types[t] || 0) + 1;
+      var norm = normalizeMonth(raw);
+      info.months[norm] = (info.months[norm] || 0) + 1;
+      // 旧書式判定：Date型、または文字列表現が正規化結果と異なる（= 2026/04/01 等）
+      var rawText = isDate ? ('DATE(' + raw.getFullYear() + '/' + (raw.getMonth() + 1) + '/' + raw.getDate() + ')') : String(raw);
+      if (isDate || rawText !== norm) {
+        report.legacyRows.push({ sheet: name, row: i + 1, raw: rawText, type: t, normalized: norm });
+        Logger.log('[LEGACY] ' + name + ' 行' + (i + 1) + ': raw=' + rawText + ' type=' + t + ' → ' + norm);
+      }
+    }
+    report.sheets[name] = info;
+    Logger.log('=== ' + name + ' === rows=' + info.rows + ' types=' + JSON.stringify(info.types) + ' months=' + JSON.stringify(info.months));
+  });
+  // 実証：4月を現行読取ロジック(getAllData)で取得（JSON を parse して検査）
+  var apr = {};
+  try { apr = JSON.parse(getAllData('2026-04').getContent()); } catch (e) { apr = { error: e.message }; }
+  var wu = apr.waterUsage   ? Object.keys(apr.waterUsage).length   : 0;
+  var wm = apr.waterMeasure ? Object.keys(apr.waterMeasure).length : 0;
+  var eq = apr.equipment    ? Object.keys(apr.equipment).length    : 0;
+  var el = apr.electrical   ? Object.keys(apr.electrical).length   : 0;
+  var me = apr.mechanical   ? Object.keys(apr.mechanical).length   : 0;
+  report.april2026 = {
+    waterUsageWeeks: wu, waterMeasureWeeks: wm, equipmentWeeks: eq,
+    electricalWeeks: el, mechanicalWeeks: me,
+    hasAnyData: (wu + wm + eq + el + me) > 0
+  };
+  Logger.log('=== getAllData(2026-04) === 上段週=' + wu + ' 下段週=' + wm + ' 機器週=' + eq + ' 電気週=' + el + ' 機械週=' + me);
+  Logger.log('旧書式行 合計: ' + report.legacyRows.length + ' 件');
+  return report;
+}
+
+
+// =====================================================================
+// month キー移行（Phase 5：任意・整合性のため）
+// dryRun=true（既定）: 変化する行のみ old→new を Logger 出力し、書込みは一切行わない。
+// dryRun=false       : 変化行のみ A列をテキスト YYYY-MM で上書き（Date型もテキスト化）。
+// ※本適用前にスプレッドシートのバックアップ（Drive複製）を必ず取得すること。
+// =====================================================================
+function migrateMonthKeys(dryRun) {
+  if (dryRun === undefined) dryRun = true; // 既定はドライラン（安全側）
+  var SHEETS = [SHEET_WATER_USAGE, SHEET_WATER_MEASURE, SHEET_EQUIPMENT, SHEET_ELECTRICAL, SHEET_MECHANICAL];
+  var changes = [];
+  SHEETS.forEach(function(name) {
+    var ws = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+    if (!ws) return;
+    var data = ws.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var raw = data[i][0];
+      if (raw === '' || raw === null || raw === undefined) continue;
+      var isDate = !!(raw && typeof raw === 'object' && typeof raw.getFullYear === 'function');
+      var norm = normalizeMonth(raw);
+      if (!norm) continue; // 正規化不能（月列でない）はスキップ
+      var rawText = isDate ? ('DATE(' + raw.getFullYear() + '/' + (raw.getMonth() + 1) + '/' + raw.getDate() + ')') : String(raw);
+      // テキスト表現が正規化結果と異なる、または Date 型 → 移行対象
+      if (isDate || String(raw) !== norm) {
+        changes.push({ sheet: name, row: i + 1, old: rawText, 'new': norm });
+        Logger.log((dryRun ? '[DRY] ' : '[APPLY] ') + name + ' 行' + (i + 1) + ': ' + rawText + ' → ' + norm);
+        if (!dryRun) {
+          var cell = ws.getRange(i + 1, 1);
+          cell.setNumberFormat('@');   // 先にテキスト書式へ（自動Date化防止）
+          cell.setValue(norm);
+        }
+      }
+    }
+  });
+  Logger.log('=== migrateMonthKeys(' + (dryRun ? 'DRY-RUN' : 'APPLY') + ') 変化行: ' + changes.length + ' 件 ===');
+  return { dryRun: dryRun, totalChanges: changes.length, changes: changes };
 }
