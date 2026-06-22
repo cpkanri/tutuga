@@ -907,6 +907,29 @@ body.login-active { overflow: hidden; }
 .equip-table tbody tr.section-header td:first-child {
   background: #e8eff7;
 }
+/* D (2026-06-22): 週グリッド先頭「項目」列を横スクロールに追従固定（全 equip-table 共通）。
+   金曜まで横送りしても項目名・セクション見出しが常に左端に見えるようにする。
+   ※ これは「横方向(left)」の固定。既存の縦sticky(thead top:0)とは別件で、
+     入力欄を覆う縦stickyヘッダは新規導入しない。背景は各既存ルールの実色を流用（透け防止）。 */
+.equip-table-wrap { -webkit-overflow-scrolling: touch; }  /* overflow-x:auto は上記 .equip-table-wrap に既存 */
+.equip-table tbody td:first-child:not([colspan]) {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #f5f8fb;  /* 本文先頭セルの既存背景 */
+}
+.equip-table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;  /* 縦sticky(top:0,z2)と横stickyの交点 → 最前面 */
+  background: #e8eff7;  /* thead th の既存背景 */
+}
+.equip-table tbody tr.section-header td {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  /* 背景・文字色は既存 section-header ルール(#e8eff7)を維持 */
+}
 .equip-table tbody td .item-label {
   display: block;
   font-size: 11px;
@@ -1526,8 +1549,8 @@ body.login-active { overflow: hidden; }
 <!-- トースト -->
 <div class="toast" id="toast"></div>
 
-<script src="./excel-write-map.js?v=20260421-1"></script>
-<script src="./template.js?v=20260421-1"></script>
+<script src="./excel-write-map.js?v=20260622-1"></script>
+<script src="./template.js?v=20260622-1"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(()=>{});
@@ -1998,8 +2021,6 @@ const MEASURE_FIELDS = [
   "transIn", "transOut", "transFinal1", "transFinal2",
   // PH（4 + 終沈2）
   "phIn", "phD1", "phD2", "phOut", "phFinal1", "phFinal2",
-  // DO（ディッチ1/2、Phase 2 新規・測定DO・5回週/測定日ゲート）→ 水質管理報告2/2 I/J 列
-  "do1", "do2",
   // SV（1系・2系 SV30/SV24h）
   "sv1_30", "sv1_24h", "sv2_30", "sv2_24h",
   // MLSS（1系/2系）
@@ -2021,7 +2042,6 @@ const USAGE_KEYS = [
   "powerAllDay", "powerMeasure", "powerReactive", "demand",
   "water", "diesel",
   "returnSludge1", "returnSludge2", "discharge",
-  "solidChlorine",                       // Phase 2: 固形塩素使用量 (kg/日次) → 運転管理月報 G 列
   "excessSludge1", "excessSludge2"
 ];
 const USAGE_LABELS = {
@@ -2034,7 +2054,6 @@ const USAGE_LABELS = {
   returnSludge1: { label: "返送汚泥流量（№1）", unit: "㎥" },
   returnSludge2: { label: "返送汚泥流量（№2）", unit: "㎥" },
   discharge:     { label: "放流流量",          unit: "㎥" },
-  solidChlorine: { label: "固形塩素使用量",     unit: "kg" },
   excessSludge1: { label: "余剰汚泥流量（No.1）", unit: "㎥" },
   excessSludge2: { label: "余剰汚泥流量（No.2）", unit: "㎥" }
 };
@@ -2155,7 +2174,7 @@ const ELEC_SECTIONS_1 = [
     { key: "低圧分岐__動力(210V)電流__A",                label: "動力(210V) 電流",      type: "number", step: "0.1", unit: "A" },
     { key: "低圧分岐__動力(210V)電流__モード",           label: "電流モード",           type: "toggle", options: ["R","S","T"] },
     { key: "低圧分岐__照明(210-105V)電流__A",            label: "照明(210-105V) 電流",  type: "number", step: "0.1", unit: "A" },
-    { key: "低圧分岐__照明(210-105V)電流__モード",       label: "照明モード",           type: "toggle", options: ["R","S","T"] },
+    { key: "低圧分岐__照明(210-105V)電流__モード",       label: "照明モード",           type: "toggle", options: ["R","N","T"] },
     { key: "低圧分岐__低圧分岐設備__買電/自家発",        label: "低圧分岐設備",         type: "toggle", options: ["買電","自家発"] },
     { key: "低圧分岐__沈砂池ポンプ設備__読み",           label: "沈砂池ポンプ設備(×1kwh) 読み", type: "number", step: "1", unit: "kwh" },
     { key: "低圧分岐__沈砂池ポンプ設備__使用量",         label: "沈砂池ポンプ設備 使用量",      type: "number", step: "1", unit: "kwh" },
@@ -2804,17 +2823,17 @@ function _tutugaIsHolidayWD(w, d) {
 // 視覚・スキャン・②ブランクが食い違わないようにする（plan 整合の肝）。
 // =====================================================
 // 水・使用量タブで「非祝日の稼働日に埋まっているべき」累積/使用量キー。
-//   = ②祝日ブランク対象の日次累積メーター(返送汚泥1/2・放流) + Phase2 の日次使用量(固形塩素)。
+//   = ②祝日ブランク対象の日次累積メーター(返送汚泥1/2・放流)。
 //   ※ excessSludge1/2(余剰) は電気タブ入力のため水フォームには無い → ここでは対象外。
 //   ※ power/water/diesel/demand 等は日次必須が保証できないため誤検知回避で対象外。
+//   ※ solidChlorine(固形塩素使用量) は廃止 (chlorineDose へ統合)。
 const TUTUGA_USAGE_EXPECTED_KEYS = (function () {
   const base = (typeof TUTUGA_HOLIDAY_BLANK_KEYS_WATER !== 'undefined' && TUTUGA_HOLIDAY_BLANK_KEYS_WATER.length)
     ? TUTUGA_HOLIDAY_BLANK_KEYS_WATER.slice()
     : ['returnSludge1', 'returnSludge2', 'discharge'];
-  if (base.indexOf('solidChlorine') < 0) base.push('solidChlorine'); // Phase 2 日次使用量
   return base;
 })();
-// 水・測定タブで「測定日に埋まっているべき」測定キー集合（do1/do2 含む。inspector/bikou・終沈直書6キーは除外）。
+// 水・測定タブで「測定日に埋まっているべき」測定キー集合（inspector/bikou・終沈直書6キーは除外。do1/do2 は廃止）。
 const TUTUGA_MEASURE_EXPECTED_SET = (function () {
   const s = {};
   const keys = (typeof TUTUGA_MEASURE_SHEET_KEYS !== 'undefined')
@@ -5279,7 +5298,6 @@ const MEASURE_FORM_GROUPS = [
   { title: "水温", keys: ["tempIn", "tempD1", "tempD2", "tempOut", "tempFinal1", "tempFinal2"] },
   { title: "透視度", keys: ["transIn", "transOut", "transFinal1", "transFinal2"] },
   { title: "PH", keys: ["phIn", "phD1", "phD2", "phOut", "phFinal1", "phFinal2"] },
-  { title: "DO（ディッチ）", keys: ["do1", "do2"] },
   { title: "SV (1系)", keys: ["sv1_30", "sv1_24h"] },
   { title: "SV (2系)", keys: ["sv2_30", "sv2_24h"] },
   { title: "MLSS", keys: ["mlss1", "mlss2"] },
@@ -5306,8 +5324,6 @@ const MEASURE_FIELD_META = {
   phOut:       { label: "PH（放流）",        unit: "",    step: "0.01", type: "number" },
   phFinal1:    { label: "PH（1系終沈）",     unit: "",    step: "0.01", type: "number" },
   phFinal2:    { label: "PH（2系終沈）",     unit: "",    step: "0.01", type: "number" },
-  do1:         { label: "DO（No.1ディッチ）", unit: "㎎/ℓ", step: "0.1",  type: "number" },
-  do2:         { label: "DO（No.2ディッチ）", unit: "㎎/ℓ", step: "0.1",  type: "number" },
   sv1_30:      { label: "SV30 (1系)",        unit: "%",   step: "1",    type: "number" },
   sv1_24h:     { label: "SV24h (1系)",       unit: "%",   step: "1",    type: "number" },
   sv2_30:      { label: "SV30 (2系)",        unit: "%",   step: "1",    type: "number" },
@@ -5494,7 +5510,7 @@ function buildWaterUsageCellHtml(key, dayKey, disabledAttr) {
 
 // =====================================================
 // フェーズ3b (2026-06-09): 水質「測定」週グリッド HTML 生成（雛形＝使用量グリッド）。
-//   行＝MEASURE_FORM_GROUPS の9数値グループ（28 number 項目＝終沈6・do1/do2 含む）＋備考(bikou=text)。
+//   行＝MEASURE_FORM_GROUPS の8数値グループ（26 number 項目＝終沈6含む）＋備考(bikou=text)。
 //   各グループは section-header 行（colspan=6）で区切る。列＝項目＋月〜金（nextMon 列は作らない）。
 //   各セルに data-field（既存キー）＋ data-day（mon..fri）。型は MEASURE_FIELD_META[key].type で number/text。
 //   inspector は行に含めない（最上部の月単位 monthInspector を renderForm が別途描画）。
@@ -5559,7 +5575,7 @@ function buildWaterMeasureCellHtml(key, dayKey, disabledAttr) {
 
 // 手順2-1/2-2: 水フォームに祝日ノートと「埋まっているべき空欄」ハイライトを反映。
 // 判定は _tutugaIsGapCell（②祝日ブランク・dayHasMeasurement と整合）を通すため、
-// 祝日の積算空欄・非測定日の do1/do2 を誤検知しない。
+// 祝日の積算空欄・非測定日の測定値を誤検知しない。
 function applyWaterFormUsabilityCues() {
   if (currentSheet !== 'water') return;
   const wrap = document.getElementById('formWrap');
@@ -5567,7 +5583,7 @@ function applyWaterFormUsabilityCues() {
 
   // フェーズ3a/3b (2026-06-09): usage/measure とも週グリッド＝列ごとに空欄ハイライトを適用（各 data-day の曜日で判定）。
   //   祝日シェーディングはグリッド HTML 側(col/cell-holiday)で対応済。単日の祝日ノートは出さない（撤去）。
-  //   判定は既存 _tutugaIsGapCell に集約＝祝日の積算空欄・非測定日の do1/do2 等を誤検知しない
+  //   判定は既存 _tutugaIsGapCell に集約＝祝日の積算空欄・非測定日の測定値等を誤検知しない
   //   （measure は TUTUGA_MEASURE_EXPECTED_SET ∧ dayHasMeasurement、終沈6/bikou/inspector は対象外）。
   const note = document.getElementById('tutugaHolidayNote');
   if (note) note.remove();
@@ -5641,7 +5657,7 @@ function _scanSection(title, count, itemsHtml) {
 }
 function _scanScopeNote() {
   return '<div style="margin-top:8px;padding:8px 10px;background:#f4f7fb;border-radius:6px;color:#555;font-size:11.5px;line-height:1.6;">'
-       + '対象: 水質タブの日次累積/使用量（返送汚泥・放流・固形塩素）と測定値（DO 等）。<br>'
+       + '対象: 水質タブの日次累積/使用量（返送汚泥・放流）と測定値（水温・PH 等）。<br>'
        + '除外: 祝日の積算空欄（②ブランク＝正常）・非測定日の測定値・手付かずの日・機器運転/電気/機械タブ。</div>';
 }
 function _buildScanHtml(r, total) {

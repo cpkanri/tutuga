@@ -916,11 +916,12 @@ function _tutugaApplyMonthHeaders(wb, yyyymm) {
 // 触らない (fullCalcOnLoad=true で再計算)。
 
 // 運転管理月報 (ws=1) 日次行 R6–R36 : USAGE 系の列マップ
-// C=全日電力量 D=力測 E=無効 F=上水 G=固形塩素(新) N=放流 / J=返送汚泥No.1読み L=No.2読み
+// C=全日電力量 D=力測 E=無効 F=上水 N=放流 / J=返送汚泥No.1読み L=No.2読み
+// G=塩素投入量(chlorineDose) は MEASURE 系のため別経路で供給 (_tutugaWriteOperationDaily 末尾)。
 // H/I(脱水ケーキ)・K/M(返送汚泥日次流量) は書かない (テンプレ数式 or 空欄維持)
 var TUTUGA_OPER_USAGE_COL = {
   powerAllDay: 3, powerMeasure: 4, powerReactive: 5, water: 6,
-  solidChlorine: 7, returnSludge1: 10, returnSludge2: 12, discharge: 14
+  returnSludge1: 10, returnSludge2: 12, discharge: 14
 };
 
 // 水質管理報告 (ws=2) 1/2 日次行 R8–R38 : 水温 C–H + 透視度 O–R
@@ -930,12 +931,18 @@ var TUTUGA_SUIKAN_FRONT_COL = {
   transIn: 15, transFinal1: 16, transFinal2: 17, transOut: 18
 };
 
-// 水質管理報告 (ws=2) 2/2 日次行 R49–R79 : DO I/J(新) + PH K–P + 残留塩素 Q + SV30 R/S
+// 水質管理報告 (ws=2) 2/2 日次行 R49–R79 : DO I/J + PH K–P + 残留塩素 Q + SV30 R/S
 // C–H(臭気) は固定値書込 → 触らない
+// I/J(DO値) は MEASURE 系では供給せず、電気設備の DO 計値から再ソース (下記 TUTUGA_SUIKAN_DO_ELEC)。
 var TUTUGA_SUIKAN_BACK_COL = {
-  do1: 9, do2: 10,
   phIn: 11, phD1: 12, phD2: 13, phFinal1: 14, phFinal2: 15, phOut: 16,
   chlorine: 17, sv1_30: 18, sv2_30: 19
+};
+// I/J 列(col 9/10) = No.1/No.2 ディッチ DO 値。旧 do1/do2(水質測定タブの測定DO) を廃止し、
+// 電気設備タブの「オキシデーションディッチＤＯ計 DO値」(electrical[w][dk]) から再ソースする。
+var TUTUGA_SUIKAN_DO_ELEC = {
+  9:  'Nｏ．１オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ',
+  10: 'Nｏ．２オキシデーションディッチＤＯ計__ＤＯ値__㎎/ℓ'
 };
 
 function _tutugaWriteOperationDaily(ws, allData) {
@@ -946,14 +953,23 @@ function _tutugaWriteOperationDaily(ws, allData) {
     if (!dom) return;
     var loc = map[domStr];
     if (!loc) return;
-    var weekData = (allData.waterUsage && allData.waterUsage[loc.w]) || null;
-    if (!weekData) return;
     var row = 6 + (dom - 1);  // R6 = 月内1日
-    Object.keys(TUTUGA_OPER_USAGE_COL).forEach(function(key) {
-      var perDay = weekData[key];
-      if (!perDay || typeof perDay !== 'object') return;
-      _tutugaWriteCell(ws, row, TUTUGA_OPER_USAGE_COL[key], perDay[loc.dk]);
-    });
+    // USAGE 系列 (C/D/E/F/N + 返送読み J/L): waterUsage 週がある日のみ。
+    var weekData = (allData.waterUsage && allData.waterUsage[loc.w]) || null;
+    if (weekData) {
+      Object.keys(TUTUGA_OPER_USAGE_COL).forEach(function(key) {
+        var perDay = weekData[key];
+        if (!perDay || typeof perDay !== 'object') return;
+        _tutugaWriteCell(ws, row, TUTUGA_OPER_USAGE_COL[key], perDay[loc.dk]);
+      });
+    }
+    // G 列(col 7) = 塩素投入量(chlorineDose)。旧 solidChlorine(固形塩素使用量) を統合し付け替え。
+    // chlorineDose は MEASURE 系 → waterUsage に依存せず waterMeasure[w][dk] から供給する。
+    var measWeek = (allData.waterMeasure && allData.waterMeasure[loc.w]) || null;
+    var measDay = measWeek ? measWeek[loc.dk] : null;
+    if (measDay && typeof measDay === 'object') {
+      _tutugaWriteCell(ws, row, 7, measDay.chlorineDose);
+    }
   });
 }
 
@@ -965,18 +981,28 @@ function _tutugaWriteSuikanDaily(ws, allData) {
     if (!dom) return;
     var loc = map[domStr];
     if (!loc) return;
-    var weekDays = (allData.waterMeasure && allData.waterMeasure[loc.w]) || null;
-    if (!weekDays) return;
-    var dayData = weekDays[loc.dk];
-    if (!dayData || typeof dayData !== 'object') return;
     var frontRow = 8  + (dom - 1);  // R8  = 月内1日 (前半)
     var backRow  = 49 + (dom - 1);  // R49 = 月内1日 (後半)
-    Object.keys(TUTUGA_SUIKAN_FRONT_COL).forEach(function(key) {
-      _tutugaWriteCell(ws, frontRow, TUTUGA_SUIKAN_FRONT_COL[key], dayData[key]);
-    });
-    Object.keys(TUTUGA_SUIKAN_BACK_COL).forEach(function(key) {
-      _tutugaWriteCell(ws, backRow, TUTUGA_SUIKAN_BACK_COL[key], dayData[key]);
-    });
+    // 水温/透視度/PH/SV/塩素: waterMeasure 日データがある日のみ。
+    var weekDays = (allData.waterMeasure && allData.waterMeasure[loc.w]) || null;
+    var dayData = weekDays ? weekDays[loc.dk] : null;
+    if (dayData && typeof dayData === 'object') {
+      Object.keys(TUTUGA_SUIKAN_FRONT_COL).forEach(function(key) {
+        _tutugaWriteCell(ws, frontRow, TUTUGA_SUIKAN_FRONT_COL[key], dayData[key]);
+      });
+      Object.keys(TUTUGA_SUIKAN_BACK_COL).forEach(function(key) {
+        _tutugaWriteCell(ws, backRow, TUTUGA_SUIKAN_BACK_COL[key], dayData[key]);
+      });
+    }
+    // I/J 列(col 9/10): 電気設備の No.1/No.2 ディッチ DO 値を再ソース（旧 do1/do2 統合）。
+    //   waterMeasure に依存せず electrical[w][dk] から供給する。
+    var elecWeek = (allData.electrical && allData.electrical[loc.w]) || null;
+    var elecDay = elecWeek ? elecWeek[loc.dk] : null;
+    if (elecDay && typeof elecDay === 'object') {
+      Object.keys(TUTUGA_SUIKAN_DO_ELEC).forEach(function(col) {
+        _tutugaWriteCell(ws, backRow, parseInt(col, 10), elecDay[TUTUGA_SUIKAN_DO_ELEC[col]]);
+      });
+    }
   });
 }
 
