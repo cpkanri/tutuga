@@ -573,11 +573,17 @@ function _tutugaWriteSuikanFixed(ws, monthStr) {
 
 // 日常水質シート: 5 週 × mon-fri 5 列。テンプレに既存値はないので
 // 単純に全平日セルへ固定値を書く（水温と同じ挙動。月跨ぎフィルタなし）。
-function _tutugaWriteNichijoFixed(ws) {
+// 修正2 (2026-06-22): 外観/臭気は平日に固定値を書くが、抑制日(祝日/未点検)は空欄(null)。
+//   さらに測定者(行15=blockRow+14)は、抑制日のみ空欄化（平日はテンプレ静的名を保持）。
+//   抑制集合 allData.reportSuppressDayKeys[w] = [dk...] を index.html から受け取る。
+function _tutugaWriteNichijoFixed(ws, allData) {
   if (!ws) return;
   var WATER_BLOCK_ROW = _tutugaConst('WATER_BLOCK_ROW', { 1:1, 2:53, 3:105, 4:157, 5:209 });
   var MEASURE_DAY_COL = _tutugaConst('MEASURE_DAY_COL', { mon:10, tue:11, wed:12, thu:13, fri:14 });
   var DAYS5 = ['mon','tue','wed','thu','fri'];
+  var INSPECTOR_ROW_OFFSET = 14;  // 測定者行 (blockRow+14 = 第1週で行15)
+  var suppress = (allData && allData.reportSuppressDayKeys) || {};
+  function isSuppressed(w, dc) { var a = suppress[w]; return !!(a && a.indexOf(dc) >= 0); }
 
   function applyGroup(map) {
     for (var w = 1; w <= 5; w++) {
@@ -587,7 +593,7 @@ function _tutugaWriteNichijoFixed(ws) {
         var rowOff = Number(offStr);
         var value = map[offStr];
         DAYS5.forEach(function(dc) {
-          ws.getCell(blockRow + rowOff, MEASURE_DAY_COL[dc]).value = value;
+          ws.getCell(blockRow + rowOff, MEASURE_DAY_COL[dc]).value = isSuppressed(w, dc) ? null : value;
         });
       });
     }
@@ -595,6 +601,111 @@ function _tutugaWriteNichijoFixed(ws) {
 
   applyGroup(TUTUGA_NICHIJO_APPEARANCE_BY_ROW_OFFSET);
   applyGroup(TUTUGA_NICHIJO_ODOR_BY_ROW_OFFSET);
+
+  // 測定者: 抑制日のみ空欄化。平日(非抑制)はテンプレ静的名(例「山根　悠貴」)を保持＝書込まない。
+  // ※電気2/3ブロックの氏名はこの測定者セルを転記するため、ここでの抑制が電気側にも波及する。
+  for (var w2 = 1; w2 <= 5; w2++) {
+    var br = WATER_BLOCK_ROW[w2];
+    if (!br) continue;
+    DAYS5.forEach(function(dc) {
+      if (isSuppressed(w2, dc)) ws.getCell(br + INSPECTOR_ROW_OFFSET, MEASURE_DAY_COL[dc]).value = null;
+    });
+  }
+}
+
+// 修正1/3 (2026-06-22): 日常電気設備 点検表(2/3)ブロックの各週ヘッダに、
+//   点検者氏名(=日常水質の測定者セルを転記) と 点検内容行の日付(=水質日付) を出力する。
+//   抑制日(祝日/未点検)は氏名・日付とも空欄。加えて (1/3) 週1の既存日付 G2:K2 も抑制日を空欄化。
+//   2/3ブロック sub2 オフセット: 週w 氏名行=38+off, 内容(日付)行=39+off, 列 G-K(7-11)。
+//   wsWater は _tutugaWriteNichijoFixed 適用後(=測定者の抑制反映済)を渡すこと。
+function _tutugaWriteElecInspectorDates(wsElec, wsWater, allData) {
+  if (!wsElec) return;
+  var WATER_BLOCK_ROW = _tutugaConst('WATER_BLOCK_ROW', { 1:1, 2:53, 3:105, 4:157, 5:209 });
+  var MEASURE_DAY_COL = _tutugaConst('MEASURE_DAY_COL', { mon:10, tue:11, wed:12, thu:13, fri:14 });
+  var ELEC_DAY_COL = _tutugaConst('ELEC_DAY_COL', { mon:7, tue:8, wed:9, thu:10, fri:11 });
+  var offCfg = _tutugaConst('WEEK_OFFSETS_ELEC', { sub2: [0, 101, 201, 301, 401] });
+  var SUB2_OFF = (offCfg && offCfg.sub2) || [0, 101, 201, 301, 401];
+  var DAYS5 = ['mon','tue','wed','thu','fri'];
+  var INSPECTOR_ROW_OFFSET = 14;
+  var NAME_ROW0 = 38, DATE_ROW0 = 39;  // 週1の 氏名行/内容(日付)行
+  var suppress = (allData && allData.reportSuppressDayKeys) || {};
+  var waterDates = (allData && allData.reportWaterDates) || {};
+  function isSuppressed(w, dc) { var a = suppress[w]; return !!(a && a.indexOf(dc) >= 0); }
+  function isoToUtc(iso) { var p = String(iso).split('-').map(Number); return new Date(Date.UTC(p[0], p[1] - 1, p[2])); }
+
+  for (var w = 1; w <= 5; w++) {
+    var off = SUB2_OFF[w - 1];
+    if (off === undefined) continue;
+    var nameRow = NAME_ROW0 + off;
+    var dateRow = DATE_ROW0 + off;
+    var brWater = WATER_BLOCK_ROW[w];
+    DAYS5.forEach(function(dc) {
+      var elecCol = ELEC_DAY_COL[dc];
+      var supp = isSuppressed(w, dc);
+      // 氏名: 水質測定者セル(blockRow+14)を転記。抑制日 or 水質側空欄なら空欄。
+      var nameVal = null;
+      if (!supp && wsWater && brWater) {
+        var wv = wsWater.getCell(brWater + INSPECTOR_ROW_OFFSET, MEASURE_DAY_COL[dc]).value;
+        nameVal = _tutugaIsEmpty(wv) ? null : wv;
+      }
+      wsElec.getCell(nameRow, elecCol).value = nameVal;
+      // 日付: 水質日付(値)を書込。抑制日は空欄。テンプレ既存 numFmt(d"日(aaa)")を保持。
+      var dateCell = wsElec.getCell(dateRow, elecCol);
+      var prevFmt = dateCell.numFmt;
+      var iso = waterDates[w] && waterDates[w][dc];
+      if (!supp && iso) {
+        dateCell.value = isoToUtc(iso);
+        if (prevFmt) dateCell.numFmt = prevFmt;
+      } else {
+        dateCell.value = null;
+      }
+    });
+  }
+
+  // (1/3) 週1の既存日付 G2:K2 (=日常水質!I3..M3 式) は抑制日を空欄化。
+  DAYS5.forEach(function(dc) {
+    if (isSuppressed(1, dc)) wsElec.getCell(2, ELEC_DAY_COL[dc]).value = null;
+  });
+}
+
+// 修正3 (2026-06-22): 日常機械設備の各ブロック(点検者行/点検内容=日付行)で、
+//   抑制日(祝日/未点検)の氏名・日付を空欄化。3サブページ×5週=15ブロック。
+//   点検者行 base = {2,62,118}(sub1/2/3 の week1) + WEEK_OFFSETS_MECH[w-1]、日付行=点検者行+1、列 E-I(5-9)。
+function _tutugaSuppressMechInspectorDates(wsMech, allData) {
+  if (!wsMech) return;
+  var MECH_DAY_COL = _tutugaConst('MECH_DAY_COL', { mon:5, tue:6, wed:7, thu:8, fri:9 });
+  var WEEK_OFFSETS_MECH = _tutugaConst('WEEK_OFFSETS_MECH', [0, 177, 354, 531, 707]);
+  var DAYS5 = ['mon','tue','wed','thu','fri'];
+  var NAME_BASE = [2, 62, 118];  // sub1/sub2/sub3 の week1 点検者行
+  var suppress = (allData && allData.reportSuppressDayKeys) || {};
+  for (var w = 1; w <= 5; w++) {
+    var arr = suppress[w];
+    if (!arr || !arr.length) continue;
+    var weekOff = WEEK_OFFSETS_MECH[w - 1];
+    if (weekOff === undefined) continue;
+    NAME_BASE.forEach(function(base) {
+      var nameRow = base + weekOff;
+      var dateRow = nameRow + 1;
+      arr.forEach(function(dc) {
+        var col = MECH_DAY_COL[dc];
+        wsMech.getCell(nameRow, col).value = null;
+        wsMech.getCell(dateRow, col).value = null;
+      });
+    });
+  }
+}
+
+// 修正4 (2026-06-22): 日常電気設備 F40:F55 の左罫線を除去。
+//   F の左縦線は隣接 E 列(結合 D:E のマスタセル)の右罫線として描画されるため、
+//   E.right と F.left の両方をクリアして縦線を消す。他の罫線・塗り・フォントは保持。
+function _tutugaStripElecFLeftBorder(wsElec) {
+  if (!wsElec) return;
+  for (var r = 40; r <= 55; r++) {
+    var fCell = wsElec.getCell(r, 6); // F
+    var eCell = wsElec.getCell(r, 5); // E
+    var fb = Object.assign({}, fCell.border); delete fb.left;  fCell.border = fb;
+    var eb = Object.assign({}, eCell.border); delete eb.right; eCell.border = eb;
+  }
 }
 
 // =====================================================================
@@ -1059,7 +1170,7 @@ async function buildTutugaWorkbook(allData) {
 
   if (wsWater) {
     _tutugaWriteWaterSheet(wsWater, data);
-    _tutugaWriteNichijoFixed(wsWater);
+    _tutugaWriteNichijoFixed(wsWater, data);
   }
   // Phase 2-B: 運転管理月報 — 旧吉和レガシー除去 → 日次 USAGE 値書込
   if (wsOper) {
@@ -1075,8 +1186,18 @@ async function buildTutugaWorkbook(allData) {
     _tutugaWriteEquipmentSheet(wsEquip, data);
     _tutugaWriteEquipmentDates(wsEquip, data.month);
   }
-  if (wsElec)   _tutugaWriteElectricalSheet(wsElec, data);
-  if (wsMech)   _tutugaWriteMechanicalSheet(wsMech, data);
+  if (wsElec) {
+    _tutugaWriteElectricalSheet(wsElec, data);
+    // 修正1/3: 点検者氏名(=水質測定者) と 点検内容日付 を 2/3 ブロックへ。wsWater は処理済を渡す。
+    _tutugaWriteElecInspectorDates(wsElec, wsWater, data);
+    // 修正4: F40:F55 左罫線除去。
+    _tutugaStripElecFLeftBorder(wsElec);
+  }
+  if (wsMech) {
+    _tutugaWriteMechanicalSheet(wsMech, data);
+    // 修正3: 抑制日の点検者氏名・点検内容(日付)を空欄化。
+    _tutugaSuppressMechInspectorDates(wsMech, data);
+  }
 
   return wb;
 }
