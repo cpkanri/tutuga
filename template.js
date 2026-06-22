@@ -613,54 +613,61 @@ function _tutugaWriteNichijoFixed(ws, allData) {
   }
 }
 
-// 修正1/3 (2026-06-22): 日常電気設備 点検表(2/3)ブロックの各週ヘッダに、
+// 修正1/3 (2026-06-22): 日常電気設備 点検表(2/3)・(3/3)ブロックの各週ヘッダに、
 //   点検者氏名(=日常水質の測定者セルを転記) と 点検内容行の日付(=水質日付) を出力する。
 //   抑制日(祝日/未点検)は氏名・日付とも空欄。加えて (1/3) 週1の既存日付 G2:K2 も抑制日を空欄化。
-//   2/3ブロック sub2 オフセット: 週w 氏名行=38+off, 内容(日付)行=39+off, 列 G-K(7-11)。
+//   (2/3) sub2: 氏名行=38+off, 内容行=39+off, off=[0,101,201,301,401]。
+//   (3/3) sub3: 氏名行=70+off, 内容行=71+off, off=[0,100,200,300,400]。いずれも列 G-K(7-11)。
 //   wsWater は _tutugaWriteNichijoFixed 適用後(=測定者の抑制反映済)を渡すこと。
 function _tutugaWriteElecInspectorDates(wsElec, wsWater, allData) {
   if (!wsElec) return;
   var WATER_BLOCK_ROW = _tutugaConst('WATER_BLOCK_ROW', { 1:1, 2:53, 3:105, 4:157, 5:209 });
   var MEASURE_DAY_COL = _tutugaConst('MEASURE_DAY_COL', { mon:10, tue:11, wed:12, thu:13, fri:14 });
   var ELEC_DAY_COL = _tutugaConst('ELEC_DAY_COL', { mon:7, tue:8, wed:9, thu:10, fri:11 });
-  var offCfg = _tutugaConst('WEEK_OFFSETS_ELEC', { sub2: [0, 101, 201, 301, 401] });
-  var SUB2_OFF = (offCfg && offCfg.sub2) || [0, 101, 201, 301, 401];
+  var offCfg = _tutugaConst('WEEK_OFFSETS_ELEC', { sub2: [0, 101, 201, 301, 401], sub3: [0, 100, 200, 300, 400] });
   var DAYS5 = ['mon','tue','wed','thu','fri'];
   var INSPECTOR_ROW_OFFSET = 14;
-  var NAME_ROW0 = 38, DATE_ROW0 = 39;  // 週1の 氏名行/内容(日付)行
   var suppress = (allData && allData.reportSuppressDayKeys) || {};
   var waterDates = (allData && allData.reportWaterDates) || {};
   function isSuppressed(w, dc) { var a = suppress[w]; return !!(a && a.indexOf(dc) >= 0); }
   function isoToUtc(iso) { var p = String(iso).split('-').map(Number); return new Date(Date.UTC(p[0], p[1] - 1, p[2])); }
 
-  for (var w = 1; w <= 5; w++) {
-    var off = SUB2_OFF[w - 1];
-    if (off === undefined) continue;
-    var nameRow = NAME_ROW0 + off;
-    var dateRow = DATE_ROW0 + off;
-    var brWater = WATER_BLOCK_ROW[w];
-    DAYS5.forEach(function(dc) {
-      var elecCol = ELEC_DAY_COL[dc];
-      var supp = isSuppressed(w, dc);
-      // 氏名: 水質測定者セル(blockRow+14)を転記。抑制日 or 水質側空欄なら空欄。
-      var nameVal = null;
-      if (!supp && wsWater && brWater) {
-        var wv = wsWater.getCell(brWater + INSPECTOR_ROW_OFFSET, MEASURE_DAY_COL[dc]).value;
-        nameVal = _tutugaIsEmpty(wv) ? null : wv;
-      }
-      wsElec.getCell(nameRow, elecCol).value = nameVal;
-      // 日付: 水質日付(値)を書込。抑制日は空欄。テンプレ既存 numFmt(d"日(aaa)")を保持。
-      var dateCell = wsElec.getCell(dateRow, elecCol);
-      var prevFmt = dateCell.numFmt;
-      var iso = waterDates[w] && waterDates[w][dc];
-      if (!supp && iso) {
-        dateCell.value = isoToUtc(iso);
-        if (prevFmt) dateCell.numFmt = prevFmt;
-      } else {
-        dateCell.value = null;
-      }
-    });
-  }
+  // (2/3)・(3/3) は同一構造(氏名行/内容(日付)行・列 G-K・date numFmt)。base 行と week offset のみ異なる。
+  var BLOCKS = [
+    { nameRow0: 38, dateRow0: 39, off: (offCfg && offCfg.sub2) || [0, 101, 201, 301, 401] },  // (2/3)
+    { nameRow0: 70, dateRow0: 71, off: (offCfg && offCfg.sub3) || [0, 100, 200, 300, 400] }   // (3/3)
+  ];
+
+  BLOCKS.forEach(function(blk) {
+    for (var w = 1; w <= 5; w++) {
+      var off = blk.off[w - 1];
+      if (off === undefined) continue;
+      var nameRow = blk.nameRow0 + off;
+      var dateRow = blk.dateRow0 + off;
+      var brWater = WATER_BLOCK_ROW[w];
+      DAYS5.forEach(function(dc) {
+        var elecCol = ELEC_DAY_COL[dc];
+        var supp = isSuppressed(w, dc);
+        // 氏名: 水質測定者セル(blockRow+14)を転記。抑制日 or 水質側空欄なら空欄。
+        var nameVal = null;
+        if (!supp && wsWater && brWater) {
+          var wv = wsWater.getCell(brWater + INSPECTOR_ROW_OFFSET, MEASURE_DAY_COL[dc]).value;
+          nameVal = _tutugaIsEmpty(wv) ? null : wv;
+        }
+        wsElec.getCell(nameRow, elecCol).value = nameVal;
+        // 日付: 水質日付(値)を書込。抑制日は空欄。テンプレ既存 numFmt(d"日(aaa)")を保持。
+        var dateCell = wsElec.getCell(dateRow, elecCol);
+        var prevFmt = dateCell.numFmt;
+        var iso = waterDates[w] && waterDates[w][dc];
+        if (!supp && iso) {
+          dateCell.value = isoToUtc(iso);
+          if (prevFmt) dateCell.numFmt = prevFmt;
+        } else {
+          dateCell.value = null;
+        }
+      });
+    }
+  });
 
   // (1/3) 週1の既存日付 G2:K2 (=日常水質!I3..M3 式) は抑制日を空欄化。
   DAYS5.forEach(function(dc) {
