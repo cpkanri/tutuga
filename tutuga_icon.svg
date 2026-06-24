@@ -1,0 +1,58 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#214f86"/>
+      <stop offset="1" stop-color="#11335c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.22" r="0.7">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="leaf" x1="0.25" y1="0.05" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#ffdd76"/>
+      <stop offset="0.55" stop-color="#f5b733"/>
+      <stop offset="1" stop-color="#d9911d"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="114" ry="114" fill="url(#bg)"/>
+  <rect x="0" y="0" width="512" height="512" rx="114" ry="114" fill="url(#glow)"/>
+
+  <!-- 大銀杏 accent (no stem) -->
+  <g transform="translate(131,-30) scale(0.47)">
+    <path d="M256 376
+             C 212 362, 166 342, 136 308
+             C 112 282, 104 242, 118 210
+             C 126 194, 140 186, 158 188
+             C 188 190, 218 200, 256 226
+             C 294 200, 324 190, 354 188
+             C 372 186, 386 194, 394 210
+             C 408 242, 400 282, 376 308
+             C 346 342, 300 362, 256 376 Z"
+          fill="url(#leaf)"/>
+    <g stroke="#b87914" stroke-opacity="0.40" stroke-width="5" fill="none" stroke-linecap="round">
+      <path d="M256 366 C 224 326, 186 282, 160 230"/>
+      <path d="M256 366 C 240 318, 224 262, 216 208"/>
+      <path d="M256 366 L 256 230"/>
+      <path d="M256 366 C 272 318, 288 262, 296 208"/>
+      <path d="M256 366 C 288 326, 326 282, 352 230"/>
+    </g>
+  </g>
+
+  <!-- 筒賀 (place name, big) with soft shadow -->
+  <text x="258" y="312" text-anchor="middle" font-family="Noto Sans CJK JP" font-weight="900"
+        font-size="150" fill="#0c2545" fill-opacity="0.55" letter-spacing="6">筒賀</text>
+  <text x="256" y="309" text-anchor="middle" font-family="Noto Sans CJK JP" font-weight="900"
+        font-size="150" fill="#eef3f9" letter-spacing="6">筒賀</text>
+
+  <!-- divider -->
+  <rect x="156" y="338" width="200" height="4" rx="2" fill="#f5b733" fill-opacity="0.9"/>
+
+  <!-- 水質管理センター -->
+  <text x="256" y="384" text-anchor="middle" font-family="Noto Sans CJK JP" font-weight="500"
+        font-size="38" fill="#bcccdf" letter-spacing="2">水質管理センター</text>
+
+  <!-- romaji -->
+  <text x="256" y="420" text-anchor="middle" font-family="Noto Sans CJK JP" font-weight="400"
+        font-size="22" fill="#8093ad" letter-spacing="6">TUTUGA</text>
+</svg>
