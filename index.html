@@ -5716,6 +5716,42 @@ function showScanDialog() {
   dialog.style.display = 'flex';
 }
 
+// ===== 入力状況(完了率%): 1日=「埋まっているべき項目」(備考/測定者/終沈直書 除外)が全入力で100%。週=有効日(祝日除く)の平均。client表示のみ。 =====
+function _tutugaExpectedKeysForCurrentTab() {
+  if (currentSheet === 'water') {
+    return (currentWaterSub === 'usage')
+      ? TUTUGA_USAGE_EXPECTED_KEYS.slice()
+      : Object.keys(TUTUGA_MEASURE_EXPECTED_SET);
+  }
+  return getCurrentTabFieldKeys().filter(function (k) { return k !== 'inspector' && k !== 'bikou'; });
+}
+
+function getCurrentTabWeekPercent(week) {
+  var slots = monthWeeks[week - 1];
+  var dayNums = slots ? [1, 2, 3, 4, 5].filter(function (d) { return slots[d]; }) : [1, 2, 3, 4, 5];
+  var keys = _tutugaExpectedKeysForCurrentTab();
+  if (!keys.length || !dayNums.length) return null;
+  var data = tutugaData.targetMonth ? loadMonthData(tutugaData.targetMonth) : null;
+  var sum = 0, n = 0;
+  dayNums.forEach(function (dn) {
+    if (_tutugaIsHolidayWD(week, dn)) return;            // 祝日は対象外
+    var dd = data ? getDayDataFromMonthData(data, week, DAY_NUM_TO_STR[dn]) : null;
+    var filled = 0;
+    keys.forEach(function (k) {
+      var v = dd ? dd[k] : undefined;
+      if (v !== null && v !== undefined && String(v).trim() !== '') filled++;
+    });
+    sum += Math.round(filled / keys.length * 100);       // その日の完了率
+    n++;
+  });
+  return n ? Math.round(sum / n) : null;                 // 有効日の平均＝全日完了で100%
+}
+
+function getWeekBadgeText(week) {
+  var p = getCurrentTabWeekPercent(week);
+  return (p && p > 0) ? p + "%" : "";
+}
+
 function renderWeekTabs() {
   const container = document.getElementById("weekTabs");
   if (!container) return;
@@ -5726,9 +5762,8 @@ function renderWeekTabs() {
   let html = "";
   for (let w = 1; w <= weeksToShow; w++) {
     const active = w === currentWeek ? "active" : "";
-    const slots = monthWeeks[w - 1];
-    const count = slots ? [1,2,3,4,5].filter(d => slots[d]).length : 0;
-    const badge = slots && count < 5 ? `<span class="pct">${count}日</span>` : "";
+    const badgeText = getWeekBadgeText(w);
+    const badge = badgeText ? `<span class="pct">${badgeText}</span>` : "";
     html += `<button type="button" data-week="${w}" class="${active}">第${w}週${badge}</button>`;
   }
   container.innerHTML = html;
@@ -5822,6 +5857,9 @@ function renderEquipPanel() {
   // 週タブ active
   document.querySelectorAll("#equipWeekTabs button").forEach(b => {
     b.classList.toggle("active", Number(b.dataset.week) === currentWeek);
+    (function () { var _bt = getWeekBadgeText(Number(b.dataset.week)); var _pe = b.querySelector(".pct");
+      if (!_bt) { if (_pe) _pe.remove(); }
+      else { if (!_pe) { _pe = document.createElement("span"); _pe.className = "pct"; b.appendChild(_pe); } _pe.textContent = _bt; } })();
     if (!b._tutugaBound) {
       b._tutugaBound = true;
       b.addEventListener("click", () => {
@@ -6232,6 +6270,9 @@ function renderMechPanel() {
   // 週タブ active
   document.querySelectorAll("#mechWeekTabs button").forEach(b => {
     b.classList.toggle("active", Number(b.dataset.week) === currentWeek);
+    (function () { var _bt = getWeekBadgeText(Number(b.dataset.week)); var _pe = b.querySelector(".pct");
+      if (!_bt) { if (_pe) _pe.remove(); }
+      else { if (!_pe) { _pe = document.createElement("span"); _pe.className = "pct"; b.appendChild(_pe); } _pe.textContent = _bt; } })();
     if (!b._tutugaBound) {
       b._tutugaBound = true;
       b.addEventListener("click", () => {
@@ -6288,6 +6329,9 @@ function renderMechPanel() {
 function renderElecPanel() {
   document.querySelectorAll("#elecWeekTabs button").forEach(b => {
     b.classList.toggle("active", Number(b.dataset.week) === currentWeek);
+    (function () { var _bt = getWeekBadgeText(Number(b.dataset.week)); var _pe = b.querySelector(".pct");
+      if (!_bt) { if (_pe) _pe.remove(); }
+      else { if (!_pe) { _pe = document.createElement("span"); _pe.className = "pct"; b.appendChild(_pe); } _pe.textContent = _bt; } })();
     if (!b._tutugaBound) {
       b._tutugaBound = true;
       b.addEventListener("click", () => {
