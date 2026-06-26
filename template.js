@@ -903,9 +903,9 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
           var val = has ? dayData[key] : undefined;
           var isEmpty = (val === null || val === undefined || val === '');
           if (isEmpty) {
-            // 可動堰・ゲート: 空欄なら既定開度を出力（「-」より優先。祝日含め常に適用）
+            // 可動堰・ゲート: 非祝日で空欄なら既定開度を出力（祝日は他項目同様に空欄維持）
             var gateDefaults = (typeof window !== 'undefined' && window.TUTUGA_GATE_DEFAULTS) ? window.TUTUGA_GATE_DEFAULTS : null;
-            if (gateDefaults && Object.prototype.hasOwnProperty.call(gateDefaults, key)) {
+            if (!isHolidayCell && gateDefaults && Object.prototype.hasOwnProperty.call(gateDefaults, key)) {
               _tutugaWriteCell(ws, row, col, gateDefaults[key]);
               return;
             }
