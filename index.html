@@ -2623,6 +2623,18 @@ if (typeof window !== 'undefined') {
   window.TUTUGA_MECH_AUTO_DASH_KEYS = TUTUGA_MECH_AUTO_DASH_KEYS;
 }
 
+// 可動堰・ゲートの既定開度（空欄時にプレースホルダ薄グレー表示＋Excel出力で既定値を使用）
+const TUTUGA_GATE_DEFAULTS = {
+  "流出可動堰__1__開度": 220,
+  "流出可動堰__2__開度": 200,
+  "流出ゲート__1__開度": 200,
+  "流出ゲート__2__開度": 200,
+  "連絡ゲート__common1__開度": 0,
+};
+if (typeof window !== 'undefined') {
+  window.TUTUGA_GATE_DEFAULTS = TUTUGA_GATE_DEFAULTS;
+}
+
 // =====================================================
 // TUTUGA_FIELDS: Phase 2-3 集約定義（Phase 2-4 検証用）
 // usage 9 / measure 28 / equip 22 / elec 29+26+12 / mech 56+50+49
@@ -6154,7 +6166,8 @@ function buildMechWeekGridHtml(sub, weekIdx) {
 function buildMechCellHtml(f, dayKey, disabledAttr) {
   const keyEsc = escapeHtml(f.key);
   if (f.type === "number") {
-    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-mfield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
+    const _gd = (typeof TUTUGA_GATE_DEFAULTS !== 'undefined' && TUTUGA_GATE_DEFAULTS[f.key] != null) ? ` placeholder="${TUTUGA_GATE_DEFAULTS[f.key]}"` : "";
+    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-mfield="${keyEsc}" data-day="${dayKey}"${_gd}${disabledAttr}>`;
   } else if (f.type === "text") {
     return `<input type="text" inputmode="${f.inputmode || 'decimal'}" data-mfield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
   } else if (f.type === "numdash") {

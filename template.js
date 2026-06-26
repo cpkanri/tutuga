@@ -903,6 +903,12 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
           var val = has ? dayData[key] : undefined;
           var isEmpty = (val === null || val === undefined || val === '');
           if (isEmpty) {
+            // 可動堰・ゲート: 空欄なら既定開度を出力（「-」より優先。祝日含め常に適用）
+            var gateDefaults = (typeof window !== 'undefined' && window.TUTUGA_GATE_DEFAULTS) ? window.TUTUGA_GATE_DEFAULTS : null;
+            if (gateDefaults && Object.prototype.hasOwnProperty.call(gateDefaults, key)) {
+              _tutugaWriteCell(ws, row, col, gateDefaults[key]);
+              return;
+            }
             // Phase 22: 数値型なら未入力ハイフンを文字列として書き込む。トグル系は既存どおり何も書かない。
             // Phase 22 補追: 元書式が数値書式 (0.0/0.00) のセルで表示崩れを防ぐため value 設定後に numFmt='@' を付与
             // Phase 22 補追 2: 出力文字を U+002D '-' に変更 (MS P明朝での U+30FC 表示崩れ回避)
