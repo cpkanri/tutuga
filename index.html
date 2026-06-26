@@ -981,10 +981,26 @@ body.login-active { overflow: hidden; }
   text-overflow: ellipsis;
 }
 .equip-table button.toggle-btn:hover { background: #f5f8fb; }
-/* 力率 ± 符号反転ボタン */
-.pf-input-wrap { display: inline-flex; align-items: center; gap: 2px; width: 100%; }
-.pf-input-wrap input { flex: 1 1 auto; min-width: 0; }
-.pf-sign-btn { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border: 1px solid #b0bec5; border-radius: 6px; background: #eceff1; color: #37474f; font-size: 16px; line-height: 1; cursor: pointer; }
+/* 力率 ± 符号反転ボタン（入力欄を横幅コンパクト固定＋右揃え、±ボタンは入力欄に高さ整合） */
+.pf-input-wrap { display: flex; align-items: stretch; justify-content: flex-end; gap: 2px; width: 100%; box-sizing: border-box; }
+/* 詳細度を .equip-table input[type="text"]{min-width:80px} より上げ、横幅を 64px に固定して縮小 */
+.equip-table .pf-input-wrap input[type="text"] { flex: 0 1 64px; width: 64px; max-width: 64px; min-width: 0; }
+.pf-sign-btn {
+  flex: 0 0 auto;
+  width: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #b0bec5;
+  border-radius: 4px;
+  background: #eceff1;
+  color: #37474f;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  box-sizing: border-box;
+}
 .pf-sign-btn:active { background: #cfd8dc; }
 .pf-sign-btn:disabled { opacity: .4; cursor: default; }
 .equip-table td.day-disabled {
