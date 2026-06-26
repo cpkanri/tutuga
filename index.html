@@ -981,6 +981,12 @@ body.login-active { overflow: hidden; }
   text-overflow: ellipsis;
 }
 .equip-table button.toggle-btn:hover { background: #f5f8fb; }
+/* 力率 ± 符号反転ボタン */
+.pf-input-wrap { display: inline-flex; align-items: center; gap: 2px; width: 100%; }
+.pf-input-wrap input { flex: 1 1 auto; min-width: 0; }
+.pf-sign-btn { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border: 1px solid #b0bec5; border-radius: 6px; background: #eceff1; color: #37474f; font-size: 16px; line-height: 1; cursor: pointer; }
+.pf-sign-btn:active { background: #cfd8dc; }
+.pf-sign-btn:disabled { opacity: .4; cursor: default; }
 .equip-table td.day-disabled {
   background: #ececec;
 }
@@ -2438,7 +2444,7 @@ const MECH_SECTIONS_2 = [
     { key: "濃縮汚泥引抜弁__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "濃縮汚泥引抜弁__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
     { key: "濃縮汚泥引抜弁__common1__動作状況",   label: "動作状況",   type: "toggle", options: ["○"] },
-    { key: "濃縮汚泥引抜弁__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "濃縮汚泥引抜弁__common1__モード確認", label: "モード確認", type: "toggle", options: ["単独","連動"] },
   ]},
   { title: "汚泥ポンプ室床排水ポンプ", fields: [
     { key: "汚泥ポンプ室床排水ポンプ__common1__電流値",     label: "電流値",     type: "number", step: "0.1",  unit: "A" },
@@ -2510,62 +2516,62 @@ const MECH_SECTIONS_3 = [
   { title: "電気室給気ファン", fields: [
     { key: "電気室給気ファン__common1__電流値",       label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "電気室給気ファン__common1__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "電気室給気ファン__common1__モード確認",   label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "電気室給気ファン__common1__モード確認",   label: "モード確認", type: "toggle", options: ["連動","停止","試験"] },
   ]},
   { title: "電気室排気ファン", fields: [
     { key: "電気室排気ファン__common1__電流値",       label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "電気室排気ファン__common1__異音、振動等", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "電気室排気ファン__common1__モード確認",   label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "電気室排気ファン__common1__モード確認",   label: "モード確認", type: "toggle", options: ["自動","停止","試験"] },
   ]},
   { title: "自家発室給気ファン", fields: [
     { key: "自家発室給気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "自家発室給気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "自家発室給気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["連動","単独"] },
   ]},
   { title: "汚泥ポンプ室排気ファン", fields: [
     { key: "汚泥ポンプ室排気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "汚泥ポンプ室排気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "汚泥ポンプ室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "汚泥ポンプ室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","停止","試験"] },
   ]},
   { title: "汚泥ポンプ室吸気ファン", fields: [
     { key: "汚泥ポンプ室吸気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "汚泥ポンプ室吸気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "汚泥ポンプ室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "汚泥ポンプ室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["連動","停止","試験"] },
   ]},
   { title: "脱水作業室排気ファン", fields: [
     { key: "脱水作業室排気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "脱水作業室排気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "脱水作業室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "脱水作業室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","停止","試験"] },
   ]},
   { title: "脱水作業室吸気ファン", fields: [
     { key: "脱水作業室吸気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "脱水作業室吸気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "脱水作業室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "脱水作業室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["連動","停止","試験"] },
   ]},
   { title: "脱臭機械室排気ファン", fields: [
     { key: "脱臭機械室排気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "脱臭機械室排気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "脱臭機械室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "脱臭機械室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","停止","試験"] },
   ]},
   { title: "脱臭機械室吸気ファン", fields: [
     { key: "脱臭機械室吸気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "脱臭機械室吸気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "脱臭機械室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "脱臭機械室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["連動","停止","試験"] },
   ]},
   { title: "終沈ポンプ室排気ファン", fields: [
     { key: "終沈ポンプ室排気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "終沈ポンプ室排気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "終沈ポンプ室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "終沈ポンプ室排気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","停止","試験"] },
   ]},
   { title: "終沈ポンプ室吸気ファン", fields: [
     { key: "終沈ポンプ室吸気ファン__common1__電流値",     label: "電流値",     type: "number", step: "0.1", unit: "A" },
     { key: "終沈ポンプ室吸気ファン__common1__異音、振動", label: "異音・振動", type: "toggle", options: ["○"] },
-    { key: "終沈ポンプ室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["自動","手動"] },
+    { key: "終沈ポンプ室吸気ファン__common1__モード確認", label: "モード確認", type: "toggle", options: ["連動","停止","試験"] },
   ]},
   { title: "自動巻取型エアフィルタ", fields: [
     { key: "自動巻取型エアフィルター__common1__巻取完了表示点灯確認", label: "巻取完了表示", type: "toggle", options: ["○"] },
     { key: "自動巻取型エアフィルター__common1__差圧",                 label: "差圧",         type: "number", step: "1",   unit: "Pa" },
-    { key: "自動巻取型エアフィルター__common1__モード確認",           label: "モード確認",   type: "toggle", options: ["自動","手動"] },
-    { key: "自動巻取型エアフィルター__common1__設定",                 label: "設定",         type: "toggle", options: ["○"] },
+    { key: "自動巻取型エアフィルター__common1__モード確認",           label: "モード確認",   type: "toggle", options: ["タイマー","差圧"] },
+    { key: "自動巻取型エアフィルター__common1__設定",                 label: "設定",         type: "toggle", options: ["自動","手動","切"] },
   ]},
 ];
 
@@ -6216,6 +6222,10 @@ function buildElecCellHtml(f, dayKey, disabledAttr) {
     return `<div class="autocalc-cell" data-autocalc-display="${keyEsc}" data-day="${dayKey}" title="自動計算（当日の読み − 前回の読み）"></div>`;
   }
   if (f.type === "number") {
+    if (f.key === "引込・受電__力率__ψ") {
+      // 力率: iOS テンキーにマイナスキーが無いため ± 符号反転ボタンを併設（テンキー維持）
+      return `<span class="pf-input-wrap"><button type="button" class="pf-sign-btn" data-pf-target="${keyEsc}" data-day="${dayKey}" tabindex="-1" title="符号を反転"${disabledAttr}>±</button><input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}></span>`;
+    }
     return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
   } else if (f.type === "text") {
     return `<input type="text" inputmode="${f.inputmode || 'decimal'}" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
@@ -7668,6 +7678,22 @@ function migrateBikouCleanup() {
 try { migrateBikouCleanup(); } catch (e) { console.warn("bikou migration error:", e); }
 
 init();
+
+// 力率 ± 符号反転ボタン: iOS テンキーにマイナスキーが無い対策。
+// 委譲リスナー（再描画後も有効）。input イベント発火で既存の正規化/バリデーション/markDirty を再利用。
+document.addEventListener("click", function (ev) {
+  const btn = ev.target.closest(".pf-sign-btn");
+  if (!btn || btn.disabled) return;
+  const wrap = btn.closest(".pf-input-wrap");
+  const input = wrap ? wrap.querySelector("input") : null;
+  if (!input || input.disabled) return;
+  let v = String(input.value || "").trim();
+  if (v === "" || v === "-") { input.focus(); return; }
+  v = (v.charAt(0) === "-") ? v.slice(1) : "-" + v;
+  input.value = v;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.focus();
+});
 </script>
 </body>
 </html>
