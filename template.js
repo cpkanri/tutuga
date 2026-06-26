@@ -833,6 +833,12 @@ function _tutugaWriteElectricalSheet(ws, allData) {
   });
   var ELEC_DAY_COL = _tutugaConst('ELEC_DAY_COL', { mon:7, tue:8, wed:9, thu:10, fri:11 });
   var DAYS5 = ['mon','tue','wed','thu','fri'];
+  // 電気電流値(A)は小数1桁で表示。テンプレ書式が General(動力/照明)でも 0.0 を強制し、既存小数書式(引込=0.0)は維持。
+  var ELEC_CURRENT_DECIMAL = new Set([
+    '引込・受電__電流__A',
+    '低圧分岐__動力(210V)電流__A',
+    '低圧分岐__照明(210-105V)電流__A'
+  ]);
   var subMaps = [
     { offsets: WEEK_OFFSETS_ELEC.sub1, rowMap: TUTUGA_ELEC1_ROW_W1 },
     { offsets: WEEK_OFFSETS_ELEC.sub2, rowMap: TUTUGA_ELEC2_ROW_W1 },
@@ -868,6 +874,11 @@ function _tutugaWriteElectricalSheet(ws, allData) {
           if (isHolCell && ELEC_HOL_KEYS.indexOf(key) >= 0) return; // 祝日: 余剰汚泥累積は空欄維持
           var row = s.rowMap[key] + weekOffset;
           _tutugaWriteCell(ws, row, col, dayData[key]);
+          if (ELEC_CURRENT_DECIMAL.has(key) && !_tutugaIsEmpty(dayData[key])) {
+            var _pc = ws.getCell(row, col);
+            var _keepFmt = (_pc.numFmt && _pc.numFmt !== '@' && _pc.numFmt !== 'General' && /\.0/.test(_pc.numFmt)) ? _pc.numFmt : '0.0';
+            _pc.style = Object.assign({}, _pc.style, { numFmt: _keepFmt });
+          }
         });
       });
     });
@@ -916,7 +927,7 @@ function _tutugaWriteMechanicalSheet(ws, allData) {
             if (!isHolidayCell && autoDashKeys && autoDashKeys.has(key)) {
               var cell = ws.getCell(row, col);
               cell.value = '-';
-              try { cell.numFmt = '@'; } catch (e) {}
+              try { cell.style = Object.assign({}, cell.style, { numFmt: '@' }); } catch (e) {}
             }
             return;
           }
