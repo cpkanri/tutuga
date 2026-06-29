@@ -615,9 +615,10 @@ function _tutugaWriteNichijoFixed(ws, allData) {
   }
 }
 
-// 修正1/3 (2026-06-22): 日常電気設備 点検表(2/3)・(3/3)ブロックの各週ヘッダに、
+// 修正1/3 (2026-06-22, 2026-06-29更新): 日常電気設備 点検表(2/3)・(3/3)ブロックの各週ヘッダに、
 //   点検者氏名(=日常水質の測定者セルを転記) と 点検内容行の日付(=水質日付) を出力する。
-//   抑制日(祝日/未点検)は氏名・日付とも空欄。加えて (1/3) 週1の既存日付 G2:K2 も抑制日を空欄化。
+//   氏名は祝日空欄、日付は祝日でも表示(カレンダー表示なので消さない)。
+//   (1/3): 週1=行2(旧式 G2:K2 を値で上書き)・週2-5=[105,205,305,405]に日付を充填(常時表示)。
 //   (2/3) sub2: 氏名行=38+off, 内容行=39+off, off=[0,101,201,301,401]。
 //   (3/3) sub3: 氏名行=70+off, 内容行=71+off, off=[0,100,200,300,400]。いずれも列 G-K(7-11)。
 //   wsWater は _tutugaWriteNichijoFixed 適用後(=測定者の抑制反映済)を渡すこと。
@@ -657,11 +658,11 @@ function _tutugaWriteElecInspectorDates(wsElec, wsWater, allData) {
           nameVal = _tutugaIsEmpty(wv) ? null : wv;
         }
         wsElec.getCell(nameRow, elecCol).value = nameVal;
-        // 日付: 水質日付(値)を書込。抑制日は空欄。テンプレ既存 numFmt(d"日(aaa)")を保持。
+        // 日付は祝日でも残す（カレンダー表示）。氏名のみ抑制。値があれば常に書込。
         var dateCell = wsElec.getCell(dateRow, elecCol);
         var prevFmt = dateCell.numFmt;
         var iso = waterDates[w] && waterDates[w][dc];
-        if (!supp && iso) {
+        if (iso) {
           dateCell.value = isoToUtc(iso);
           if (prevFmt) dateCell.numFmt = prevFmt;
         } else {
@@ -671,15 +672,31 @@ function _tutugaWriteElecInspectorDates(wsElec, wsWater, allData) {
     }
   });
 
-  // (1/3) 週1の既存日付 G2:K2 (=日常水質!I3..M3 式) は抑制日を空欄化。
-  DAYS5.forEach(function(dc) {
-    if (isSuppressed(1, dc)) wsElec.getCell(2, ELEC_DAY_COL[dc]).value = null;
-  });
+  // (1/3) 日付: 週1=行2(旧式 G2:K2 を値で上書き), 週2-5=[105,205,305,405]。列 G-K(7-11)。
+  //   水質日付を常時書込（祝日も日付は残す。旧 (1/3)週1抑制空欄化は撤去）。
+  //   週2-5 は従来未書込で空だったため新規充填。
+  var ELEC13_DATE_ROWS = _tutugaConst('ELEC13_DATE_ROWS', [2, 105, 205, 305, 405]);
+  var ELEC_DATE_NUMFMT = 'd"日("aaa")"';
+  for (var w13 = 1; w13 <= 5; w13++) {
+    var dRow13 = ELEC13_DATE_ROWS[w13 - 1];
+    if (dRow13 === undefined) continue;
+    DAYS5.forEach(function(dc) {
+      var c13 = wsElec.getCell(dRow13, ELEC_DAY_COL[dc]);
+      var pf13 = c13.numFmt;
+      var iso13 = waterDates[w13] && waterDates[w13][dc];
+      if (iso13) {
+        c13.value = isoToUtc(iso13);
+        c13.numFmt = (pf13 && pf13 !== 'General') ? pf13 : ELEC_DATE_NUMFMT;
+      } else {
+        c13.value = null;
+      }
+    });
+  }
 }
 
 // 修正(2026-06-29): 日常機械設備の各ブロック(点検者行/点検内容=日付行)に、点検者氏名(=日常水質の
-//   測定者セル転記)と点検内容の日付(=水質日付)を能動書込する。抑制日(祝日)は氏名・日付とも空欄。
-//   電気 _tutugaWriteElecInspectorDates と同方式。wsWater は _tutugaWriteNichijoFixed 適用後を渡す。
+//   測定者セル転記)と点検内容の日付(=水質日付)を能動書込する。氏名は祝日空欄、日付は祝日でも表示
+//   (カレンダー表示なので消さない)。電気 _tutugaWriteElecInspectorDates と同方式。wsWater は _tutugaWriteNichijoFixed 適用後を渡す。
 //   点検者行 base=[2,62,118](sub1/2/3 week1)+WEEK_OFFSETS_MECH[w-1]、日付行=点検者行+1、列 E-I(5-9)。
 //   テンプレの該当セルは3月固定のテキスト/共有式のため、値で上書きして当月の氏名・日付に置換する。
 function _tutugaWriteMechInspectorDates(wsMech, wsWater, allData) {
@@ -714,11 +731,11 @@ function _tutugaWriteMechInspectorDates(wsMech, wsWater, allData) {
           nameVal = _tutugaIsEmpty(wv) ? null : wv;
         }
         wsMech.getCell(nameRow, col).value = nameVal;
-        // 日付: 水質日付(値)を書込。抑制日は空欄。テンプレ既存 numFmt(d"日(aaa)")を保持。
+        // 日付: 祝日でも残す（カレンダー表示）。氏名のみ抑制。値があれば常に書込。
         var dateCell = wsMech.getCell(dateRow, col);
         var prevFmt = dateCell.numFmt;
         var iso = waterDates[w] && waterDates[w][dc];
-        if (!supp && iso) {
+        if (iso) {
           dateCell.value = isoToUtc(iso);
           dateCell.numFmt = prevFmt || DATE_NUMFMT;
         } else {
