@@ -3640,14 +3640,63 @@ function shouldSkipFieldForCopy(fieldKey) {
 // 全タブ共通の前日コピー実行
 // Phase 8 修正04D: dayOverride で対象 day を上書き可能（機器運転時間タブの個別ボタン用）
 // dayOverride が指定された場合、その day を起点に前日を探索し、その day にコピーする。
-function copyPreviousDayToCurrent(dayOverride) {
+// 前日コピー: 必要な前月/前々月がローカル未キャッシュのときサーバーから取得（2026-06-29）
+// 一時的に tutugaData を対象月の空構造へ退避し、既存 mergeServerData を再利用して構築 →
+// localStorage 保存 → finally で必ず元の月へ復元する（ライブ状態を汚さない）。
+async function ensureMonthInStorage(monthStr) {
+  if (!monthStr) return false;
+  if (monthStr === tutugaData.targetMonth) return true; // 現在月はライブ（tutugaData）
+  var key = 'tutuga_weekly_' + monthStr;
+  if (localStorage.getItem(key)) return true;           // 既にキャッシュ済み
+  var serverData;
+  try {
+    serverData = await downloadFromServer(monthStr);
+  } catch (e) {
+    console.warn('[copy] 月サーバー取得失敗:', monthStr, e);
+    return false;
+  }
+  if (!serverData) return false;
+  var backup = tutugaData;
+  try {
+    tutugaData = {
+      targetMonth: monthStr,
+      startDate: estimateStartDate(monthStr),
+      monthInspector: "",
+      weeks: {}, equip: {}, mech: {}, elec: {}
+    };
+    ensureStructure();
+    mergeServerData(serverData, monthStr);
+    safeSetItem(key, JSON.stringify(tutugaData));
+  } catch (e) {
+    console.warn('[copy] 月キャッシュ構築失敗:', monthStr, e);
+    return false; // finally で必ず復元される
+  } finally {
+    tutugaData = backup; // 例外有無に関わらず元の月へ復元
+  }
+  return !!localStorage.getItem(key);
+}
+
+async function copyPreviousDayToCurrent(dayOverride) {
   // 入力途中の値を tutugaData に確定（前月から遡る場合の参照のため）
   try { saveCurrentFormToData(); } catch (_) {}
 
   const curMonth = tutugaData.targetMonth || '';
   const curDayKey = dayOverride || DAY_NUM_TO_STR[currentDay] || 'mon';
 
-  const prev = findPreviousDayWithData(currentWeek, curDayKey, curMonth);
+  let prev = findPreviousDayWithData(currentWeek, curDayKey, curMonth);
+  if (!prev) {
+    // 2026-06-29: 前月・前々月がローカル未キャッシュの可能性 → サーバーから取得して再探索
+    const _fallbackMonths = [subtractMonths(curMonth, 1), subtractMonths(curMonth, 2)];
+    let _toastShown = false;
+    for (const _m of _fallbackMonths) {
+      if (!_m) continue;
+      if (!_toastShown) { showToast('前月データを取得中…'); _toastShown = true; }
+      if (await ensureMonthInStorage(_m)) {
+        prev = findPreviousDayWithData(currentWeek, curDayKey, curMonth);
+        if (prev) break;
+      }
+    }
+  }
   if (!prev) {
     alert('前日のデータが見つかりません。');
     return;
