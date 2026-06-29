@@ -6130,12 +6130,12 @@ function buildEquipFormHtml(kind, sub, weekIdx, dayIdx) {
       if (f.type === "number") {
         // Phase 8 修正05: 電気・機械の数値項目は半角ハイフン `-`（休止/該当なし）を許容。
         // type を text 化し、data-elec-mech-numeric マーカーで onInput バリデーションを有効にする。
-        html += `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}"${disabledAttr}>`;
+        html += `<input type="text" inputmode="decimal" step="${f.step || '1'}" data-elec-mech-numeric="1" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}"${disabledAttr}>`;
       } else if (f.type === "text") {
         html += `<input type="text" inputmode="${f.inputmode || 'decimal'}" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}"${disabledAttr}>`;
       } else if (f.type === "numdash") {
         // Phase 8 修正05: numdash も「数値 or `-` or 空」の同じバリデーションに統一
-        html += `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}" placeholder="-"${disabledAttr}>`;
+        html += `<input type="text" inputmode="decimal" step="${f.step || '1'}" data-elec-mech-numeric="1" ${dataAttr}="${escapeHtml(f.key)}" data-day="${dayKey}" placeholder="-"${disabledAttr}>`;
       } else if (f.type === "toggle") {
         // Phase 8 修正05: 電気・機械のトグルに `-`（休止/該当なし）を追加。
         // TUTUGA_FIELDS 側の options は変更せず、描画時にのみ拡張（既存定義に副作用を与えない）。
@@ -6216,11 +6216,11 @@ function buildMechCellHtml(f, dayKey, disabledAttr) {
   const keyEsc = escapeHtml(f.key);
   if (f.type === "number") {
     const _gd = (typeof TUTUGA_GATE_DEFAULTS !== 'undefined' && TUTUGA_GATE_DEFAULTS[f.key] != null) ? ` placeholder="${TUTUGA_GATE_DEFAULTS[f.key]}"` : "";
-    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-mfield="${keyEsc}" data-day="${dayKey}"${_gd}${disabledAttr}>`;
+    return `<input type="text" inputmode="decimal" step="${f.step || '1'}" data-elec-mech-numeric="1" data-mfield="${keyEsc}" data-day="${dayKey}"${_gd}${disabledAttr}>`;
   } else if (f.type === "text") {
     return `<input type="text" inputmode="${f.inputmode || 'decimal'}" data-mfield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
   } else if (f.type === "numdash") {
-    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-mfield="${keyEsc}" data-day="${dayKey}" placeholder="-"${disabledAttr}>`;
+    return `<input type="text" inputmode="decimal" step="${f.step || '1'}" data-elec-mech-numeric="1" data-mfield="${keyEsc}" data-day="${dayKey}" placeholder="-"${disabledAttr}>`;
   } else if (f.type === "toggle") {
     const baseOpts = Array.isArray(f.options) ? f.options : [];
     const augmented = baseOpts.indexOf('-') >= 0 ? baseOpts : baseOpts.concat(['-']);
@@ -6302,13 +6302,13 @@ function buildElecCellHtml(f, dayKey, disabledAttr) {
   if (f.type === "number") {
     if (f.key === "引込・受電__力率__ψ") {
       // 力率: iOS テンキーにマイナスキーが無いため ± 符号反転ボタンを併設（テンキー維持）
-      return `<span class="pf-input-wrap"><button type="button" class="pf-sign-btn" data-pf-target="${keyEsc}" data-day="${dayKey}" tabindex="-1" title="符号を反転"${disabledAttr}>±</button><input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}></span>`;
+      return `<span class="pf-input-wrap"><button type="button" class="pf-sign-btn" data-pf-target="${keyEsc}" data-day="${dayKey}" tabindex="-1" title="符号を反転"${disabledAttr}>±</button><input type="text" inputmode="decimal" step="${f.step || '1'}" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}></span>`;
     }
-    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
+    return `<input type="text" inputmode="decimal" step="${f.step || '1'}" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
   } else if (f.type === "text") {
     return `<input type="text" inputmode="${f.inputmode || 'decimal'}" data-efield="${keyEsc}" data-day="${dayKey}"${disabledAttr}>`;
   } else if (f.type === "numdash") {
-    return `<input type="text" inputmode="decimal" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}" placeholder="-"${disabledAttr}>`;
+    return `<input type="text" inputmode="decimal" step="${f.step || '1'}" data-elec-mech-numeric="1" data-efield="${keyEsc}" data-day="${dayKey}" placeholder="-"${disabledAttr}>`;
   } else if (f.type === "toggle") {
     const baseOpts = Array.isArray(f.options) ? f.options : [];
     const augmented = baseOpts.indexOf('-') >= 0 ? baseOpts : baseOpts.concat(['-']);
