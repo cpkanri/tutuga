@@ -547,20 +547,22 @@ var TUTUGA_NICHIJO_ODOR_BY_ROW_OFFSET = {
 // 行8 = 月初日, 行 8+(d-1) = 第d日 (外観), 行 49+(d-1) = 第d日 (臭気)。
 // テンプレに3月固定値が埋め込まれているため、対象月外/土日も含めて
 // 必ず上書きする (値 or null)。
-function _tutugaWriteSuikanFixed(ws, monthStr) {
-  if (!ws || !monthStr) return;
-  var parts = String(monthStr).split('-').map(Number);
-  var y = parts[0], m = parts[1];
-  if (!y || !m) return;
-  var daysInMonth = new Date(y, m, 0).getDate();
+// 修正(2026-06-28): 水質管理報告の外観/臭気を日常水質と同一規約でゲート。
+//   在月平日のうち抑制日(祝日 || 未点検 = reportSuppressDayKeys)は空欄(null)。
+//   土日・前月跨ぎ・翌月跨ぎ・月末超過は reportDayMap に無い → 自動的に null（テンプレ
+//   埋め込みの旧固定値もこれで上書きクリアされる）。
+function _tutugaWriteSuikanFixed(ws, allData) {
+  if (!ws) return;
+  var map = (allData && allData.reportDayMap) || {};
+  var suppress = (allData && allData.reportSuppressDayKeys) || {};
+  function isSuppressed(w, dk) { var a = suppress[w]; return !!(a && a.indexOf(dk) >= 0); }
 
   function fillBlock(startRow, colMap) {
     var cols = Object.keys(colMap).map(Number);
     for (var d = 1; d <= 31; d++) {
       var row = startRow + (d - 1);
-      var inMonth = d <= daysInMonth;
-      var dow = inMonth ? new Date(y, m - 1, d).getDay() : -1;
-      var writeable = inMonth && dow !== 0 && dow !== 6;
+      var loc = map[String(d)];
+      var writeable = !!loc && !isSuppressed(loc.w, loc.dk);
       for (var i = 0; i < cols.length; i++) {
         ws.getCell(row, cols[i]).value = writeable ? colMap[cols[i]] : null;
       }
@@ -1203,7 +1205,7 @@ async function buildTutugaWorkbook(allData) {
   }
   // Phase 2-B: 水質管理報告 — 固定値(外観/臭気) → 日次 MEASURE 値書込
   if (wsSuikan) {
-    _tutugaWriteSuikanFixed(wsSuikan, data.month);
+    _tutugaWriteSuikanFixed(wsSuikan, data);
     _tutugaWriteSuikanDaily(wsSuikan, data);
   }
   if (wsEquip) {
